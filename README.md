@@ -1,23 +1,54 @@
-# ✨ Welcome to Your Spark Template!
-You've just launched your brand-new Spark Template Codespace — everything’s fired up and ready for you to explore, build, and create with Spark!
+# 🚀 AI-Powered TechPigeon Assistant
 
-This template is your blank canvas. It comes with a minimal setup to help you get started quickly with Spark development.
+Welcome to the **AI-Powered TechPigeon Assistant** — your intelligent marketing strategy and business insights platform built with cutting-edge AI technology.
 
-🚀 What's Inside?
-- A clean, minimal Spark environment
-- Pre-configured for local development
-- Ready to scale with your ideas
-  
-🧠 What Can You Do?
+## 🎯 About TechPigeon
 
-Right now, this is just a starting point — the perfect place to begin building and testing your Spark applications.
+**TechPigeon** is Pakistan's leading platform for AI Boot Camps, Cloud Computing, and IT Training. This assistant leverages TechPigeon's expertise to help you create powerful marketing strategies and business solutions.
 
-🧹 Just Exploring?
-No problem! If you were just checking things out and don’t need to keep this code:
+**Visit us:** [www.techpigeon.org](https://www.techpigeon.org)
 
-- Simply delete your Spark.
-- Everything will be cleaned up — no traces left behind.
+## ✨ What This App Does
 
-📄 License For Spark Template Resources 
+- 📊 **Generate Marketing Strategies** - AI-powered marketing copy, visual strategies, and target audience analysis
+- 💾 **Save & Compare** - Store your strategies and compare up to 3 versions side-by-side
+- 🎨 **Visual Strategy Recommendations** - Get detailed guidance on colors, imagery, and design aesthetics
+- 🔍 **Audience Analysis** - Understand your target demographic with demographic and psychographic insights
 
-The Spark Template files and resources from GitHub are licensed under the terms of the MIT license, Copyright GitHub, Inc.
+## 🚀 Quick Start
+
+```bash
+# Install dependencies
+npm install
+
+# Start development server
+npm run dev
+
+# Build for production
+npm run build
+```
+
+## 🛠 Features
+
+- ✅ Built with React + TypeScript
+- ✅ AI-powered strategy generation
+- ✅ Responsive design with Tailwind CSS
+- ✅ Local storage for saved strategies
+- ✅ Side-by-side comparison view
+- ✅ TechPigeon brand colors & typography
+
+## 🎨 Branding
+
+This app is branded with **TechPigeon's** official color palette:
+- **Primary Navy:** #0B1D3A
+- **Secondary Blue:** #3ba8d4
+- **Accent Gold:** #bba442
+- **Typography:** Aleo (headings), Inter (body)
+
+## 📝 License
+
+For Spark Template Resources: MIT License - Copyright GitHub, Inc.
+
+---
+
+**Powered by TechPigeon** | Pakistan's Leading AI & IT Training Platform

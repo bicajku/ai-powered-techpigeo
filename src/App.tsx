@@ -165,14 +165,14 @@ Make the content professional, actionable, and inspiring. Be specific and creati
             <div className="inline-flex items-center gap-3 mb-4">
               <Sparkle size={40} weight="duotone" className="text-primary" />
               <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-foreground">
-                AI Marketing Assistant
+                AI-Powered TechPigeon Assistant
               </h1>
             </div>
             <p className="text-muted-foreground text-lg max-w-2xl mx-auto leading-relaxed">
-              Transform your ideas into powerful marketing strategies with AI-driven insights
+              Pakistan's leading AI platform for intelligent marketing strategies and business insights
             </p>
             <p className="text-sm text-muted-foreground mt-2">
-              Powered by <a href="https://www.techpigeon.org" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-medium">Techpigeon</a>
+              Powered by <a href="https://www.techpigeon.org" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-medium">TechPigeon</a>
             </p>
           </motion.header>
 

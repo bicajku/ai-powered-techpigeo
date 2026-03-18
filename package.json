@@ -1,7 +1,8 @@
 {
-    "name": "spark-template",
+    "name": "techpigeon-ai-assistant",
     "private": true,
-    "version": "0.0.0",
+    "version": "1.0.0",
+    "description": "AI-Powered TechPigeon Assistant - Pakistan's leading AI platform",
     "type": "module",
     "scripts": {
         "dev": "vite",

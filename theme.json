@@ -1,1 +1,11 @@
-{}
+{
+  "primaryColor": "#0B1D3A",
+  "secondaryColor": "#3ba8d4",
+  "accentColor": "#bba442",
+  "backgroundColor": "#ffffff",
+  "surfaceColor": "#f5edc8",
+  "textColor": "#0B1D3A",
+  "borderColor": "#1E3A5F",
+  "lightBlue": "#e8f6fc",
+  "darkNavy": "#1E3A5F"
+}

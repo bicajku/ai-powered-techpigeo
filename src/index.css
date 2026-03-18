@@ -11,38 +11,38 @@
   }
   
   h1, h2, h3, h4, h5, h6 {
-    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    font-family: 'Aleo', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   }
 }
 
 :root {
   --background: oklch(0.99 0.005 240);
-  --foreground: oklch(0.18 0.02 240);
+  --foreground: oklch(0.1 0.06 240);
   
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.18 0.02 240);
+  --card-foreground: oklch(0.1 0.06 240);
   
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.18 0.02 240);
+  --popover-foreground: oklch(0.1 0.06 240);
   
-  --primary: oklch(0.48 0.18 240);
+  --primary: oklch(0.2 0.08 240);
   --primary-foreground: oklch(1 0 0);
   
-  --secondary: oklch(0.96 0.01 240);
-  --secondary-foreground: oklch(0.18 0.02 240);
+  --secondary: oklch(0.65 0.20 240);
+  --secondary-foreground: oklch(1 0 0);
   
-  --muted: oklch(0.96 0.01 240);
-  --muted-foreground: oklch(0.55 0.02 240);
+  --muted: oklch(0.94 0.08 70);
+  --muted-foreground: oklch(0.4 0.05 240);
   
-  --accent: oklch(0.65 0.22 240);
-  --accent-foreground: oklch(1 0 0);
+  --accent: oklch(0.70 0.18 50);
+  --accent-foreground: oklch(0.1 0.06 240);
   
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(1 0 0);
   
   --border: oklch(0.92 0.01 240);
-  --input: oklch(0.92 0.01 240);
-  --ring: oklch(0.65 0.22 240);
+  --input: oklch(0.96 0.05 240);
+  --ring: oklch(0.65 0.20 240);
   
   --radius: 0.5rem;
 }
