@@ -64,6 +64,7 @@ export function ComparisonView({ strategies, onClose }: ComparisonViewProps) {
                       >
                         <Card className="p-5 h-full flex flex-col">
                           <div className="mb-3 pb-3 border-b border-border/30">
+                            <h4 className="font-semibold text-foreground mb-2">{strategy.name}</h4>
                             <Badge variant="outline" className="text-xs mb-2">
                               {new Date(strategy.timestamp).toLocaleDateString(undefined, { 
                                 month: 'short', 

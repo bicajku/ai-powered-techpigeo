@@ -6,6 +6,7 @@ export interface MarketingResult {
 
 export interface SavedStrategy {
   id: string
+  name: string
   description: string
   result: MarketingResult
   timestamp: number

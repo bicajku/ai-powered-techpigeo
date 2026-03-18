@@ -1,9 +1,10 @@
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { FloppyDisk, Trash, Eye, Scales } from "@phosphor-icons/react"
+import { FloppyDisk, Trash, Eye, Scales, FilePdf } from "@phosphor-icons/react"
 import { motion } from "framer-motion"
 import { SavedStrategy } from "@/types"
+import { exportStrategyAsPDF } from "@/lib/pdf-export"
 
 interface SavedStrategiesProps {
   strategies: SavedStrategy[]
@@ -37,8 +38,8 @@ export function SavedStrategies({
     <div className="space-y-4">
       {strategies.map((strategy, index) => {
         const isSelected = selectedForComparison.includes(strategy.id)
-        const truncatedDesc = strategy.description.length > 100 
-          ? strategy.description.slice(0, 100) + "..." 
+        const truncatedDesc = strategy.description.length > 80 
+          ? strategy.description.slice(0, 80) + "..." 
           : strategy.description
 
         return (
@@ -48,10 +49,11 @@ export function SavedStrategies({
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.3, delay: index * 0.05 }}
           >
-            <Card className={`p-4 hover:shadow-md transition-all ${isSelected ? 'ring-2 ring-accent' : ''}`}>
+            <Card className={`p-5 hover:shadow-md transition-all ${isSelected ? 'ring-2 ring-accent' : ''}`}>
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-2">
+                  <div className="flex items-center gap-2 mb-2 flex-wrap">
+                    <h3 className="font-semibold text-foreground text-base">{strategy.name}</h3>
                     <Badge variant="outline" className="text-xs">
                       {new Date(strategy.timestamp).toLocaleDateString()}
                     </Badge>
@@ -61,7 +63,7 @@ export function SavedStrategies({
                       </Badge>
                     )}
                   </div>
-                  <p className="text-sm text-foreground/80 line-clamp-2 mb-3">
+                  <p className="text-sm text-muted-foreground line-clamp-2 mb-4">
                     {truncatedDesc}
                   </p>
                   <div className="flex items-center gap-2 flex-wrap">
@@ -73,6 +75,15 @@ export function SavedStrategies({
                     >
                       <Eye size={16} weight="bold" />
                       View
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => exportStrategyAsPDF(strategy)}
+                      className="gap-1.5"
+                    >
+                      <FilePdf size={16} weight="bold" />
+                      Export PDF
                     </Button>
                     <Button
                       variant={isSelected ? "default" : "outline"}

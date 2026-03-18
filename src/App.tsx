@@ -7,6 +7,7 @@ import { LoadingState } from "@/components/LoadingState"
 import { EmptyState } from "@/components/EmptyState"
 import { SavedStrategies } from "@/components/SavedStrategies"
 import { ComparisonView } from "@/components/ComparisonView"
+import { SaveStrategyDialog } from "@/components/SaveStrategyDialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { toast } from "sonner"
 import { useKV } from "@github/spark/hooks"
@@ -22,6 +23,7 @@ function App() {
   const [savedStrategies, setSavedStrategies] = useKV<SavedStrategy[]>("saved-strategies", [])
   const [selectedForComparison, setSelectedForComparison] = useState<string[]>([])
   const [showComparison, setShowComparison] = useState(false)
+  const [showSaveDialog, setShowSaveDialog] = useState(false)
   const resultsRef = useRef<HTMLDivElement>(null)
 
   const isValidInput = description.trim().length >= 10
@@ -38,14 +40,14 @@ function App() {
     setError(null)
 
     try {
-      const prompt = spark.llmPrompt`You are an expert marketing strategist. Based on the following product or service description, generate a comprehensive marketing strategy.
+      const prompt = spark.llmPrompt`You are an expert marketing strategist. Based on the following topic or description, generate a comprehensive marketing strategy.
 
-Product/Service Description: ${description}
+Topic/Description: ${description}
 
 Return your response as a valid JSON object with exactly three properties:
 1. "marketingCopy" - Persuasive, engaging marketing copy (2-3 paragraphs) that highlights benefits, creates desire, and includes a compelling call-to-action
 2. "visualStrategy" - Detailed visual strategy recommendations including suggested imagery, colors, design motifs, mood, and overall aesthetic direction
-3. "targetAudience" - Specific recommendation for the ideal target audience including demographics, psychographics, pain points, and why they need this product/service
+3. "targetAudience" - Specific recommendation for the ideal target audience including demographics, psychographics, pain points, and why they need this
 
 Make the content professional, actionable, and inspiring. Be specific and creative.`
 
@@ -75,11 +77,12 @@ Make the content professional, actionable, and inspiring. Be specific and creati
     window.scrollTo({ top: 0, behavior: "smooth" })
   }
 
-  const handleSaveStrategy = () => {
+  const handleSaveStrategy = (name: string) => {
     if (!result || !currentDescription) return
 
     const newStrategy: SavedStrategy = {
       id: Date.now().toString(),
+      name: name,
       description: currentDescription,
       result: result,
       timestamp: Date.now()
@@ -136,6 +139,12 @@ Make the content professional, actionable, and inspiring. Be specific and creati
 
   return (
     <>
+      <SaveStrategyDialog
+        open={showSaveDialog}
+        onOpenChange={setShowSaveDialog}
+        onSave={handleSaveStrategy}
+      />
+
       <AnimatePresence>
         {showComparison && (
           <ComparisonView
@@ -145,8 +154,8 @@ Make the content professional, actionable, and inspiring. Be specific and creati
         )}
       </AnimatePresence>
 
-      <div className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-background relative overflow-hidden">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,_oklch(0.75_0.15_195_/_0.15)_0%,_transparent_50%),radial-gradient(circle_at_70%_80%,_oklch(0.45_0.18_290_/_0.12)_0%,_transparent_50%)] pointer-events-none" />
+      <div className="min-h-screen bg-gradient-to-br from-background via-secondary/20 to-background relative overflow-hidden">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,_oklch(0.65_0.22_240_/_0.08)_0%,_transparent_50%),radial-gradient(circle_at_70%_80%,_oklch(0.48_0.18_240_/_0.1)_0%,_transparent_50%)] pointer-events-none" />
         
         <div className="relative max-w-6xl mx-auto px-6 md:px-8 py-12 md:py-16">
           <motion.header
@@ -158,11 +167,14 @@ Make the content professional, actionable, and inspiring. Be specific and creati
             <div className="inline-flex items-center gap-3 mb-4">
               <Sparkle size={40} weight="duotone" className="text-primary" />
               <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-foreground">
-                Techpigeon Assistant
+                AI Marketing Assistant
               </h1>
             </div>
             <p className="text-muted-foreground text-lg max-w-2xl mx-auto leading-relaxed">
-              Transform your product ideas into powerful marketing strategies with AI-driven insights
+              Transform your ideas into powerful marketing strategies with AI-driven insights
+            </p>
+            <p className="text-sm text-muted-foreground mt-2">
+              Powered by <a href="https://www.techpigeon.org" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-medium">Techpigeon</a>
             </p>
           </motion.header>
 
@@ -186,14 +198,14 @@ Make the content professional, actionable, and inspiring. Be specific and creati
                 className="bg-card/80 backdrop-blur-sm rounded-2xl shadow-lg border border-border/50 p-6 md:p-8"
               >
                 <label htmlFor="product-description" className="block text-sm font-semibold text-foreground mb-3">
-                  Describe your product or service
+                  Describe your topic, product, or service
                 </label>
                 <Textarea
                   id="product-description"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   onKeyDown={handleKeyPress}
-                  placeholder="e.g., A smart water bottle that tracks hydration levels and syncs with fitness apps..."
+                  placeholder="e.g., A sustainable fashion brand for eco-conscious millennials, an AI-powered productivity app for remote teams, a local coffee shop with artisan roasts..."
                   className="min-h-32 mb-4 resize-none text-base leading-relaxed focus:ring-2 focus:ring-accent transition-all"
                   maxLength={1000}
                 />
@@ -252,7 +264,7 @@ Make the content professional, actionable, and inspiring. Be specific and creati
                       <h2 className="text-2xl font-bold text-foreground">Your Marketing Strategy</h2>
                       <div className="flex items-center gap-2">
                         <Button 
-                          onClick={handleSaveStrategy} 
+                          onClick={() => setShowSaveDialog(true)} 
                           variant="default" 
                           size="sm" 
                           className="gap-2"
