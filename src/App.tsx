@@ -147,26 +147,16 @@ function App() {
     })
   }
 
-  const generateMarketing = async () => {
-    if (!isValidInput) {
-      toast.error("Please enter at least 10 characters")
-      return
+  const attemptGeneration = async (attemptNumber: number): Promise<MarketingResult> => {
+    if (typeof spark === "undefined") {
+      throw new Error("Spark API is not available. Please refresh the page.")
     }
 
-    setIsLoading(true)
-    setError(null)
+    if (typeof spark.llmPrompt === "undefined") {
+      throw new Error("Spark LLM prompt is not available.")
+    }
 
-    try {
-      // Check if spark is available
-      if (typeof spark === "undefined") {
-        throw new Error("Spark API is not available. Please refresh the page.")
-      }
-
-      if (typeof spark.llmPrompt === "undefined") {
-        throw new Error("Spark LLM prompt is not available.")
-      }
-
-      const prompt = spark.llmPrompt`You are an elite marketing strategist, solutions architect, and AI automation consultant. Based on the topic below, produce a comprehensive strategy and implementation guidance at production depth.
+    const prompt = spark.llmPrompt`You are an elite marketing strategist, solutions architect, and AI automation consultant. Based on the topic below, produce a comprehensive strategy and implementation guidance at production depth.
 
 Topic/Description: ${description}
 
@@ -187,6 +177,7 @@ CRITICAL JSON FORMATTING RULES:
 3. Do NOT use unescaped quotes, line breaks, or special characters inside string values
 4. Keep all content within string values - no nested objects or arrays
 5. Test that your output is valid JSON before returning
+6. Do NOT include any explanatory text or commentary outside the JSON object
 
 Required JSON structure with exactly these eight properties:
 
@@ -205,84 +196,124 @@ FORMATTING GUIDELINES:
 - Use simple text formatting: hyphens for bullets, line breaks for separation
 - Avoid complex markdown, code blocks, or special symbols
 - Keep content professional, actionable, and inspiring
-- Be specific and creative while maintaining valid JSON structure`
+- Be specific and creative while maintaining valid JSON structure
+- Ensure ALL strings are properly terminated and escaped`
 
-      if (typeof spark.llm !== "function") {
-        throw new Error("Spark LLM function is not available.")
-      }
+    if (typeof spark.llm !== "function") {
+      throw new Error("Spark LLM function is not available.")
+    }
 
-      const response = await spark.llm(prompt, "gpt-4o", true)
-      
-      if (!response) {
-        throw new Error("Empty response from LLM. Please try again.")
-      }
+    const response = await spark.llm(prompt, "gpt-4o", true)
+    
+    if (!response) {
+      throw new Error("Empty response from LLM")
+    }
 
-      let parsedResult: MarketingResult
+    let cleanedResponse = response.trim()
+    
+    if (cleanedResponse.startsWith("```json")) {
+      cleanedResponse = cleanedResponse.replace(/^```json\s*/, "").replace(/```\s*$/, "")
+    } else if (cleanedResponse.startsWith("```")) {
+      cleanedResponse = cleanedResponse.replace(/^```\s*/, "").replace(/```\s*$/, "")
+    }
+    
+    cleanedResponse = cleanedResponse.trim()
+    
+    const firstBrace = cleanedResponse.indexOf('{')
+    const lastBrace = cleanedResponse.lastIndexOf('}')
+    
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      cleanedResponse = cleanedResponse.substring(firstBrace, lastBrace + 1)
+    }
+    
+    console.log(`Attempt ${attemptNumber} - Response length:`, cleanedResponse.length)
+    console.log(`Attempt ${attemptNumber} - First 200 chars:`, cleanedResponse.substring(0, 200))
+    console.log(`Attempt ${attemptNumber} - Last 200 chars:`, cleanedResponse.substring(Math.max(0, cleanedResponse.length - 200)))
+    
+    const parsedResult = JSON.parse(cleanedResponse) as MarketingResult
+    
+    console.log(`Attempt ${attemptNumber} - Successfully parsed with keys:`, Object.keys(parsedResult))
+
+    if (!parsedResult || typeof parsedResult !== 'object') {
+      throw new Error("Invalid response format - expected an object")
+    }
+
+    if (!parsedResult.marketingCopy || !parsedResult.visualStrategy || !parsedResult.targetAudience) {
+      throw new Error(`Missing required fields. Got: ${Object.keys(parsedResult).join(', ')}`)
+    }
+
+    const normalizedResult: MarketingResult = {
+      marketingCopy: parsedResult.marketingCopy,
+      visualStrategy: parsedResult.visualStrategy,
+      targetAudience: parsedResult.targetAudience,
+      applicationWorkflow: parsedResult.applicationWorkflow || "Application workflow guidance was not generated. Please regenerate to get implementation steps.",
+      uiWorkflow: parsedResult.uiWorkflow || "UI workflow guidance was not generated. Please regenerate to get implementation steps.",
+      databaseWorkflow: parsedResult.databaseWorkflow || "Database workflow guidance was not generated. Please regenerate to get implementation steps.",
+      mobileWorkflow: parsedResult.mobileWorkflow || "Mobile workflow guidance was not generated. Please regenerate to get implementation steps.",
+      implementationChecklist: parsedResult.implementationChecklist || "Implementation checklist was not generated. Please regenerate to get sprint-ready tasks.",
+    }
+
+    return normalizedResult
+  }
+
+  const generateMarketing = async () => {
+    if (!isValidInput) {
+      toast.error("Please enter at least 10 characters")
+      return
+    }
+
+    setIsLoading(true)
+    setError(null)
+
+    const maxRetries = 3
+    let lastError: Error | null = null
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        let cleanedResponse = response.trim()
+        if (attempt > 1) {
+          toast.info(`Retrying generation (attempt ${attempt}/${maxRetries})...`)
+          await new Promise(resolve => setTimeout(resolve, 1000 * attempt))
+        }
+
+        const normalizedResult = await attemptGeneration(attempt)
+
+        setResult(normalizedResult)
+        rememberPrompt(description, conceptMode)
+        setCurrentDescription(description)
         
-        if (cleanedResponse.startsWith("```json")) {
-          cleanedResponse = cleanedResponse.replace(/^```json\s*/, "").replace(/```\s*$/, "")
-        } else if (cleanedResponse.startsWith("```")) {
-          cleanedResponse = cleanedResponse.replace(/^```\s*/, "").replace(/```\s*$/, "")
+        if (attempt > 1) {
+          toast.success(`Successfully generated on attempt ${attempt}`)
         }
         
-        cleanedResponse = cleanedResponse.trim()
+        setTimeout(() => {
+          resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+        }, 100)
         
-        console.log("Raw LLM response length:", cleanedResponse.length)
-        console.log("First 200 chars:", cleanedResponse.substring(0, 200))
-        console.log("Last 200 chars:", cleanedResponse.substring(Math.max(0, cleanedResponse.length - 200)))
-        
-        parsedResult = JSON.parse(cleanedResponse) as MarketingResult
-        
-        console.log("Successfully parsed result with keys:", Object.keys(parsedResult))
-      } catch (parseError) {
-        console.error("JSON Parse Error:", parseError)
-        console.error("Raw response length:", response.length)
-        console.error("Response type:", typeof response)
-        
-        const errorMsg = parseError instanceof Error ? parseError.message : 'Unknown error'
-        toast.error("The AI response couldn't be parsed. Trying again with a simpler format...")
-        
-        throw new Error(`Failed to parse response: ${errorMsg}. The AI may have included invalid characters in the response. Please try generating again.`)
-      }
+        setIsLoading(false)
+        return
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error("An unexpected error occurred")
+        console.error(`Attempt ${attempt} failed:`, err)
 
-      if (!parsedResult || typeof parsedResult !== 'object') {
-        console.error("Parsed result is not an object:", parsedResult)
-        throw new Error("Invalid response format - expected an object. Please try again.")
+        if (attempt < maxRetries) {
+          const isParseError = lastError.message.includes("JSON") || 
+                               lastError.message.includes("parse") || 
+                               lastError.message.includes("Unexpected token")
+          
+          if (isParseError) {
+            console.log(`Parse error detected, will retry (${maxRetries - attempt} attempts remaining)`)
+          } else {
+            console.log(`Non-parse error, will retry (${maxRetries - attempt} attempts remaining)`)
+          }
+        }
       }
-
-      if (!parsedResult.marketingCopy || !parsedResult.visualStrategy || !parsedResult.targetAudience) {
-        console.error("Missing required fields. Available keys:", Object.keys(parsedResult))
-        throw new Error(`Invalid response format - missing required fields. Got: ${Object.keys(parsedResult).join(', ')}`)
-      }
-
-      const normalizedResult: MarketingResult = {
-        marketingCopy: parsedResult.marketingCopy,
-        visualStrategy: parsedResult.visualStrategy,
-        targetAudience: parsedResult.targetAudience,
-        applicationWorkflow: parsedResult.applicationWorkflow || "Application workflow guidance was not generated. Please regenerate to get implementation steps.",
-        uiWorkflow: parsedResult.uiWorkflow || "UI workflow guidance was not generated. Please regenerate to get implementation steps.",
-        databaseWorkflow: parsedResult.databaseWorkflow || "Database workflow guidance was not generated. Please regenerate to get implementation steps.",
-        mobileWorkflow: parsedResult.mobileWorkflow || "Mobile workflow guidance was not generated. Please regenerate to get implementation steps.",
-        implementationChecklist: parsedResult.implementationChecklist || "Implementation checklist was not generated. Please regenerate to get sprint-ready tasks.",
-      }
-
-      setResult(normalizedResult)
-      rememberPrompt(description, conceptMode)
-      setCurrentDescription(description)
-      
-      setTimeout(() => {
-        resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
-      }, 100)
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred"
-      console.error("Error generating marketing:", err)
-      setError(errorMessage)
-      toast.error(errorMessage)
-    } finally {
-      setIsLoading(false)
     }
+
+    const errorMessage = lastError?.message || "Failed to generate strategy after multiple attempts"
+    console.error("All attempts failed. Last error:", lastError)
+    setError(errorMessage)
+    toast.error(`Generation failed after ${maxRetries} attempts. Please try again.`)
+    setIsLoading(false)
   }
 
   const handleNewGeneration = () => {
