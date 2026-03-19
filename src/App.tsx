@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
-import { Sparkle, Lightbulb, ChatsCircle, Palette, Target, ArrowClockwise, FloppyDisk, FolderOpen, Code, Desktop, Database, DeviceMobile, ListChecks } from "@phosphor-icons/react"
+import { Sparkle, Lightbulb, ChatsCircle, Palette, Target, ArrowClockwise, FloppyDisk, FolderOpen, Code, Desktop, Database, DeviceMobile, ListChecks, ChartBar } from "@phosphor-icons/react"
 import { ResultCard } from "@/components/ResultCard"
 import { LoadingState } from "@/components/LoadingState"
 import { EmptyState } from "@/components/EmptyState"
@@ -10,6 +10,7 @@ import { ComparisonView } from "@/components/ComparisonView"
 import { SaveStrategyDialog } from "@/components/SaveStrategyDialog"
 import { AuthForm } from "@/components/AuthForm"
 import { UserMenu } from "@/components/UserMenu"
+import { Dashboard } from "@/components/Dashboard"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast } from "sonner"
@@ -478,10 +479,14 @@ FORMATTING GUIDELINES:
           </motion.header>
 
           <Tabs defaultValue="generate" className="w-full">
-            <TabsList className="grid w-full max-w-md mx-auto grid-cols-2 mb-8">
+            <TabsList className="grid w-full max-w-2xl mx-auto grid-cols-3 mb-8">
               <TabsTrigger value="generate" className="gap-2">
                 <Lightbulb size={18} weight="bold" />
                 Generate
+              </TabsTrigger>
+              <TabsTrigger value="dashboard" className="gap-2">
+                <ChartBar size={18} weight="bold" />
+                Dashboard
               </TabsTrigger>
               <TabsTrigger value="saved" className="gap-2">
                 <FolderOpen size={18} weight="bold" />
@@ -707,6 +712,13 @@ FORMATTING GUIDELINES:
                 
                 {!isLoading && !result && !error && <EmptyState />}
               </div>
+            </TabsContent>
+
+            <TabsContent value="dashboard" className="space-y-6">
+              <Dashboard 
+                strategies={savedStrategies || []} 
+                promptMemory={promptMemory || []}
+              />
             </TabsContent>
 
             <TabsContent value="saved" className="space-y-6">
