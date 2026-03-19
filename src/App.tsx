@@ -700,7 +700,7 @@ FORMATTING GUIDELINES:
                       content={result.marketingCopy}
                       delay={0}
                     />
-                      title="Visual Strategy"
+                    
                     <ResultCard
                       title="Visual Strategy"
                       icon={<Palette size={24} weight="duotone" />}
