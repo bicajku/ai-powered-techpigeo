@@ -1,11 +1,11 @@
 import { useState } from "react"
-  Dialog
-  DialogD
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
-} from "@/components
-import { Label 
-import { Checkb
-import { Flopp
+  DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -14,54 +14,56 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { FloppyDisk, Info } from "@phosphor-icons/react"
 
-    }
+interface SaveReviewDialogProps {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onSave: (name: string) => void
+  onDiscard: () => void
+}
 
+export function SaveReviewDialog({ open, onOpenChange, onSave, onDiscard }: SaveReviewDialogProps) {
+  const [name, setName] = useState("")
+  const [consentGiven, setConsentGiven] = useState(false)
+
+  const handleSave = () => {
+    if (name.trim() && consentGiven) {
+      onSave(name.trim())
+      onOpenChange(false)
+      setName("")
+      setConsentGiven(false)
+    }
+  }
+
+  const handleDiscard = () => {
+    onOpenChange(false)
+    setName("")
     onDiscard()
     setConsentGiven(false)
+  }
 
- 
-
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Save Review</DialogTitle>
           <DialogDescription>
+            Give your review a memorable name to find it easily later.
           </DialogDescription>
+        </DialogHeader>
         <div className="space-y-4 py-4">
-
-              id="review-nam
-              onChange={(e) => setName
+          <div className="space-y-2">
+            <Label htmlFor="review-name">Review Name</Label>
+            <Input
+              id="review-name"
+              placeholder="e.g., Term Paper Draft - Analysis"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
               className="w-full"
-            <p cl
+            />
+            <p className="text-xs text-muted-foreground">
+              Choose a descriptive name that helps you identify this review.
             </p>
-
-   
-
-                <li>All data is
-               
-            </A
-
-   
-
-          
-              htmlFor="consent"
-            >
-            </Label>
-        </div>
-          <Button
-            variant="outline"
-          >
-          </Button>
-            onClick={handleSave}
-            className="gap-2"
-            <FloppyDisk size={18} weight="bold" />
-          </Button
-      </DialogContent>
-  )
-
-
-
-
-
-
-
-
+          </div>
 
           <Alert>
             <Info size={18} weight="bold" className="text-muted-foreground" />

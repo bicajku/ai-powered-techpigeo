@@ -1,4 +1,4 @@
-import { UserProfile, SavedStrategy, UserRole } from "@/types"
+import { UserProfile, SavedStrategy, UserRole, SavedReviewDocument } from "@/types"
 
 const USERS_STORAGE_KEY = "platform-users"
 
@@ -23,6 +23,16 @@ export const adminService = {
     }
   },
 
+  async getUserReviews(userId: string): Promise<SavedReviewDocument[]> {
+    try {
+      const reviews = await spark.kv.get<SavedReviewDocument[]>(`saved-reviews-${userId}`) || []
+      return reviews
+    } catch (error) {
+      console.error(`Failed to get reviews for user ${userId}:`, error)
+      return []
+    }
+  },
+
   async getAllStrategies(): Promise<{ user: UserProfile; strategies: SavedStrategy[] }[]> {
     try {
       const users = await this.getAllUsers()
@@ -35,6 +45,22 @@ export const adminService = {
       return results
     } catch (error) {
       console.error("Failed to get all strategies:", error)
+      return []
+    }
+  },
+
+  async getAllReviews(): Promise<{ user: UserProfile; reviews: SavedReviewDocument[] }[]> {
+    try {
+      const users = await this.getAllUsers()
+      const results = await Promise.all(
+        users.map(async (user) => ({
+          user,
+          reviews: await this.getUserReviews(user.id)
+        }))
+      )
+      return results
+    } catch (error) {
+      console.error("Failed to get all reviews:", error)
       return []
     }
   },
@@ -76,6 +102,7 @@ export const adminService = {
       await spark.kv.set(USERS_STORAGE_KEY, users)
       await spark.kv.delete(`password_${email}`)
       await spark.kv.delete(`saved-strategies-${user.id}`)
+      await spark.kv.delete(`saved-reviews-${user.id}`)
       await spark.kv.delete(`user-prompt-memory-${user.id}`)
 
       return { success: true }
@@ -90,14 +117,21 @@ export const adminService = {
     totalAdmins: number
     totalClients: number
     totalStrategies: number
+    totalReviews: number
     recentUsers: number
   }> {
     try {
       const users = await this.getAllUsers()
       const allStrategies = await this.getAllStrategies()
+      const allReviews = await this.getAllReviews()
       
       const totalStrategies = allStrategies.reduce(
         (sum, item) => sum + item.strategies.length,
+        0
+      )
+
+      const totalReviews = allReviews.reduce(
+        (sum, item) => sum + item.reviews.length,
         0
       )
 
@@ -109,6 +143,7 @@ export const adminService = {
         totalAdmins: users.filter(u => u.role === "admin").length,
         totalClients: users.filter(u => u.role === "client").length,
         totalStrategies,
+        totalReviews,
         recentUsers,
       }
     } catch (error) {
@@ -118,6 +153,7 @@ export const adminService = {
         totalAdmins: 0,
         totalClients: 0,
         totalStrategies: 0,
+        totalReviews: 0,
         recentUsers: 0,
       }
     }
