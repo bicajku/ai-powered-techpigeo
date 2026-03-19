@@ -78,6 +78,17 @@ export interface DocumentReviewResult {
   timestamp: number
 }
 
+export interface SavedReviewDocument {
+  id: string
+  name: string
+  documentText: string
+  fileName: string
+  summary: string
+  plagiarismResult: PlagiarismResult
+  timestamp: number
+  userId: string
+}
+
 export interface HumanizedResult {
   originalText: string
   humanizedText: string

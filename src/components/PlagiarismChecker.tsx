@@ -16,12 +16,16 @@ import {
   CheckCircle,
   WarningCircle,
   XCircle,
-  LockKey
+  LockKey,
+  FloppyDisk
 } from "@phosphor-icons/react"
 import { motion, AnimatePresence } from "framer-motion"
 import { toast } from "sonner"
-import { PlagiarismResult, DocumentReviewResult, HumanizedResult } from "@/types"
+import { PlagiarismResult, DocumentReviewResult, HumanizedResult, SavedReviewDocument } from "@/types"
 import { useKV } from "@github/spark/hooks"
+import { SaveReviewDialog } from "@/components/SaveReviewDialog"
+import { SavedReviews } from "@/components/SavedReviews"
+import { exportReviewToPDF } from "@/lib/pdf-export"
 
 interface PlagiarismCheckerProps {
   userId: string
@@ -35,8 +39,14 @@ export function PlagiarismChecker({ userId }: PlagiarismCheckerProps) {
   const [humanizedResult, setHumanizedResult] = useState<HumanizedResult | null>(null)
   const [fileName, setFileName] = useState<string | null>(null)
   const [showUpload, setShowUpload] = useState(false)
+  const [showSaveDialog, setShowSaveDialog] = useState(false)
+  const [currentReviewResult, setCurrentReviewResult] = useState<DocumentReviewResult | null>(null)
   const [documentReviews, setDocumentReviews] = useKV<DocumentReviewResult[]>(
     `document-reviews-${userId}`,
+    []
+  )
+  const [savedReviews, setSavedReviews] = useKV<SavedReviewDocument[]>(
+    `saved-reviews-${userId}`,
     []
   )
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -163,6 +173,7 @@ Required JSON structure:
         timestamp: Date.now()
       }
 
+      setCurrentReviewResult(review)
       setDocumentReviews((current) => [review, ...(current || [])].slice(0, 20))
 
       if (parsedResult.turnitinReady) {
@@ -170,11 +181,59 @@ Required JSON structure:
       } else {
         toast.warning("Document analysis complete. Review recommendations before submission.")
       }
+
+      setTimeout(() => {
+        setShowSaveDialog(true)
+      }, 1000)
     } catch (error) {
       console.error("Plagiarism check error:", error)
       toast.error("Failed to analyze document. Please try again.")
     } finally {
       setIsChecking(false)
+    }
+  }
+
+  const handleSaveReview = (name: string) => {
+    if (!currentReviewResult) return
+
+    const savedReview: SavedReviewDocument = {
+      id: Date.now().toString(),
+      name,
+      documentText: currentReviewResult.documentText,
+      fileName: currentReviewResult.fileName,
+      summary: currentReviewResult.summary,
+      plagiarismResult: currentReviewResult.plagiarismResult,
+      timestamp: currentReviewResult.timestamp,
+      userId
+    }
+
+    setSavedReviews((current) => [savedReview, ...(current || [])])
+    toast.success("Review saved successfully!")
+  }
+
+  const handleDiscardReview = () => {
+    toast.info("Review discarded")
+  }
+
+  const handleDeleteReview = (id: string) => {
+    setSavedReviews((current) => (current || []).filter(r => r.id !== id))
+    toast.success("Review deleted")
+  }
+
+  const handleViewReview = (review: SavedReviewDocument) => {
+    setText(review.documentText)
+    setFileName(review.fileName)
+    setResult(review.plagiarismResult)
+    window.scrollTo({ top: 0, behavior: "smooth" })
+  }
+
+  const handleExportReview = async (review: SavedReviewDocument) => {
+    try {
+      await exportReviewToPDF(review)
+      toast.success("PDF export initiated!")
+    } catch (error) {
+      console.error("Export error:", error)
+      toast.error("Failed to export PDF. Please try again.")
     }
   }
 
@@ -640,6 +699,28 @@ Return ONLY a valid JSON object:
           </motion.div>
         )}
       </AnimatePresence>
+
+      <SaveReviewDialog
+        open={showSaveDialog}
+        onOpenChange={setShowSaveDialog}
+        onSave={handleSaveReview}
+        onDiscard={handleDiscardReview}
+      />
+
+      {(savedReviews && savedReviews.length > 0) && (
+        <div className="space-y-4 mt-8">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xl font-semibold text-foreground">Saved Reviews</h3>
+            <Badge variant="secondary">{savedReviews.length} {savedReviews.length === 1 ? 'review' : 'reviews'}</Badge>
+          </div>
+          <SavedReviews
+            reviews={savedReviews}
+            onDelete={handleDeleteReview}
+            onView={handleViewReview}
+            onExport={handleExportReview}
+          />
+        </div>
+      )}
     </div>
   )
 }
