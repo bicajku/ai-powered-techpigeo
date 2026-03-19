@@ -1,7 +1,24 @@
 import { SavedStrategy } from "@/types"
 
 export function exportStrategyAsPDF(strategy: SavedStrategy) {
-  const doc = document.implementation.createHTMLDocument('Strategy Export')
+  const optionalSections = [
+    { title: "Application Workflow", content: strategy.result.applicationWorkflow },
+    { title: "UI Workflow", content: strategy.result.uiWorkflow },
+    { title: "Database Workflow", content: strategy.result.databaseWorkflow },
+    { title: "Mobile Workflow", content: strategy.result.mobileWorkflow },
+    { title: "Implementation Checklist", content: strategy.result.implementationChecklist },
+  ].filter((section) => !!section.content)
+
+  const optionalSectionsHtml = optionalSections
+    .map(
+      (section) => `
+      <div class="section">
+        <div class="section-title">${section.title}</div>
+        <div class="section-content">${section.content}</div>
+      </div>
+      `
+    )
+    .join("")
   
   const styles = `
     <style>
@@ -107,6 +124,8 @@ export function exportStrategyAsPDF(strategy: SavedStrategy) {
         <div class="section-title">Target Audience</div>
         <div class="section-content">${strategy.result.targetAudience}</div>
       </div>
+
+      ${optionalSectionsHtml}
       
       <div class="footer">
         <div class="logo">Techpigeon AI Marketing Assistant</div>

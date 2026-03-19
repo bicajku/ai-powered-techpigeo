@@ -1,7 +1,7 @@
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { X, ChatsCircle, Palette, Target } from "@phosphor-icons/react"
+import { X, ChatsCircle, Palette, Target, Code, Desktop, Database, DeviceMobile, ListChecks } from "@phosphor-icons/react"
 import { motion } from "framer-motion"
 import { SavedStrategy } from "@/types"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -20,6 +20,11 @@ export function ComparisonView({ strategies, onClose }: ComparisonViewProps) {
     { key: 'marketingCopy' as const, title: 'Marketing Copy', icon: <ChatsCircle size={20} weight="duotone" /> },
     { key: 'visualStrategy' as const, title: 'Visual Strategy', icon: <Palette size={20} weight="duotone" /> },
     { key: 'targetAudience' as const, title: 'Target Audience', icon: <Target size={20} weight="duotone" /> },
+    { key: 'applicationWorkflow' as const, title: 'Application Workflow', icon: <Code size={20} weight="duotone" /> },
+    { key: 'uiWorkflow' as const, title: 'UI Workflow', icon: <Desktop size={20} weight="duotone" /> },
+    { key: 'databaseWorkflow' as const, title: 'Database Workflow', icon: <Database size={20} weight="duotone" /> },
+    { key: 'mobileWorkflow' as const, title: 'Mobile Workflow', icon: <DeviceMobile size={20} weight="duotone" /> },
+    { key: 'implementationChecklist' as const, title: 'Implementation Checklist', icon: <ListChecks size={20} weight="duotone" /> },
   ]
 
   return (
@@ -79,7 +84,7 @@ export function ComparisonView({ strategies, onClose }: ComparisonViewProps) {
                             </p>
                           </div>
                           <div className="text-sm text-foreground leading-relaxed whitespace-pre-wrap flex-1">
-                            {strategy.result[section.key]}
+                            {strategy.result[section.key] || "No guidance available for this section in this saved strategy."}
                           </div>
                         </Card>
                       </motion.div>

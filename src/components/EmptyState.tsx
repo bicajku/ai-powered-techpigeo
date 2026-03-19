@@ -23,7 +23,7 @@ export function EmptyState() {
       </h3>
       <p className="text-muted-foreground mb-8 max-w-md mx-auto leading-relaxed">
         Describe your product or service above and let AI craft compelling marketing copy,
-        visual strategies, and audience insights.
+        visual strategies, audience insights, and full-stack implementation workflows.
       </p>
       <div className="space-y-3 max-w-lg mx-auto">
         <p className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">

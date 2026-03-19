@@ -1,7 +1,7 @@
-import { useState, useRef } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
-import { Sparkle, Lightbulb, ChatsCircle, Palette, Target, ArrowClockwise, FloppyDisk, FolderOpen } from "@phosphor-icons/react"
+import { Sparkle, Lightbulb, ChatsCircle, Palette, Target, ArrowClockwise, FloppyDisk, FolderOpen, Code, Desktop, Database, DeviceMobile, ListChecks } from "@phosphor-icons/react"
 import { ResultCard } from "@/components/ResultCard"
 import { LoadingState } from "@/components/LoadingState"
 import { EmptyState } from "@/components/EmptyState"
@@ -9,10 +9,39 @@ import { SavedStrategies } from "@/components/SavedStrategies"
 import { ComparisonView } from "@/components/ComparisonView"
 import { SaveStrategyDialog } from "@/components/SaveStrategyDialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast } from "sonner"
 import { useKV } from "@github/spark/hooks"
 import { motion, AnimatePresence } from "framer-motion"
 import { MarketingResult, SavedStrategy } from "@/types"
+import {
+  DEFAULT_KNOWLEDGEBASE_CONCEPTS,
+  DEFAULT_KNOWLEDGE_FEED_ITEMS,
+  KnowledgebaseConcept,
+  KnowledgeFeedItem,
+  formatFeedForPrompt,
+  formatKnowledgebaseForPrompt,
+} from "@/lib/concept-playbooks"
+
+type ConceptMode = "auto" | "sales" | "ecommerce" | "saas" | "education" | "healthcare" | "fintech" | "ops"
+
+interface PromptMemoryItem {
+  prompt: string
+  conceptMode: ConceptMode
+  count: number
+  lastUsedAt: number
+}
+
+const CONCEPT_MODE_INSTRUCTION: Record<ConceptMode, string> = {
+  auto: "Auto-select the most relevant archetypes from the knowledge base based on the user's topic.",
+  sales: "Prioritize conversational sales agent, lead qualification, appointment booking, CRM funnel visibility, and conversion optimization archetypes.",
+  ecommerce: "Prioritize e-commerce concierge, recommendations, cart recovery, order automation, and revenue-intelligence archetypes.",
+  saas: "Prioritize SaaS onboarding, product activation, adoption analytics, and churn prevention archetypes.",
+  education: "Prioritize AI coaching, learning-path adaptation, mastery tracking, and instructor analytics archetypes.",
+  healthcare: "Prioritize triage safety boundaries, booking workflows, sensitive-data handling, and clinical escalation archetypes.",
+  fintech: "Prioritize onboarding/KYC support, risk controls, secure integrations, and compliance-oriented workflows.",
+  ops: "Prioritize internal operations copilot, SOP automation, ticket routing, SLA monitoring, and productivity archetypes.",
+}
 
 function App() {
   const [description, setDescription] = useState("")
@@ -21,14 +50,102 @@ function App() {
   const [currentDescription, setCurrentDescription] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [savedStrategies, setSavedStrategies] = useKV<SavedStrategy[]>("saved-strategies", [])
+  const [promptMemory, setPromptMemory] = useKV<PromptMemoryItem[]>("user-prompt-memory", [])
+  const [knowledgebaseConcepts, setKnowledgebaseConcepts] = useKV<KnowledgebaseConcept[]>("knowledgebase-concepts", [])
+  const [knowledgeFeed, setKnowledgeFeed] = useKV<KnowledgeFeedItem[]>("knowledge-feed", [])
   const [selectedForComparison, setSelectedForComparison] = useState<string[]>([])
   const [showComparison, setShowComparison] = useState(false)
   const [showSaveDialog, setShowSaveDialog] = useState(false)
+  const [conceptMode, setConceptMode] = useState<ConceptMode>("auto")
+  const [showPromptSuggestions, setShowPromptSuggestions] = useState(false)
   const resultsRef = useRef<HTMLDivElement>(null)
 
   const isValidInput = description.trim().length >= 10
   const charCount = description.length
   const showCharCounter = charCount >= 900
+
+  useEffect(() => {
+    if (!knowledgebaseConcepts || knowledgebaseConcepts.length === 0) {
+      setKnowledgebaseConcepts(DEFAULT_KNOWLEDGEBASE_CONCEPTS)
+    }
+
+    if (!knowledgeFeed || knowledgeFeed.length === 0) {
+      setKnowledgeFeed(DEFAULT_KNOWLEDGE_FEED_ITEMS)
+    }
+  }, [knowledgebaseConcepts, knowledgeFeed, setKnowledgebaseConcepts, setKnowledgeFeed])
+
+  const activeKnowledgebase = useMemo(
+    () => (knowledgebaseConcepts && knowledgebaseConcepts.length > 0 ? knowledgebaseConcepts : DEFAULT_KNOWLEDGEBASE_CONCEPTS),
+    [knowledgebaseConcepts]
+  )
+
+  const activeFeed = useMemo(
+    () => (knowledgeFeed && knowledgeFeed.length > 0 ? knowledgeFeed : DEFAULT_KNOWLEDGE_FEED_ITEMS),
+    [knowledgeFeed]
+  )
+
+  const knowledgebasePrompt = useMemo(
+    () => formatKnowledgebaseForPrompt(activeKnowledgebase),
+    [activeKnowledgebase]
+  )
+
+  const feedPrompt = useMemo(
+    () => formatFeedForPrompt(activeFeed),
+    [activeFeed]
+  )
+
+  const quickPromptSuggestions = useMemo(() => {
+    const current = description.trim().toLowerCase()
+    return (promptMemory || [])
+      .filter((item) => item.prompt.trim().length >= 10)
+      .filter((item) => item.prompt.trim().toLowerCase() !== current)
+      .sort((a, b) => {
+        if (b.count !== a.count) return b.count - a.count
+        return b.lastUsedAt - a.lastUsedAt
+      })
+      .slice(0, 5)
+  }, [promptMemory, description])
+
+  const rememberPrompt = (promptText: string, mode: ConceptMode) => {
+    const normalized = promptText.trim()
+    if (normalized.length < 10) return
+
+    setPromptMemory((current) => {
+      const existing = current || []
+      const now = Date.now()
+      const existingIndex = existing.findIndex(
+        (item) => item.prompt.trim().toLowerCase() === normalized.toLowerCase()
+      )
+
+      if (existingIndex >= 0) {
+        const updated = [...existing]
+        const previous = updated[existingIndex]
+        updated[existingIndex] = {
+          ...previous,
+          conceptMode: mode,
+          count: previous.count + 1,
+          lastUsedAt: now,
+        }
+
+        return updated
+          .sort((a, b) => {
+            if (b.count !== a.count) return b.count - a.count
+            return b.lastUsedAt - a.lastUsedAt
+          })
+          .slice(0, 50)
+      }
+
+      return [
+        { prompt: normalized, conceptMode: mode, count: 1, lastUsedAt: now },
+        ...existing,
+      ]
+        .sort((a, b) => {
+          if (b.count !== a.count) return b.count - a.count
+          return b.lastUsedAt - a.lastUsedAt
+        })
+        .slice(0, 50)
+    })
+  }
 
   const generateMarketing = async () => {
     if (!isValidInput) {
@@ -40,32 +157,96 @@ function App() {
     setError(null)
 
     try {
-      const prompt = spark.llmPrompt`You are an expert marketing strategist. Based on the following topic or description, generate a comprehensive marketing strategy.
+      // Check if spark is available
+      if (typeof spark === "undefined") {
+        throw new Error("Spark API is not available. Please refresh the page.")
+      }
+
+      if (typeof spark.llmPrompt === "undefined") {
+        throw new Error("Spark LLM prompt is not available.")
+      }
+
+      const prompt = spark.llmPrompt`You are an elite marketing strategist, solutions architect, and AI automation consultant. Based on the topic below, produce a comprehensive strategy and implementation guidance at production depth.
 
 Topic/Description: ${description}
 
-Return your response as a valid JSON object with exactly three properties, where each property value is a STRING:
+Selected Concept Mode: ${conceptMode}
+Mode Instruction: ${CONCEPT_MODE_INSTRUCTION[conceptMode]}
+
+    Knowledgebase Database (persistent concept records):
+    ${knowledgebasePrompt}
+
+    Knowledge Feed Database (recent examples and references):
+    ${feedPrompt}
+
+    Use both databases as a quality bar and adapt to the user's domain.
+
+Return your response as a valid JSON object with exactly eight properties, where each property value is a STRING:
 1. "marketingCopy" - A string containing persuasive, engaging marketing copy (2-3 paragraphs) that highlights benefits, creates desire, and includes a compelling call-to-action
 2. "visualStrategy" - A string containing detailed visual strategy recommendations including suggested imagery, colors, design motifs, mood, and overall aesthetic direction. Write this as flowing paragraphs, NOT as a nested object.
 3. "targetAudience" - A string containing specific recommendation for the ideal target audience including demographics, psychographics, pain points, and why they need this
+4. "applicationWorkflow" - A string containing a practical application implementation workflow (architecture, key modules, API/service flow, phased build plan)
+5. "uiWorkflow" - A string containing step-by-step UI implementation guidance (screens/components, design system setup, interaction patterns, accessibility)
+6. "databaseWorkflow" - A string containing database implementation guidance (schema entities, relationships, migration approach, indexing, security/data validation)
+7. "mobileWorkflow" - A string containing mobile app implementation guidance (cross-platform approach, navigation, offline/state strategy, release milestones, push/notification considerations)
+8. "implementationChecklist" - A compact sprint-ready checklist string with clear tasks grouped by phases (MVP setup, build, test, launch). Keep it concise and actionable.
 
-IMPORTANT: All three values must be plain text strings, not nested objects or arrays. Write the visual strategy as descriptive paragraphs.
+IMPORTANT:
+- All eight values must be plain text strings, not nested objects or arrays.
+- Keep each section actionable and implementation-focused.
+- Use concise headings and bullet-like formatting inside each string where helpful.
+- Include concrete system-thinking details where relevant: integrations, failure handling, security/privacy, analytics, rollout sequencing, and measurable success criteria.
+- For workflows, provide phased guidance that a team can execute directly (Week 1/2/3 style or Phase 1/2/3).
+- Explicitly name which relevant archetype patterns you adapted in the guidance (without adding extra JSON fields).
 
 Make the content professional, actionable, and inspiring. Be specific and creative.`
 
-      const response = await spark.llm(prompt, "gpt-4o", true)
-      const parsedResult = JSON.parse(response) as MarketingResult
+      if (typeof spark.llm !== "function") {
+        throw new Error("Spark LLM function is not available.")
+      }
 
-      setResult(parsedResult)
+      const response = await spark.llm(prompt, "gpt-4o", true)
+      
+      if (!response) {
+        throw new Error("Empty response from LLM. Please try again.")
+      }
+
+      let parsedResult: MarketingResult
+      try {
+        parsedResult = JSON.parse(response) as MarketingResult
+      } catch {
+        console.error("Failed to parse response:", response)
+        throw new Error("Failed to parse response. Please try again.")
+      }
+
+      // Validate result structure
+      if (!parsedResult.marketingCopy || !parsedResult.visualStrategy || !parsedResult.targetAudience) {
+        throw new Error("Invalid response format. Please try again.")
+      }
+
+      const normalizedResult: MarketingResult = {
+        marketingCopy: parsedResult.marketingCopy,
+        visualStrategy: parsedResult.visualStrategy,
+        targetAudience: parsedResult.targetAudience,
+        applicationWorkflow: parsedResult.applicationWorkflow || "Application workflow guidance was not generated. Please regenerate to get implementation steps.",
+        uiWorkflow: parsedResult.uiWorkflow || "UI workflow guidance was not generated. Please regenerate to get implementation steps.",
+        databaseWorkflow: parsedResult.databaseWorkflow || "Database workflow guidance was not generated. Please regenerate to get implementation steps.",
+        mobileWorkflow: parsedResult.mobileWorkflow || "Mobile workflow guidance was not generated. Please regenerate to get implementation steps.",
+        implementationChecklist: parsedResult.implementationChecklist || "Implementation checklist was not generated. Please regenerate to get sprint-ready tasks.",
+      }
+
+      setResult(normalizedResult)
+      rememberPrompt(description, conceptMode)
       setCurrentDescription(description)
       
       setTimeout(() => {
         resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
       }, 100)
     } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred"
       console.error("Error generating marketing:", err)
-      setError("Failed to generate marketing strategy. Please try again.")
-      toast.error("Something went wrong. Please try again.")
+      setError(errorMessage)
+      toast.error(errorMessage)
     } finally {
       setIsLoading(false)
     }
@@ -200,15 +381,74 @@ Make the content professional, actionable, and inspiring. Be specific and creati
                 <label htmlFor="product-description" className="block text-sm font-semibold text-foreground mb-3">
                   Describe your topic, product, or service
                 </label>
-                <Textarea
-                  id="product-description"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  onKeyDown={handleKeyPress}
-                  placeholder="e.g., A sustainable fashion brand for eco-conscious millennials, an AI-powered productivity app for remote teams, a local coffee shop with artisan roasts..."
-                  className="min-h-32 mb-4 resize-none text-base leading-relaxed focus:ring-2 focus:ring-accent transition-all"
-                  maxLength={1000}
-                />
+                <div className="relative mb-4">
+                  <Textarea
+                    id="product-description"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    onKeyDown={handleKeyPress}
+                    onFocus={() => setShowPromptSuggestions(true)}
+                    onBlur={() => {
+                      setTimeout(() => {
+                        setShowPromptSuggestions(false)
+                      }, 150)
+                    }}
+                    placeholder="e.g., A sustainable fashion brand for eco-conscious millennials, an AI-powered productivity app for remote teams, a local coffee shop with artisan roasts..."
+                    className="min-h-32 resize-none text-base leading-relaxed focus:ring-2 focus:ring-accent transition-all"
+                    maxLength={1000}
+                  />
+
+                  {showPromptSuggestions && quickPromptSuggestions.length > 0 && (
+                    <div className="absolute z-20 w-full mt-2 bg-card border border-border/70 rounded-lg shadow-lg p-3">
+                      <p className="text-xs font-semibold text-muted-foreground mb-2">Quick adopt from your previous prompts</p>
+                      <div className="space-y-2 max-h-48 overflow-y-auto">
+                        {quickPromptSuggestions.map((item) => (
+                          <button
+                            key={item.prompt}
+                            type="button"
+                            onClick={() => {
+                              setDescription(item.prompt)
+                              setConceptMode(item.conceptMode)
+                            }}
+                            className="w-full text-left px-3 py-2 rounded-md border border-border/50 hover:bg-secondary/40 transition-colors"
+                          >
+                            <div className="text-sm text-foreground line-clamp-2">{item.prompt}</div>
+                            <div className="text-[11px] text-muted-foreground mt-1">
+                              Mode: {item.conceptMode} • Used {item.count} {item.count === 1 ? "time" : "times"}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mb-4">
+                  <label htmlFor="concept-mode" className="block text-sm font-semibold text-foreground mb-2">
+                    Concept Mode
+                  </label>
+                  <Select value={conceptMode} onValueChange={(value) => setConceptMode(value as ConceptMode)}>
+                    <SelectTrigger id="concept-mode" className="w-full">
+                      <SelectValue placeholder="Select concept mode" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="auto">Auto (Recommended)</SelectItem>
+                      <SelectItem value="sales">Sales Agent & Funnel</SelectItem>
+                      <SelectItem value="ecommerce">E-commerce Concierge</SelectItem>
+                      <SelectItem value="saas">SaaS Onboarding & Activation</SelectItem>
+                      <SelectItem value="education">Education Coach</SelectItem>
+                      <SelectItem value="healthcare">Healthcare Triage Assistant</SelectItem>
+                      <SelectItem value="fintech">Fintech Onboarding & Risk</SelectItem>
+                      <SelectItem value="ops">Internal Ops Copilot</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Choose a domain lens for strategy depth, or keep Auto to let AI select the best archetypes.
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Database loaded: {activeKnowledgebase.length} concepts • {activeFeed.length} feed items
+                  </p>
+                </div>
                 
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -304,6 +544,46 @@ Make the content professional, actionable, and inspiring. Be specific and creati
                       content={result.targetAudience}
                       delay={0.2}
                     />
+
+                    <div className="pt-2">
+                      <h3 className="text-xl font-semibold text-foreground mb-4">Implementation Workflows</h3>
+                      <div className="space-y-6">
+                        <ResultCard
+                          title="Application Workflow"
+                          icon={<Code size={24} weight="duotone" />}
+                          content={result.applicationWorkflow || "Application workflow guidance not available."}
+                          delay={0.3}
+                        />
+
+                        <ResultCard
+                          title="UI Workflow"
+                          icon={<Desktop size={24} weight="duotone" />}
+                          content={result.uiWorkflow || "UI workflow guidance not available."}
+                          delay={0.4}
+                        />
+
+                        <ResultCard
+                          title="Database Workflow"
+                          icon={<Database size={24} weight="duotone" />}
+                          content={result.databaseWorkflow || "Database workflow guidance not available."}
+                          delay={0.5}
+                        />
+
+                        <ResultCard
+                          title="Mobile Workflow"
+                          icon={<DeviceMobile size={24} weight="duotone" />}
+                          content={result.mobileWorkflow || "Mobile workflow guidance not available."}
+                          delay={0.6}
+                        />
+
+                        <ResultCard
+                          title="Implementation Checklist"
+                          icon={<ListChecks size={24} weight="duotone" />}
+                          content={result.implementationChecklist || "Implementation checklist not available."}
+                          delay={0.7}
+                        />
+                      </div>
+                    </div>
                   </div>
                 )}
                 
