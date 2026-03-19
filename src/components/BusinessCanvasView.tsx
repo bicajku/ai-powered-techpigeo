@@ -1,9 +1,10 @@
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { DownloadSimple } from "@phosphor-icons/react"
+import { DownloadSimple, FilePdf } from "@phosphor-icons/react"
 import { motion } from "framer-motion"
 import { BusinessCanvasModel } from "@/types"
 import { toast } from "sonner"
+import { jsPDF } from "jspdf"
 
 interface BusinessCanvasViewProps {
   canvas: BusinessCanvasModel
@@ -11,54 +12,132 @@ interface BusinessCanvasViewProps {
 }
 
 export function BusinessCanvasView({ canvas, ideaName }: BusinessCanvasViewProps) {
-  const handleExport = () => {
-    const content = `BUSINESS MODEL CANVAS
-${ideaName}
-Generated: ${new Date().toLocaleDateString()}
+  const handleExportPDF = () => {
+    try {
+      const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      })
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      const pageWidth = doc.internal.pageSize.getWidth()
+      const pageHeight = doc.internal.pageSize.getHeight()
+      const margin = 20
+      const contentWidth = pageWidth - (2 * margin)
+      let yPosition = margin
 
-KEY PARTNERS
-${canvas.keyPartners}
+      const primaryColor: [number, number, number] = [138, 145, 227]
+      const accentColor: [number, number, number] = [144, 202, 119]
+      const textColor: [number, number, number] = [51, 51, 77]
+      const mutedColor: [number, number, number] = [122, 122, 117]
 
-KEY ACTIVITIES
-${canvas.keyActivities}
+      doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2])
+      doc.rect(0, 0, pageWidth, 40, 'F')
 
-KEY RESOURCES
-${canvas.keyResources}
+      doc.setTextColor(255, 255, 255)
+      doc.setFontSize(24)
+      doc.setFont('helvetica', 'bold')
+      doc.text('TECHPIGEON', margin, 15)
+      
+      doc.setFontSize(11)
+      doc.setFont('helvetica', 'normal')
+      doc.text('AI-Powered Business Intelligence', margin, 22)
+      
+      doc.setFontSize(9)
+      doc.text('www.techpigeon.org', margin, 28)
 
-VALUE PROPOSITION
-${canvas.valueProposition}
+      yPosition = 50
 
-CUSTOMER RELATIONSHIPS
-${canvas.customerRelationships}
+      doc.setTextColor(textColor[0], textColor[1], textColor[2])
+      doc.setFontSize(20)
+      doc.setFont('helvetica', 'bold')
+      doc.text('Business Model Canvas', margin, yPosition)
+      
+      yPosition += 10
+      doc.setFontSize(10)
+      doc.setFont('helvetica', 'normal')
+      doc.setTextColor(mutedColor[0], mutedColor[1], mutedColor[2])
+      doc.text(`Generated: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`, margin, yPosition)
 
-CHANNELS
-${canvas.channels}
+      yPosition += 8
+      doc.setFontSize(12)
+      doc.setFont('helvetica', 'bold')
+      doc.setTextColor(textColor[0], textColor[1], textColor[2])
+      const ideaLines = doc.splitTextToSize(ideaName, contentWidth)
+      doc.text(ideaLines, margin, yPosition)
+      yPosition += (ideaLines.length * 6) + 8
 
-CUSTOMER SEGMENTS
-${canvas.customerSegments}
+      const addSection = (title: string, content: string, colorRGB: [number, number, number]) => {
+        if (yPosition > pageHeight - 60) {
+          doc.addPage()
+          yPosition = margin
+        }
 
-COST STRUCTURE
-${canvas.costStructure}
+        doc.setFillColor(colorRGB[0], colorRGB[1], colorRGB[2])
+        doc.rect(margin - 2, yPosition - 4, contentWidth + 4, 8, 'F')
+        
+        doc.setTextColor(255, 255, 255)
+        doc.setFontSize(11)
+        doc.setFont('helvetica', 'bold')
+        doc.text(title, margin, yPosition)
+        
+        yPosition += 8
+        
+        doc.setTextColor(textColor[0], textColor[1], textColor[2])
+        doc.setFontSize(9)
+        doc.setFont('helvetica', 'normal')
+        
+        const lines = doc.splitTextToSize(content, contentWidth)
+        const maxLinesPerPage = Math.floor((pageHeight - yPosition - margin) / 5)
+        
+        for (let i = 0; i < lines.length; i++) {
+          if (yPosition > pageHeight - margin - 10) {
+            doc.addPage()
+            yPosition = margin
+          }
+          doc.text(lines[i], margin, yPosition)
+          yPosition += 5
+        }
+        
+        yPosition += 6
+      }
 
-REVENUE STREAMS
-${canvas.revenueStreams}
+      addSection('VALUE PROPOSITION', canvas.valueProposition, primaryColor)
+      
+      addSection('KEY PARTNERS', canvas.keyPartners, accentColor)
+      addSection('KEY ACTIVITIES', canvas.keyActivities, accentColor)
+      addSection('KEY RESOURCES', canvas.keyResources, accentColor)
+      
+      addSection('CUSTOMER SEGMENTS', canvas.customerSegments, primaryColor)
+      addSection('CUSTOMER RELATIONSHIPS', canvas.customerRelationships, [100, 120, 180])
+      addSection('CHANNELS', canvas.channels, [100, 120, 180])
+      
+      addSection('COST STRUCTURE', canvas.costStructure, [200, 80, 80])
+      addSection('REVENUE STREAMS', canvas.revenueStreams, [80, 150, 80])
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-`
+      const totalPages = doc.getNumberOfPages()
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i)
+        
+        doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2])
+        doc.rect(0, pageHeight - 12, pageWidth, 12, 'F')
+        
+        doc.setTextColor(255, 255, 255)
+        doc.setFontSize(8)
+        doc.setFont('helvetica', 'normal')
+        doc.text('Powered by Techpigeon - Pakistan\'s Leading AI Platform', margin, pageHeight - 6)
+        
+        doc.text(`Page ${i} of ${totalPages}`, pageWidth - margin - 20, pageHeight - 6)
+      }
 
-    const blob = new Blob([content], { type: 'text/plain' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `business-canvas-${Date.now()}.txt`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-    
-    toast.success("Business Canvas exported successfully!")
+      const fileName = `business-canvas-${ideaName.substring(0, 30).replace(/[^a-z0-9]/gi, '-').toLowerCase()}-${Date.now()}.pdf`
+      doc.save(fileName)
+      
+      toast.success("Business Canvas exported to PDF successfully!")
+    } catch (error) {
+      console.error("Error exporting PDF:", error)
+      toast.error("Failed to export PDF. Please try again.")
+    }
   }
 
   return (
@@ -69,9 +148,9 @@ ${canvas.revenueStreams}
     >
       <div className="flex items-center justify-between">
         <h3 className="text-2xl font-bold text-foreground">Business Model Canvas</h3>
-        <Button onClick={handleExport} size="sm" variant="outline" className="gap-2">
-          <DownloadSimple weight="bold" size={16} />
-          Export
+        <Button onClick={handleExportPDF} size="sm" variant="default" className="gap-2">
+          <FilePdf weight="bold" size={16} />
+          Export to PDF
         </Button>
       </div>
 
