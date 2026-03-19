@@ -765,10 +765,9 @@ FORMATTING GUIDELINES:
                 strategies={savedStrategies || []} 
                 promptMemory={promptMemory || []}
               />
-            </TabsContent>
 
             <TabsContent value="saved" className="space-y-6">
-              {selectedForComparison.length > 0 && (
+            <TabsContent value="saved" className="space-y-6">
                 <motion.div
                   initial={{ opacity: 0, y: -10 }}
                   animate={{ opacity: 1, y: 0 }}
