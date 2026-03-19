@@ -95,3 +95,50 @@ export interface HumanizedResult {
   changes: { original: string; humanized: string }[]
   timestamp: number
 }
+
+export interface CookedIdea {
+  originalIdea: string
+  refinedIdea: string
+  keyInsights: string[]
+  marketOpportunity: string
+  competitiveAdvantage: string
+  targetMarket: string
+  revenueModel: string
+  keyRisks: string[]
+  nextSteps: string[]
+}
+
+export interface BusinessCanvasModel {
+  keyPartners: string
+  keyActivities: string
+  keyResources: string
+  valueProposition: string
+  customerRelationships: string
+  channels: string
+  customerSegments: string
+  costStructure: string
+  revenueStreams: string
+}
+
+export interface PitchDeck {
+  slides: PitchSlide[]
+  executiveSummary: string
+}
+
+export interface PitchSlide {
+  title: string
+  content: string
+  notes: string
+  slideNumber: number
+}
+
+export interface SavedIdea {
+  id: string
+  name: string
+  originalIdea: string
+  cookedIdea: CookedIdea
+  businessCanvas?: BusinessCanvasModel
+  pitchDeck?: PitchDeck
+  timestamp: number
+  userId: string
+}

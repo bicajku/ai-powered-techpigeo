@@ -16,6 +16,7 @@ import { WelcomeBanner } from "@/components/WelcomeBanner"
 import { TopNotchBanner } from "@/components/TopNotchBanner"
 import { Footer } from "@/components/Footer"
 import { PlagiarismChecker } from "@/components/PlagiarismChecker"
+import { IdeaGeneration } from "@/components/IdeaGeneration"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast } from "sonner"
@@ -511,10 +512,14 @@ FORMATTING GUIDELINES:
           </AnimatePresence>
 
           <Tabs defaultValue="generate" className="w-full">
-            <TabsList className={`grid w-full max-w-3xl mx-auto mb-8 ${user.role === "admin" ? "grid-cols-5" : "grid-cols-4"}`}>
+            <TabsList className={`grid w-full max-w-4xl mx-auto mb-8 ${user.role === "admin" ? "grid-cols-6" : "grid-cols-5"}`}>
               <TabsTrigger value="generate" className="gap-2">
                 <Lightbulb size={18} weight="bold" />
-                Generate
+                Strategy
+              </TabsTrigger>
+              <TabsTrigger value="ideas" className="gap-2">
+                <Sparkle size={18} weight="bold" />
+                Ideas
               </TabsTrigger>
               <TabsTrigger value="plagiarism" className="gap-2">
                 <MagnifyingGlass size={18} weight="bold" />
@@ -754,6 +759,10 @@ FORMATTING GUIDELINES:
                 
                 {!isLoading && !result && !error && <EmptyState />}
               </div>
+            </TabsContent>
+
+            <TabsContent value="ideas" className="space-y-6">
+              <IdeaGeneration userId={user.id} />
             </TabsContent>
 
             <TabsContent value="plagiarism" className="space-y-6">
