@@ -3,10 +3,18 @@ import { UserProfile } from "@/types"
 const USERS_STORAGE_KEY = "platform-users"
 const CURRENT_USER_KEY = "current-user-id"
 const USER_CREDENTIALS_KEY = "user-credentials"
+const RESET_CODES_KEY = "password-reset-codes"
 
 interface StoredCredential {
   email: string
   passwordHash: string
+  userId: string
+}
+
+interface PasswordResetCode {
+  email: string
+  code: string
+  expiresAt: number
   userId: string
 }
 
@@ -232,6 +240,117 @@ export const authService = {
     } catch (error) {
       console.error("Update profile error:", error)
       return { success: false, error: "Failed to update profile. Please try again." }
+    }
+  },
+
+  async requestPasswordReset(email: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      if (!email) {
+        return { success: false, error: "Email is required" }
+      }
+
+      const credentials = await spark.kv.get<Record<string, StoredCredential>>(USER_CREDENTIALS_KEY) || {}
+      const credential = credentials[email.toLowerCase()]
+
+      if (!credential) {
+        return { success: true }
+      }
+
+      const resetCode = Math.floor(100000 + Math.random() * 900000).toString()
+      const expiresAt = Date.now() + 15 * 60 * 1000
+
+      const resetCodes = await spark.kv.get<Record<string, PasswordResetCode>>(RESET_CODES_KEY) || {}
+      
+      resetCodes[email.toLowerCase()] = {
+        email: email.toLowerCase(),
+        code: resetCode,
+        expiresAt,
+        userId: credential.userId,
+      }
+
+      await spark.kv.set(RESET_CODES_KEY, resetCodes)
+
+      console.log(`Password reset code for ${email}: ${resetCode} (expires in 15 minutes)`)
+
+      return { success: true }
+    } catch (error) {
+      console.error("Request password reset error:", error)
+      return { success: false, error: "Failed to process reset request. Please try again." }
+    }
+  },
+
+  async verifyResetCode(email: string, code: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      if (!email || !code) {
+        return { success: false, error: "Email and code are required" }
+      }
+
+      const resetCodes = await spark.kv.get<Record<string, PasswordResetCode>>(RESET_CODES_KEY) || {}
+      const resetData = resetCodes[email.toLowerCase()]
+
+      if (!resetData) {
+        return { success: false, error: "Invalid or expired reset code" }
+      }
+
+      if (resetData.code !== code) {
+        return { success: false, error: "Invalid reset code" }
+      }
+
+      if (Date.now() > resetData.expiresAt) {
+        delete resetCodes[email.toLowerCase()]
+        await spark.kv.set(RESET_CODES_KEY, resetCodes)
+        return { success: false, error: "Reset code has expired. Please request a new one." }
+      }
+
+      return { success: true }
+    } catch (error) {
+      console.error("Verify reset code error:", error)
+      return { success: false, error: "Failed to verify code. Please try again." }
+    }
+  },
+
+  async resetPassword(email: string, code: string, newPassword: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      if (!email || !code || !newPassword) {
+        return { success: false, error: "All fields are required" }
+      }
+
+      if (newPassword.length < 6) {
+        return { success: false, error: "Password must be at least 6 characters" }
+      }
+
+      const verifyResult = await this.verifyResetCode(email, code)
+      if (!verifyResult.success) {
+        return verifyResult
+      }
+
+      const resetCodes = await spark.kv.get<Record<string, PasswordResetCode>>(RESET_CODES_KEY) || {}
+      const resetData = resetCodes[email.toLowerCase()]
+
+      if (!resetData) {
+        return { success: false, error: "Invalid reset session" }
+      }
+
+      const credentials = await spark.kv.get<Record<string, StoredCredential>>(USER_CREDENTIALS_KEY) || {}
+      const credential = credentials[email.toLowerCase()]
+
+      if (!credential) {
+        return { success: false, error: "User not found" }
+      }
+
+      const newPasswordHash = await simpleHash(newPassword)
+      credential.passwordHash = newPasswordHash
+      credentials[email.toLowerCase()] = credential
+
+      await spark.kv.set(USER_CREDENTIALS_KEY, credentials)
+
+      delete resetCodes[email.toLowerCase()]
+      await spark.kv.set(RESET_CODES_KEY, resetCodes)
+
+      return { success: true }
+    } catch (error) {
+      console.error("Reset password error:", error)
+      return { success: false, error: "Failed to reset password. Please try again." }
     }
   },
 }

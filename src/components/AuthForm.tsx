@@ -9,6 +9,7 @@ import { motion } from "framer-motion"
 import { authService } from "@/lib/auth"
 import { toast } from "sonner"
 import { UserProfile } from "@/types"
+import { PasswordResetFlow } from "@/components/PasswordResetFlow"
 
 interface AuthFormProps {
   onAuthSuccess: (user: UserProfile) => void
@@ -17,9 +18,14 @@ interface AuthFormProps {
 export function AuthForm({ onAuthSuccess }: AuthFormProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [isSignUp, setIsSignUp] = useState(false)
+  const [showPasswordReset, setShowPasswordReset] = useState(false)
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [fullName, setFullName] = useState("")
+
+  if (showPasswordReset) {
+    return <PasswordResetFlow onBack={() => setShowPasswordReset(false)} />
+  }
 
   const handleGitHubLogin = async () => {
     setIsLoading(true)
@@ -145,9 +151,21 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password" className="text-sm font-medium">
-                Password
-              </Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="password" className="text-sm font-medium">
+                  Password
+                </Label>
+                {!isSignUp && (
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswordReset(true)}
+                    className="text-xs text-primary hover:underline"
+                    disabled={isLoading}
+                  >
+                    Forgot password?
+                  </button>
+                )}
+              </div>
               <div className="relative">
                 <LockKey size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                 <Input
