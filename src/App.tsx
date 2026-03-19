@@ -173,33 +173,34 @@ Topic/Description: ${description}
 Selected Concept Mode: ${conceptMode}
 Mode Instruction: ${CONCEPT_MODE_INSTRUCTION[conceptMode]}
 
-    Knowledgebase Database (persistent concept records):
-    ${knowledgebasePrompt}
+Knowledgebase Database (persistent concept records):
+${knowledgebasePrompt}
 
-    Knowledge Feed Database (recent examples and references):
-    ${feedPrompt}
+Knowledge Feed Database (recent examples and references):
+${feedPrompt}
 
-    Use both databases as a quality bar and adapt to the user's domain.
+Use both databases as a quality bar and adapt to the user's domain.
 
-Return your response as a valid JSON object with exactly eight properties, where each property value is a STRING:
-1. "marketingCopy" - A string containing persuasive, engaging marketing copy (2-3 paragraphs) that highlights benefits, creates desire, and includes a compelling call-to-action
-2. "visualStrategy" - A string containing detailed visual strategy recommendations including suggested imagery, colors, design motifs, mood, and overall aesthetic direction. Write this as flowing paragraphs, NOT as a nested object.
-3. "targetAudience" - A string containing specific recommendation for the ideal target audience including demographics, psychographics, pain points, and why they need this
-4. "applicationWorkflow" - A string containing a practical application implementation workflow (architecture, key modules, API/service flow, phased build plan)
-5. "uiWorkflow" - A string containing step-by-step UI implementation guidance (screens/components, design system setup, interaction patterns, accessibility)
-6. "databaseWorkflow" - A string containing database implementation guidance (schema entities, relationships, migration approach, indexing, security/data validation)
-7. "mobileWorkflow" - A string containing mobile app implementation guidance (cross-platform approach, navigation, offline/state strategy, release milestones, push/notification considerations)
-8. "implementationChecklist" - A compact sprint-ready checklist string with clear tasks grouped by phases (MVP setup, build, test, launch). Keep it concise and actionable.
+CRITICAL: You MUST return ONLY a valid JSON object. Do not include any text before or after the JSON. The JSON must have exactly these eight properties:
+
+{
+  "marketingCopy": "Persuasive, engaging marketing copy (2-3 paragraphs) that highlights benefits, creates desire, and includes a compelling call-to-action",
+  "visualStrategy": "Detailed visual strategy recommendations including suggested imagery, colors, design motifs, mood, and overall aesthetic direction. Write this as flowing paragraphs.",
+  "targetAudience": "Specific recommendation for the ideal target audience including demographics, psychographics, pain points, and why they need this",
+  "applicationWorkflow": "Practical application implementation workflow (architecture, key modules, API/service flow, phased build plan)",
+  "uiWorkflow": "Step-by-step UI implementation guidance (screens/components, design system setup, interaction patterns, accessibility)",
+  "databaseWorkflow": "Database implementation guidance (schema entities, relationships, migration approach, indexing, security/data validation)",
+  "mobileWorkflow": "Mobile app implementation guidance (cross-platform approach, navigation, offline/state strategy, release milestones, push/notification considerations)",
+  "implementationChecklist": "Compact sprint-ready checklist with clear tasks grouped by phases (MVP setup, build, test, launch). Keep it concise and actionable."
+}
 
 IMPORTANT:
-- All eight values must be plain text strings, not nested objects or arrays.
-- Keep each section actionable and implementation-focused.
-- Use concise headings and bullet-like formatting inside each string where helpful.
-- Include concrete system-thinking details where relevant: integrations, failure handling, security/privacy, analytics, rollout sequencing, and measurable success criteria.
-- For workflows, provide phased guidance that a team can execute directly (Week 1/2/3 style or Phase 1/2/3).
-- Explicitly name which relevant archetype patterns you adapted in the guidance (without adding extra JSON fields).
-
-Make the content professional, actionable, and inspiring. Be specific and creative.`
+- All eight values must be plain text strings, not nested objects or arrays
+- Keep each section actionable and implementation-focused
+- Use concise headings and bullet-like formatting inside each string where helpful
+- Include concrete system-thinking details where relevant
+- For workflows, provide phased guidance that a team can execute directly
+- Make the content professional, actionable, and inspiring. Be specific and creative.`
 
       if (typeof spark.llm !== "function") {
         throw new Error("Spark LLM function is not available.")
@@ -213,15 +214,29 @@ Make the content professional, actionable, and inspiring. Be specific and creati
 
       let parsedResult: MarketingResult
       try {
-        parsedResult = JSON.parse(response) as MarketingResult
-      } catch {
-        console.error("Failed to parse response:", response)
-        throw new Error("Failed to parse response. Please try again.")
+        const cleanedResponse = response.trim()
+        console.log("Raw LLM response length:", cleanedResponse.length)
+        console.log("First 200 chars:", cleanedResponse.substring(0, 200))
+        
+        parsedResult = JSON.parse(cleanedResponse) as MarketingResult
+        
+        console.log("Successfully parsed result with keys:", Object.keys(parsedResult))
+      } catch (parseError) {
+        console.error("JSON Parse Error:", parseError)
+        console.error("Raw response:", response)
+        console.error("Response type:", typeof response)
+        
+        throw new Error(`Failed to parse response: ${parseError instanceof Error ? parseError.message : 'Unknown error'}. Please try again.`)
       }
 
-      // Validate result structure
+      if (!parsedResult || typeof parsedResult !== 'object') {
+        console.error("Parsed result is not an object:", parsedResult)
+        throw new Error("Invalid response format - expected an object. Please try again.")
+      }
+
       if (!parsedResult.marketingCopy || !parsedResult.visualStrategy || !parsedResult.targetAudience) {
-        throw new Error("Invalid response format. Please try again.")
+        console.error("Missing required fields. Available keys:", Object.keys(parsedResult))
+        throw new Error(`Invalid response format - missing required fields. Got: ${Object.keys(parsedResult).join(', ')}`)
       }
 
       const normalizedResult: MarketingResult = {
