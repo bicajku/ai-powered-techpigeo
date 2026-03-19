@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   Dialog,
@@ -15,7 +16,7 @@ import {
 import { UserProfile } from "@/types"
 import { authService } from "@/lib/auth"
 import { toast } from "sonner"
-import { PencilSimple } from "@phosphor-icons/react"
+import { PencilSimple, ShieldCheck, User } from "@phosphor-icons/react"
 
 interface ProfileEditProps {
   user: UserProfile
@@ -29,7 +30,6 @@ export function ProfileEdit({ user, open, onOpenChange, onProfileUpdate }: Profi
   const [formData, setFormData] = useState({
     fullName: user.fullName,
     company: user.company || "",
-    role: user.role || "",
     industry: user.industry || "",
     bio: user.bio || "",
   })
@@ -64,8 +64,19 @@ export function ProfileEdit({ user, open, onOpenChange, onProfileUpdate }: Profi
             <PencilSimple size={24} weight="duotone" className="text-primary" />
             Edit Profile
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="flex items-center gap-2">
             Update your profile information and preferences
+            {user.role === "admin" ? (
+              <Badge variant="default" className="bg-primary ml-2">
+                <ShieldCheck size={14} weight="bold" className="mr-1" />
+                Admin
+              </Badge>
+            ) : (
+              <Badge variant="secondary" className="ml-2">
+                <User size={14} weight="bold" className="mr-1" />
+                Client
+              </Badge>
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -99,13 +110,13 @@ export function ProfileEdit({ user, open, onOpenChange, onProfileUpdate }: Profi
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="edit-role">Role</Label>
+              <Label htmlFor="edit-company">Company</Label>
               <Input
-                id="edit-role"
+                id="edit-company"
                 type="text"
-                placeholder="Marketing Manager"
-                value={formData.role}
-                onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                placeholder="Acme Inc"
+                value={formData.company}
+                onChange={(e) => setFormData({ ...formData, company: e.target.value })}
                 disabled={isLoading}
               />
             </div>

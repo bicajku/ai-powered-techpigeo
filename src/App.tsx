@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
-import { Sparkle, Lightbulb, ChatsCircle, Palette, Target, ArrowClockwise, FloppyDisk, FolderOpen, Code, Desktop, Database, DeviceMobile, ListChecks, ChartBar } from "@phosphor-icons/react"
+import { Sparkle, Lightbulb, ChatsCircle, Palette, Target, ArrowClockwise, FloppyDisk, FolderOpen, Code, Desktop, Database, DeviceMobile, ListChecks, ChartBar, ShieldCheck } from "@phosphor-icons/react"
 import { ResultCard } from "@/components/ResultCard"
 import { LoadingState } from "@/components/LoadingState"
 import { EmptyState } from "@/components/EmptyState"
@@ -11,6 +11,7 @@ import { SaveStrategyDialog } from "@/components/SaveStrategyDialog"
 import { AuthForm } from "@/components/AuthForm"
 import { UserMenu } from "@/components/UserMenu"
 import { Dashboard } from "@/components/Dashboard"
+import { AdminDashboard } from "@/components/AdminDashboard"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast } from "sonner"
@@ -74,6 +75,7 @@ function App() {
 
   useEffect(() => {
     const checkAuth = async () => {
+      await authService.initializeMasterAdmin()
       const currentUser = await authService.getCurrentUser()
       setUser(currentUser)
       setIsCheckingAuth(false)
@@ -479,7 +481,7 @@ FORMATTING GUIDELINES:
           </motion.header>
 
           <Tabs defaultValue="generate" className="w-full">
-            <TabsList className="grid w-full max-w-2xl mx-auto grid-cols-3 mb-8">
+            <TabsList className={`grid w-full max-w-2xl mx-auto mb-8 ${user.role === "admin" ? "grid-cols-4" : "grid-cols-3"}`}>
               <TabsTrigger value="generate" className="gap-2">
                 <Lightbulb size={18} weight="bold" />
                 Generate
@@ -492,6 +494,12 @@ FORMATTING GUIDELINES:
                 <FolderOpen size={18} weight="bold" />
                 Saved ({savedStrategies?.length || 0})
               </TabsTrigger>
+              {user.role === "admin" && (
+                <TabsTrigger value="admin" className="gap-2">
+                  <ShieldCheck size={18} weight="bold" />
+                  Admin
+                </TabsTrigger>
+              )}
             </TabsList>
 
             <TabsContent value="generate" className="space-y-8">
@@ -760,6 +768,12 @@ FORMATTING GUIDELINES:
                 selectedForComparison={selectedForComparison}
               />
             </TabsContent>
+
+            {user.role === "admin" && (
+              <TabsContent value="admin" className="space-y-6">
+                <AdminDashboard />
+              </TabsContent>
+            )}
           </Tabs>
         </div>
       </div>

@@ -1,9 +1,35 @@
-import { UserProfile, UserCredentials } from "@/types"
+import { UserProfile, UserCredentials, UserRole } from "@/types"
 
 const USERS_STORAGE_KEY = "platform-users"
 const CURRENT_USER_KEY = "current-user-id"
+const MASTER_ADMIN_USERNAME = "admin"
+const MASTER_ADMIN_PASSWORD = "admin123"
 
 export const authService = {
+  async initializeMasterAdmin(): Promise<void> {
+    try {
+      const users = await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
+      
+      if (!users[MASTER_ADMIN_USERNAME]) {
+        const hashedPassword = await hashPassword(MASTER_ADMIN_PASSWORD)
+        const adminUser: UserProfile = {
+          id: "admin_master",
+          email: MASTER_ADMIN_USERNAME,
+          fullName: "Master Admin",
+          role: "admin",
+          createdAt: Date.now(),
+          lastLoginAt: Date.now(),
+        }
+        
+        users[MASTER_ADMIN_USERNAME] = adminUser
+        await spark.kv.set(USERS_STORAGE_KEY, users)
+        await spark.kv.set(`password_${MASTER_ADMIN_USERNAME}`, hashedPassword)
+      }
+    } catch (error) {
+      console.error("Failed to initialize master admin:", error)
+    }
+  },
+
   async register(credentials: UserCredentials & { fullName: string }): Promise<{ success: boolean; user?: UserProfile; error?: string }> {
     try {
       const users = await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
@@ -19,6 +45,7 @@ export const authService = {
         id: userId,
         email: credentials.email,
         fullName: credentials.fullName,
+        role: "client",
         createdAt: Date.now(),
         lastLoginAt: Date.now(),
       }

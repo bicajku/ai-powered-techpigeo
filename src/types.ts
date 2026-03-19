@@ -17,12 +17,14 @@ export interface SavedStrategy {
   timestamp: number
 }
 
+export type UserRole = "admin" | "client"
+
 export interface UserProfile {
   id: string
   email: string
   fullName: string
   company?: string
-  role?: string
+  role: UserRole
   industry?: string
   bio?: string
   avatarUrl?: string
