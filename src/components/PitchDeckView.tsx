@@ -2,10 +2,11 @@ import { useState } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { DownloadSimple, CaretLeft, CaretRight } from "@phosphor-icons/react"
+import { FilePdf, CaretLeft, CaretRight } from "@phosphor-icons/react"
 import { motion, AnimatePresence } from "framer-motion"
 import { PitchDeck } from "@/types"
 import { toast } from "sonner"
+import { jsPDF } from "jspdf"
 
 interface PitchDeckViewProps {
   pitchDeck: PitchDeck
@@ -15,41 +16,153 @@ interface PitchDeckViewProps {
 export function PitchDeckView({ pitchDeck, ideaName }: PitchDeckViewProps) {
   const [currentSlide, setCurrentSlide] = useState(0)
 
-  const handleExport = () => {
-    const content = `PITCH DECK
-${ideaName}
-Generated: ${new Date().toLocaleDateString()}
+  const handleExportPDF = () => {
+    try {
+      const doc = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a4'
+      })
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      const pageWidth = doc.internal.pageSize.getWidth()
+      const pageHeight = doc.internal.pageSize.getHeight()
+      const margin = 20
+      const contentWidth = pageWidth - (2 * margin)
 
-EXECUTIVE SUMMARY
-${pitchDeck.executiveSummary}
+      const primaryColor: [number, number, number] = [138, 145, 227]
+      const accentColor: [number, number, number] = [144, 202, 119]
+      const textColor: [number, number, number] = [51, 51, 77]
+      const mutedColor: [number, number, number] = [122, 122, 117]
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2])
+      doc.rect(0, 0, pageWidth, pageHeight, 'F')
 
-${pitchDeck.slides.map((slide) => `
-SLIDE ${slide.slideNumber}: ${slide.title.toUpperCase()}
+      doc.setTextColor(255, 255, 255)
+      doc.setFontSize(48)
+      doc.setFont('helvetica', 'bold')
+      const titleLines = doc.splitTextToSize(ideaName, contentWidth - 40)
+      const titleY = pageHeight / 2 - (titleLines.length * 10)
+      doc.text(titleLines, pageWidth / 2, titleY, { align: 'center' })
 
-${slide.content}
+      doc.setFontSize(18)
+      doc.setFont('helvetica', 'normal')
+      doc.text('INVESTOR PITCH DECK', pageWidth / 2, titleY + (titleLines.length * 12) + 10, { align: 'center' })
 
-Speaker Notes:
-${slide.notes}
+      doc.setFillColor(255, 255, 255)
+      doc.rect(margin, pageHeight - 35, contentWidth, 20, 'F')
+      
+      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2])
+      doc.setFontSize(20)
+      doc.setFont('helvetica', 'bold')
+      doc.text('TECHPIGEON', pageWidth / 2, pageHeight - 27, { align: 'center' })
+      
+      doc.setFontSize(10)
+      doc.setFont('helvetica', 'normal')
+      doc.text('AI-Powered Business Intelligence Platform', pageWidth / 2, pageHeight - 20, { align: 'center' })
+      
+      doc.setFontSize(8)
+      doc.text('www.techpigeon.org', pageWidth / 2, pageHeight - 15, { align: 'center' })
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-`).join('\n')}
-`
+      doc.addPage()
 
-    const blob = new Blob([content], { type: 'text/plain' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `pitch-deck-${Date.now()}.txt`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-    
-    toast.success("Pitch Deck exported successfully!")
+      doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2])
+      doc.rect(0, 0, pageWidth, 30, 'F')
+
+      doc.setTextColor(255, 255, 255)
+      doc.setFontSize(20)
+      doc.setFont('helvetica', 'bold')
+      doc.text('Executive Summary', margin, 20)
+
+      let yPosition = 45
+
+      doc.setTextColor(textColor[0], textColor[1], textColor[2])
+      doc.setFontSize(11)
+      doc.setFont('helvetica', 'normal')
+      
+      const summaryLines = doc.splitTextToSize(pitchDeck.executiveSummary, contentWidth)
+      for (let i = 0; i < summaryLines.length; i++) {
+        if (yPosition > pageHeight - margin - 20) {
+          doc.addPage()
+          yPosition = margin
+        }
+        doc.text(summaryLines[i], margin, yPosition)
+        yPosition += 6
+      }
+
+      doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2])
+      doc.rect(0, pageHeight - 12, pageWidth, 12, 'F')
+      
+      doc.setTextColor(255, 255, 255)
+      doc.setFontSize(8)
+      doc.text('Powered by Techpigeon', margin, pageHeight - 5)
+      doc.text('Page 2', pageWidth - margin - 15, pageHeight - 5)
+
+      pitchDeck.slides.forEach((slide, index) => {
+        doc.addPage()
+
+        const slideColor: [number, number, number] = index % 2 === 0 ? primaryColor : accentColor
+
+        doc.setFillColor(slideColor[0], slideColor[1], slideColor[2])
+        doc.rect(0, 0, pageWidth, 30, 'F')
+
+        doc.setTextColor(255, 255, 255)
+        doc.setFontSize(24)
+        doc.setFont('helvetica', 'bold')
+        doc.text(slide.title, margin, 20)
+
+        doc.setFontSize(10)
+        doc.setFont('helvetica', 'normal')
+        doc.text(`Slide ${slide.slideNumber} of ${pitchDeck.slides.length}`, pageWidth - margin - 30, 20)
+
+        yPosition = 45
+
+        doc.setTextColor(textColor[0], textColor[1], textColor[2])
+        doc.setFontSize(11)
+        doc.setFont('helvetica', 'normal')
+        
+        const contentLines = doc.splitTextToSize(slide.content, contentWidth)
+        for (let i = 0; i < contentLines.length; i++) {
+          if (yPosition > pageHeight - 65) break
+          doc.text(contentLines[i], margin, yPosition)
+          yPosition += 6
+        }
+
+        const notesY = pageHeight - 55
+
+        doc.setFillColor(245, 245, 245)
+        doc.rect(margin, notesY - 5, contentWidth, 40, 'F')
+
+        doc.setTextColor(mutedColor[0], mutedColor[1], mutedColor[2])
+        doc.setFontSize(9)
+        doc.setFont('helvetica', 'bold')
+        doc.text('Speaker Notes:', margin + 3, notesY)
+
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(8)
+        const notesLines = doc.splitTextToSize(slide.notes, contentWidth - 6)
+        let notesYPos = notesY + 5
+        for (let i = 0; i < notesLines.length && i < 6; i++) {
+          doc.text(notesLines[i], margin + 3, notesYPos)
+          notesYPos += 4
+        }
+
+        doc.setFillColor(slideColor[0], slideColor[1], slideColor[2])
+        doc.rect(0, pageHeight - 12, pageWidth, 12, 'F')
+        
+        doc.setTextColor(255, 255, 255)
+        doc.setFontSize(8)
+        doc.text('Powered by Techpigeon', margin, pageHeight - 5)
+        doc.text(`Page ${index + 3}`, pageWidth - margin - 15, pageHeight - 5)
+      })
+
+      const fileName = `pitch-deck-${ideaName.substring(0, 30).replace(/[^a-z0-9]/gi, '-').toLowerCase()}-${Date.now()}.pdf`
+      doc.save(fileName)
+      
+      toast.success("Pitch Deck exported to PDF successfully!")
+    } catch (error) {
+      console.error("Error exporting PDF:", error)
+      toast.error("Failed to export PDF. Please try again.")
+    }
   }
 
   const nextSlide = () => {
@@ -79,9 +192,9 @@ ${slide.notes}
             {pitchDeck.slides.length} slides ready for your presentation
           </p>
         </div>
-        <Button onClick={handleExport} size="sm" variant="outline" className="gap-2">
-          <DownloadSimple weight="bold" size={16} />
-          Export
+        <Button onClick={handleExportPDF} size="sm" variant="default" className="gap-2">
+          <FilePdf weight="bold" size={16} />
+          Export to PDF
         </Button>
       </div>
 
