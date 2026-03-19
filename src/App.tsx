@@ -14,6 +14,7 @@ import { Dashboard } from "@/components/Dashboard"
 import { AdminDashboard } from "@/components/AdminDashboard"
 import { WelcomeBanner } from "@/components/WelcomeBanner"
 import { TopNotchBanner } from "@/components/TopNotchBanner"
+import { Footer } from "@/components/Footer"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast } from "sonner"
@@ -491,7 +492,7 @@ FORMATTING GUIDELINES:
               <div className="flex items-center gap-3">
                 <Sparkle size={40} weight="duotone" className="text-primary" />
                 <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-foreground">
-                  AI-Powered TechPigeon Assistant
+                  AI-Powered Techpigeon Assistant
                 </h1>
               </div>
               <UserMenu user={user} onLogout={handleLogout} onProfileUpdate={handleProfileUpdate} />
@@ -500,7 +501,7 @@ FORMATTING GUIDELINES:
               Pakistan's leading AI platform for intelligent marketing strategies and business insights
             </p>
             <p className="text-sm text-muted-foreground mt-2 text-center md:text-left">
-              Powered by <a href="https://www.techpigeon.org" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-medium">TechPigeon</a>
+              Powered by <a href="https://www.techpigeon.org" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-medium">Techpigeon</a>
             </p>
           </motion.header>
 
@@ -804,6 +805,8 @@ FORMATTING GUIDELINES:
             )}
           </Tabs>
         </div>
+        
+        <Footer />
       </div>
     </>
   );

@@ -79,16 +79,56 @@ export function exportStrategyAsPDF(strategy: SavedStrategy) {
       }
       .footer {
         margin-top: 48px;
-        padding-top: 16px;
-        border-top: 1px solid #e2e8f0;
-        text-align: center;
-        color: #94a3b8;
-        font-size: 12px;
+        padding-top: 24px;
+        border-top: 2px solid #2563eb;
       }
-      .logo {
+      .footer-logo {
         color: #2563eb;
         font-weight: 700;
+        font-size: 18px;
+        margin-bottom: 16px;
+        text-align: center;
+      }
+      .footer-tagline {
+        color: #64748b;
+        font-size: 13px;
+        text-align: center;
+        margin-bottom: 20px;
+      }
+      .contact-section {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        margin-bottom: 16px;
+      }
+      .contact-block {
+        background: #f8fafc;
+        padding: 16px;
+        border-radius: 8px;
+        border-left: 3px solid #2563eb;
+      }
+      .contact-title {
+        font-weight: 700;
+        color: #1e293b;
         font-size: 14px;
+        margin-bottom: 8px;
+      }
+      .contact-info {
+        font-size: 12px;
+        color: #475569;
+        line-height: 1.8;
+      }
+      .footer-bottom {
+        text-align: center;
+        padding-top: 16px;
+        border-top: 1px solid #e2e8f0;
+        color: #94a3b8;
+        font-size: 11px;
+      }
+      .website-link {
+        color: #2563eb;
+        text-decoration: none;
+        font-weight: 600;
       }
     </style>
   `
@@ -128,8 +168,32 @@ export function exportStrategyAsPDF(strategy: SavedStrategy) {
       ${optionalSectionsHtml}
       
       <div class="footer">
-        <div class="logo">Techpigeon AI Marketing Assistant</div>
-        <div>Powered by AI • www.techpigeon.org</div>
+        <div class="footer-logo">Techpigeon</div>
+        <div class="footer-tagline">AI-Powered Marketing Intelligence Platform</div>
+        
+        <div class="contact-section">
+          <div class="contact-block">
+            <div class="contact-title">Techpigeon Pakistan</div>
+            <div class="contact-info">
+              G-7/4, Islamabad 44000, Pakistan<br>
+              Phone: +1 (786) 822-6386
+            </div>
+          </div>
+          
+          <div class="contact-block">
+            <div class="contact-title">Techpigeon Spark LLC 🇴🇲</div>
+            <div class="contact-info">
+              Dohat al adab st, Alkhuwair, 133<br>
+              Muscat, Oman<br>
+              Phone: +968 767 86324
+            </div>
+          </div>
+        </div>
+        
+        <div class="footer-bottom">
+          © ${new Date().getFullYear()} Techpigeon. All rights reserved.<br>
+          Visit us at <a href="https://www.techpigeon.org" class="website-link">www.techpigeon.org</a>
+        </div>
       </div>
     </body>
   `
