@@ -5,7 +5,7 @@ import { motion } from "framer-motion"
 import { BusinessCanvasModel } from "@/types"
 import { toast } from "sonner"
 import { jsPDF } from "jspdf"
-import { exportCanvasAsWord } from "@/lib/document-export"
+import { exportBusinessCanvasAsWord } from "@/lib/document-export"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,7 +21,7 @@ interface BusinessCanvasViewProps {
 export function BusinessCanvasView({ canvas, ideaName }: BusinessCanvasViewProps) {
   const handleExportWord = async () => {
     try {
-      await exportCanvasAsWord(canvas, ideaName)
+      await exportBusinessCanvasAsWord(canvas, ideaName)
       toast.success("Business Canvas exported to Word successfully!")
     } catch (error) {
       console.error("Error exporting Word:", error)
