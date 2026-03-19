@@ -1,11 +1,11 @@
 import { SavedStrategy, BusinessCanvasModel, PitchDeck } from "@/types"
 
+export function exportStrategyAsWord(strategy: SavedStrategy) {
+  const htmlContent = `
 <!DOCTYPE html>
+<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
 <head>
-  <title>${stra
-    <w:WordDocument>
-      
-  </xml>
+  <meta charset="UTF-8">
   <title>${strategy.name}</title>
   <xml>
     <w:WordDocument>
@@ -14,54 +14,55 @@ import { SavedStrategy, BusinessCanvasModel, PitchDeck } from "@/types"
     </w:WordDocument>
   </xml>
   <style>
-      page-
+    @page {
+      size: 8.5in 11in;
+      margin: 1in;
+    }
+    body {
+      font-family: 'Inter', 'Calibri', sans-serif;
+      font-size: 11pt;
+      line-height: 1.5;
+    }
+    h1 {
+      font-family: 'Lora', 'Cambria', serif;
+      font-size: 24pt;
+      font-weight: bold;
+      color: #33334D;
+      margin-top: 0;
+      page-break-inside: avoid;
+    }
     h2 {
-      font-weight:
-     
+      font-size: 16pt;
+      font-weight: bold;
+      color: #33334D;
+      margin-top: 18pt;
+      margin-bottom: 8pt;
+      page-break-inside: avoid;
     }
+    .header {
       background: #8A91E3;
+      color: white;
       padding: 24pt;
-      text-align: cente
+      margin: -1in -1in 24pt -1in;
+      text-align: center;
+    }
     .header h1 {
-     
-    .sec
+      color: white;
+      font-size: 32pt;
+      margin: 0;
+    }
+    .section {
+      margin: 12pt 0;
       padding: 12pt;
-      background: #F8F
+      border: 1pt solid #E0E0E0;
+      background: #F8F9FA;
+      page-break-inside: avoid;
     }
-      font-size: 10pt
-      margin-bottom:
-    .implementation-section {
-     
+    .meta {
+      font-size: 10pt;
+      color: #666;
+      margin-bottom: 18pt;
     }
-      margin-top: 36pt
-      border-top: 2pt so
-      font-size: 9pt;
-    }
-      font-size: 20pt;
-     
-    }
-</head>
-  <div class="heade
-    <div>Pakistan's 
-
-
-    <
-      year: 'num
-      day: 'numeric
-    <p><strong>T
-     
-  </div>
-  <div class="section
-    <p>${strategy.de
-
-    <h2>Marketing Copy</h2
-  </div>
-  <di
-    <p>${(s
-
-    <h2>Target Aud
-  </div>
-  <di
     .implementation-section {
       margin-top: 24pt;
       padding-top: 18pt;
@@ -130,14 +131,14 @@ import { SavedStrategy, BusinessCanvasModel, PitchDeck } from "@/types"
     <div class="section">
       <h2>Application Workflow</h2>
       <p>${(strategy.result.applicationWorkflow || 'Not available').replace(/\n/g, '</p><p>')}</p>
-      font
+    </div>
 
-    }
+    <div class="section">
       <h2>UI Workflow</h2>
       <p>${(strategy.result.uiWorkflow || 'Not available').replace(/\n/g, '</p><p>')}</p>
-      page
+    </div>
 
-      font-size: 16pt;
+    <div class="section">
       <h2>Database Workflow</h2>
       <p>${(strategy.result.databaseWorkflow || 'Not available').replace(/\n/g, '</p><p>')}</p>
     </div>
@@ -158,13 +159,13 @@ import { SavedStrategy, BusinessCanvasModel, PitchDeck } from "@/types"
     <p>G-7/4, Islamabad 44000, Pakistan • Ph: +92(300) 0529697 | USA: +1(786) 8226386 | Oman: +968 76786324</p>
     <p>© ${new Date().getFullYear()} Techpigeon. All rights reserved. | www.techpigeon.org</p>
   </div>
-    .fo
+</body>
 </html>
-   
+  `
 
   const blob = new Blob(['\ufeff', htmlContent], { 
     type: 'application/msword' 
-    
+  })
   
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
@@ -174,37 +175,36 @@ import { SavedStrategy, BusinessCanvasModel, PitchDeck } from "@/types"
   link.click()
   document.body.removeChild(link)
   URL.revokeObjectURL(url)
- 
+}
 
 export function exportBusinessCanvasAsWord(canvas: BusinessCanvasModel, ideaName: string) {
   const htmlContent = `
 <!DOCTYPE html>
 <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-  <div
+<head>
   <meta charset="UTF-8">
   <title>Business Model Canvas - ${ideaName}</title>
   <xml>
-    <h2>Key Partners
+    <w:WordDocument>
       <w:View>Print</w:View>
-
+      <w:Zoom>100</w:Zoom>
     </w:WordDocument>
-    <p>$
+  </xml>
   <style>
-  <div clas
+    @page {
       size: 8.5in 11in;
-  </div>
+      margin: 1in;
     }
-    <h2>Cu
+    body {
       font-family: 'Inter', 'Calibri', sans-serif;
       font-size: 11pt;
       line-height: 1.5;
-    <p>${canvas.custo
     }
-  <div c
+    h1 {
       font-family: 'Lora', 'Cambria', serif;
-  </div>
+      font-size: 24pt;
       font-weight: bold;
-      color: #8A91E3;
+      color: #33334D;
       margin-top: 0;
       page-break-inside: avoid;
     }
@@ -212,9 +212,10 @@ export function exportBusinessCanvasAsWord(canvas: BusinessCanvasModel, ideaName
       font-size: 16pt;
       font-weight: bold;
       color: #33334D;
-    <p>© ${new Date().g
+      margin-top: 18pt;
       margin-bottom: 8pt;
-</htm
+      page-break-inside: avoid;
+    }
     .header {
       background: #8A91E3;
       color: white;
@@ -222,10 +223,11 @@ export function exportBusinessCanvasAsWord(canvas: BusinessCanvasModel, ideaName
       margin: -1in -1in 24pt -1in;
       text-align: center;
     }
-  link.click()
+    .header h1 {
       color: white;
-}
-     
+      font-size: 32pt;
+      margin: 0;
+    }
     .section {
       margin: 12pt 0;
       padding: 12pt;
@@ -234,7 +236,7 @@ export function exportBusinessCanvasAsWord(canvas: BusinessCanvasModel, ideaName
       page-break-inside: avoid;
     }
     .meta {
-
+      font-size: 10pt;
       color: #666;
       margin-bottom: 18pt;
     }
@@ -242,54 +244,54 @@ export function exportBusinessCanvasAsWord(canvas: BusinessCanvasModel, ideaName
       margin-top: 36pt;
       padding-top: 18pt;
       border-top: 2pt solid #8A91E3;
-  </xml>
+      text-align: center;
       font-size: 9pt;
-      size: 8.5in 
+      color: #666;
     }
     .footer-brand {
       font-size: 20pt;
       font-weight: bold;
       color: #8A91E3;
-    h1 {
+      margin-bottom: 8pt;
     }
-      font
+  </style>
 </head>
 <body>
   <div class="header">
-      font-size: 16pt;
+    <h1>TECHPIGEON</h1>
     <div>AI-Powered Business Intelligence</div>
-      pa
+  </div>
 
-    h3 {
-  
+  <h1>Business Model Canvas</h1>
+
   <div class="meta">
     <p><strong>Business Idea:</strong> ${ideaName}</p>
     <p><strong>Generated:</strong> ${new Date().toLocaleDateString('en-US', { 
       year: 'numeric', 
-    .cover {
+      month: 'long', 
       day: 'numeric'
-      paddi
+    })}</p>
   </div>
 
-      margin-top: 12pt;
+  <div class="section">
     <h2>Value Proposition</h2>
     <p>${canvas.valueProposition}</p>
   </div>
 
   <div class="section">
     <h2>Key Partners</h2>
-      background: #F8F9FA;
+    <p>${canvas.keyPartners}</p>
   </div>
 
-      border-left: 4pt 
+  <div class="section">
     <h2>Key Activities</h2>
     <p>${canvas.keyActivities}</p>
   </div>
 
-      margin-top: 36pt;
+  <div class="section">
     <h2>Key Resources</h2>
     <p>${canvas.keyResources}</p>
-    .foo
+  </div>
 
   <div class="section">
     <h2>Customer Segments</h2>
@@ -312,9 +314,9 @@ export function exportBusinessCanvasAsWord(canvas: BusinessCanvasModel, ideaName
   </div>
 
   <div class="section">
-    <p>G-7/4, Islamabad 4400
+    <h2>Revenue Streams</h2>
     <p>${canvas.revenueStreams}</p>
-</body>
+  </div>
 
   <div class="footer">
     <div class="footer-brand">TECHPIGEON</div>
@@ -326,7 +328,7 @@ export function exportBusinessCanvasAsWord(canvas: BusinessCanvasModel, ideaName
   `
 
   const blob = new Blob(['\ufeff', htmlContent], { 
-
+    type: 'application/msword' 
   })
 
   const url = URL.createObjectURL(blob)
@@ -334,55 +336,56 @@ export function exportBusinessCanvasAsWord(canvas: BusinessCanvasModel, ideaName
   link.href = url
   link.download = `Business_Canvas_${ideaName.replace(/[^a-z0-9]/gi, '_')}_Techpigeon.doc`
   document.body.appendChild(link)
-
+  link.click()
   document.body.removeChild(link)
-
+  URL.revokeObjectURL(url)
 }
 
 export function exportPitchDeckAsWord(pitchDeck: PitchDeck, ideaName: string) {
-
+  const slidesHtml = pitchDeck.slides.map((slide, index) => `
     <div class="slide">
       <h2 style="background: ${index % 2 === 0 ? '#8A91E3' : '#90CA77'}; color: white; padding: 12pt;">Slide ${slide.slideNumber}: ${slide.title}</h2>
       <div class="slide-content">
         <p>${slide.content.replace(/\n/g, '</p><p>')}</p>
       </div>
-
+      ${slide.notes ? `
+      <div style="margin-top: 12pt; padding: 12pt; background: #F0F0F0; border-left: 4pt solid #8A91E3;">
         <h3>Speaker Notes:</h3>
         <p style="font-style: italic; color: #666;">${slide.notes}</p>
       </div>
+      ` : ''}
     </div>
   `).join('')
 
   const htmlContent = `
-
+<!DOCTYPE html>
 <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-
+<head>
   <meta charset="UTF-8">
   <title>Pitch Deck - ${ideaName}</title>
   <xml>
-
+    <w:WordDocument>
       <w:View>Print</w:View>
       <w:Zoom>100</w:Zoom>
     </w:WordDocument>
-
+  </xml>
   <style>
-
+    @page {
       size: 8.5in 11in;
       margin: 1in;
     }
-
+    body {
       font-family: 'Inter', 'Calibri', sans-serif;
-
+      font-size: 11pt;
       line-height: 1.5;
-
     }
-
+    h1 {
       font-family: 'Lora', 'Cambria', serif;
       font-size: 28pt;
       font-weight: bold;
       color: white;
       margin: 0;
-
+    }
     h2 {
       font-family: 'Lora', 'Cambria', serif;
       font-size: 16pt;
@@ -390,13 +393,13 @@ export function exportPitchDeckAsWord(pitchDeck: PitchDeck, ideaName: string) {
       color: white;
       padding: 12pt;
       margin: 0 0 12pt 0;
-
+    }
     h3 {
-
+      font-size: 12pt;
       font-weight: bold;
-
+      color: #33334D;
       margin: 12pt 0 6pt 0;
-
+    }
     p {
       margin: 0 0 10pt 0;
     }
@@ -404,88 +407,70 @@ export function exportPitchDeckAsWord(pitchDeck: PitchDeck, ideaName: string) {
       background: #8A91E3;
       color: white;
       padding: 72pt;
-
+      text-align: center;
       margin: -1in -1in 24pt -1in;
       page-break-after: always;
     }
-
+    .cover-subtitle {
       font-size: 16pt;
       margin-top: 12pt;
     }
-
+    .slide {
       margin-bottom: 24pt;
-
+      page-break-inside: avoid;
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    .slide-content {
+      padding: 12pt;
+      background: #F8F9FA;
+      border: 1pt solid #E0E0E0;
+    }
+    .footer {
+      margin-top: 36pt;
+      padding-top: 18pt;
+      border-top: 2pt solid #8A91E3;
+      text-align: center;
+      font-size: 9pt;
+      color: #666;
+    }
+    .footer-brand {
+      font-size: 20pt;
+      font-weight: bold;
+      color: #8A91E3;
+      margin-bottom: 8pt;
+    }
+  </style>
+</head>
+<body>
+  <div class="cover">
+    <h1>${ideaName}</h1>
+    <div class="cover-subtitle">Pitch Deck</div>
+    <div style="margin-top: 24pt; font-size: 12pt;">
+      Generated by Techpigeon AI Platform<br>
+      ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+    </div>
+  </div>
+
+  ${slidesHtml}
+
+  <div class="footer">
+    <div class="footer-brand">TECHPIGEON</div>
+    <p>G-7/4, Islamabad 44000, Pakistan • Ph: +92(300) 0529697</p>
+    <p>© ${new Date().getFullYear()} Techpigeon. All rights reserved. | www.techpigeon.org</p>
+  </div>
+</body>
+</html>
+  `
+
+  const blob = new Blob(['\ufeff', htmlContent], { 
+    type: 'application/msword' 
+  })
+
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `Pitch_Deck_${ideaName.replace(/[^a-z0-9]/gi, '_')}_Techpigeon.doc`
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
