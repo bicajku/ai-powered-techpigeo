@@ -3,15 +3,45 @@ import { UserProfile } from "@/types"
 import { Sparkle, Crown, User, Clock } from "@phosphor-icons/react"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useMemo } from "react"
 
 interface WelcomeBannerProps {
   user: UserProfile
 }
 
+interface SparkleParticle {
+  id: number
+  x: number
+  y: number
+  delay: number
+  duration: number
+  size: number
+}
+
 export function WelcomeBanner({ user }: WelcomeBannerProps) {
   const [sessionDuration, setSessionDuration] = useState(0)
   const sessionStartRef = useRef(Date.now())
+
+  const sparkleParticles = useMemo<SparkleParticle[]>(() => {
+    const particles: SparkleParticle[] = []
+    const particleCount = 20
+
+    for (let i = 0; i < particleCount; i++) {
+      const position = i / particleCount
+      const isTopOrBottom = Math.random() > 0.5
+      
+      particles.push({
+        id: i,
+        x: isTopOrBottom ? position * 100 : (Math.random() > 0.5 ? 0 : 100),
+        y: isTopOrBottom ? (Math.random() > 0.5 ? 0 : 100) : position * 100,
+        delay: Math.random() * 2,
+        duration: 2 + Math.random() * 2,
+        size: 8 + Math.random() * 8,
+      })
+    }
+
+    return particles
+  }, [])
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -54,6 +84,35 @@ export function WelcomeBanner({ user }: WelcomeBannerProps) {
       className="relative overflow-hidden bg-gradient-to-r from-primary/10 via-accent/10 to-primary/10 border border-primary/20 rounded-2xl p-6 md:p-8 mb-8"
     >
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_30%,_oklch(0.65_0.22_240_/_0.15)_0%,_transparent_50%)] pointer-events-none" />
+      
+      {sparkleParticles.map((particle) => (
+        <motion.div
+          key={particle.id}
+          className="absolute pointer-events-none"
+          style={{
+            left: `${particle.x}%`,
+            top: `${particle.y}%`,
+          }}
+          initial={{ opacity: 0, scale: 0 }}
+          animate={{
+            opacity: [0, 1, 0],
+            scale: [0, 1, 0],
+            rotate: [0, 180, 360],
+          }}
+          transition={{
+            duration: particle.duration,
+            delay: particle.delay,
+            repeat: Infinity,
+            ease: "easeInOut",
+          }}
+        >
+          <Sparkle
+            size={particle.size}
+            weight="fill"
+            className="text-primary/60"
+          />
+        </motion.div>
+      ))}
       
       <div className="relative flex items-center justify-between gap-6 flex-wrap">
         <div className="flex items-center gap-4">

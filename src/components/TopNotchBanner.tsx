@@ -1,7 +1,7 @@
 import { motion, AnimatePresence } from "framer-motion"
 import { UserProfile } from "@/types"
 import { Sparkle, X, CaretDown } from "@phosphor-icons/react"
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 
 interface TopNotchBannerProps {
@@ -10,8 +10,38 @@ interface TopNotchBannerProps {
   isVisible: boolean
 }
 
+interface SparkleParticle {
+  id: number
+  x: number
+  y: number
+  delay: number
+  duration: number
+  size: number
+}
+
 export function TopNotchBanner({ user, onExpand, isVisible }: TopNotchBannerProps) {
   const [isDismissed, setIsDismissed] = useState(false)
+
+  const sparkleParticles = useMemo<SparkleParticle[]>(() => {
+    const particles: SparkleParticle[] = []
+    const particleCount = 15
+
+    for (let i = 0; i < particleCount; i++) {
+      const position = i / particleCount
+      const isTopOrBottom = Math.random() > 0.5
+      
+      particles.push({
+        id: i,
+        x: isTopOrBottom ? position * 100 : (Math.random() > 0.5 ? 0 : 100),
+        y: isTopOrBottom ? (Math.random() > 0.5 ? 0 : 100) : position * 100,
+        delay: Math.random() * 2,
+        duration: 2 + Math.random() * 2,
+        size: 6 + Math.random() * 6,
+      })
+    }
+
+    return particles
+  }, [])
 
   const handleExpand = () => {
     setIsDismissed(true)
@@ -67,8 +97,37 @@ export function TopNotchBanner({ user, onExpand, isVisible }: TopNotchBannerProp
                 className="absolute -inset-[2px] bg-gradient-to-r from-primary via-accent to-primary rounded-2xl blur-sm"
               />
               
-              <div className="relative bg-gradient-to-r from-primary via-accent to-primary p-[2px] rounded-2xl">
-                <div className="bg-card rounded-2xl px-6 py-3 flex items-center justify-between gap-4 backdrop-blur-xl">
+              <div className="relative bg-gradient-to-r from-primary via-accent to-primary p-[2px] rounded-2xl overflow-hidden">
+                {sparkleParticles.map((particle) => (
+                  <motion.div
+                    key={particle.id}
+                    className="absolute pointer-events-none z-10"
+                    style={{
+                      left: `${particle.x}%`,
+                      top: `${particle.y}%`,
+                    }}
+                    initial={{ opacity: 0, scale: 0 }}
+                    animate={{
+                      opacity: [0, 1, 0],
+                      scale: [0, 1, 0],
+                      rotate: [0, 180, 360],
+                    }}
+                    transition={{
+                      duration: particle.duration,
+                      delay: particle.delay,
+                      repeat: Infinity,
+                      ease: "easeInOut",
+                    }}
+                  >
+                    <Sparkle
+                      size={particle.size}
+                      weight="fill"
+                      className="text-accent/70"
+                    />
+                  </motion.div>
+                ))}
+                
+                <div className="relative bg-card rounded-2xl px-6 py-3 flex items-center justify-between gap-4 backdrop-blur-xl">
                   <div className="flex items-center gap-3">
                     <motion.div
                       animate={{ 
