@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
-import { Sparkle, Lightbulb, ChatsCircle, Palette, Target, ArrowClockwise, FloppyDisk, FolderOpen, Code, Desktop, Database, DeviceMobile, ListChecks, ChartBar, ShieldCheck, MagnifyingGlass, CaretUpDown, Check, BookOpen } from "@phosphor-icons/react"
+import { Sparkle, Lightbulb, ChatsCircle, Palette, Target, ArrowClockwise, FloppyDisk, FolderOpen, Code, Desktop, Database, DeviceMobile, ListChecks, ChartBar, ShieldCheck, MagnifyingGlass, CaretUpDown, Check, BookOpen, ClockCounterClockwise, ArrowsHorizontal } from "@phosphor-icons/react"
 import { ResultCard } from "@/components/ResultCard"
 import { LoadingState } from "@/components/LoadingState"
 import { EmptyState } from "@/components/EmptyState"
@@ -25,17 +25,28 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { toast } from "sonner"
 import { useKV } from "@github/spark/hooks"
 import { motion, AnimatePresence } from "framer-motion"
-import { MarketingResult, SavedStrategy, UserProfile, ConceptMode } from "@/types"
+import { MarketingResult, SavedStrategy, UserProfile, ConceptMode, StrategyWorkflowRun } from "@/types"
 import { authService } from "@/lib/auth"
 import { BRAND_THEME_STORAGE_KEY, DEFAULT_BRAND_THEME, isBrandThemeName, type BrandThemeName } from "@/lib/brand-theme"
 import { logError } from "@/lib/error-logger"
 import { cn } from "@/lib/utils"
+import { getFeatureEntitlements, upgradeToPro } from "@/lib/subscription"
+import { exportStrategyAsPDF } from "@/lib/pdf-export"
+import { exportStrategyAsWord } from "@/lib/document-export"
+import { estimateGenerationCostCents, estimatePromptTokens, getCurrentMonthKey, getExportPlanConfig, getStrategyPlanConfig } from "@/lib/strategy-governance"
 
 interface PromptMemoryItem {
   prompt: string
   conceptMode: ConceptMode
   count: number
   lastUsedAt: number
+}
+
+interface StrategyQAVerdict {
+  pass: boolean
+  score: number
+  summary: string
+  issues: string[]
 }
 
 const CONCEPT_MODE_INSTRUCTION: Record<ConceptMode, string> = {
@@ -98,6 +109,22 @@ function App() {
     `user-prompt-memory-${userIdForKV}`,
     []
   )
+  const [workflowRuns, setWorkflowRuns] = useKV<StrategyWorkflowRun[]>(
+    `strategy-workflow-runs-${userIdForKV}`,
+    []
+  )
+  const [monthlyStrategySpendCents, setMonthlyStrategySpendCents] = useKV<number>(
+    `${getCurrentMonthKey("strategy-spend")}-${userIdForKV}`,
+    0
+  )
+  const [monthlyExportCount, setMonthlyExportCount] = useKV<number>(
+    `${getCurrentMonthKey("strategy-exports")}-${userIdForKV}`,
+    0
+  )
+  const [timelineSearch, setTimelineSearch] = useState("")
+  const [timelinePlanFilter, setTimelinePlanFilter] = useState<"all" | "basic" | "pro">("all")
+  const [timelineStatusFilter, setTimelineStatusFilter] = useState<"all" | "pass" | "fail">("all")
+  const [selectedTimelineCompare, setSelectedTimelineCompare] = useState<string[]>([])
   const [selectedForComparison, setSelectedForComparison] = useState<string[]>([])
   const [showComparison, setShowComparison] = useState(false)
   const [showSaveDialog, setShowSaveDialog] = useState(false)
@@ -153,6 +180,13 @@ function App() {
   const isValidInput = description.trim().length >= 10
   const charCount = description.length
   const showCharCounter = charCount >= 900
+  const entitlements = user ? getFeatureEntitlements(user) : null
+  const strategyPlan = entitlements?.isPro ? "pro" : "basic"
+  const strategyPlanConfig = getStrategyPlanConfig(strategyPlan)
+  const exportPlanConfig = getExportPlanConfig(strategyPlan)
+  const spendProgress = Math.min(100, Math.round(((monthlyStrategySpendCents || 0) / strategyPlanConfig.monthlyBudgetCents) * 100))
+  const exportProgress = Math.min(100, Math.round(((monthlyExportCount || 0) / exportPlanConfig.monthlyExports) * 100))
+  const savedProgress = Math.min(100, Math.round((((savedStrategies || []).length || 0) / strategyPlanConfig.maxSavedStrategies) * 100))
 
   const quickPromptSuggestions = useMemo(() => {
     const current = description.trim().toLowerCase()
@@ -207,7 +241,52 @@ function App() {
     })
   }
 
-  const attemptGeneration = async (attemptNumber: number): Promise<MarketingResult> => {
+  const buildMemoryContext = () => {
+    const recentStrategies = (savedStrategies || []).slice(0, 3)
+    const memoryLines: string[] = []
+
+    if (recentStrategies.length > 0) {
+      memoryLines.push("Recent strategy history:")
+      recentStrategies.forEach((strategy, index) => {
+        memoryLines.push(`${index + 1}. ${strategy.name}: ${strategy.description.slice(0, 140)}`)
+      })
+    }
+
+    const recentPrompts = (promptMemory || []).slice(0, 3)
+    if (recentPrompts.length > 0) {
+      memoryLines.push("Recent prompt patterns:")
+      recentPrompts.forEach((item, index) => {
+        memoryLines.push(`${index + 1}. (${item.conceptMode}) ${item.prompt.slice(0, 120)}`)
+      })
+    }
+
+    if (memoryLines.length === 0) {
+      return ""
+    }
+
+    return `\n\nUser memory context (use to avoid repetition and improve continuity):\n${memoryLines.join("\n")}`
+  }
+
+  const runWithModelFallback = async (prompt: string) => {
+    const preferredModel = strategyPlan === "pro" ? "gpt-4o" : "gpt-4o-mini"
+
+    try {
+      const response = await spark.llm(prompt, preferredModel, true)
+      return { response, modelUsed: preferredModel }
+    } catch (error) {
+      if (preferredModel !== "gpt-4o") {
+        const response = await spark.llm(prompt, "gpt-4o", true)
+        return { response, modelUsed: "gpt-4o" }
+      }
+      throw error
+    }
+  }
+
+  const attemptGeneration = async (
+    attemptNumber: number,
+    memoryContext: string,
+    qaFeedback?: string
+  ): Promise<{ result: MarketingResult; modelUsed: string }> => {
     if (typeof spark === "undefined") {
       const error = new Error("Spark API is not available. Please refresh the page.")
       await logError("Spark API unavailable", error, "system", "critical", user?.id)
@@ -233,6 +312,9 @@ Automatically select the most relevant archetypes and implementation patterns ba
 Topic/Description: ${description}
 
 ${contextSection}
+
+${qaFeedback ? `QA feedback to fix in this attempt:\n${qaFeedback}` : ""}
+${memoryContext}
 
 CRITICAL JSON FORMATTING RULES - FOLLOW EXACTLY:
 1. Return ONLY a valid JSON object with no markdown, no code blocks, no text before or after
@@ -272,7 +354,7 @@ CRITICAL REMINDERS:
       throw error
     }
 
-    const response = await spark.llm(prompt, "gpt-4o", true)
+    const { response, modelUsed } = await runWithModelFallback(prompt)
     
     if (!response) {
       const error = new Error("Empty response from LLM")
@@ -378,7 +460,55 @@ CRITICAL REMINDERS:
       implementationChecklist: parsedResult.implementationChecklist || "Implementation checklist was not generated. Please regenerate to get sprint-ready tasks.",
     }
 
-    return normalizedResult
+    return { result: normalizedResult, modelUsed }
+  }
+
+  const runStrategyQA = async (candidate: MarketingResult): Promise<StrategyQAVerdict> => {
+    const qaPrompt = spark.llmPrompt`You are a strict quality gate for marketing strategy outputs.
+
+Review the candidate strategy below and score for clarity, specificity, actionability, and consistency.
+Return ONLY valid JSON with this schema:
+{
+  "pass": true or false,
+  "score": 0-100,
+  "summary": "short summary",
+  "issues": ["issue 1", "issue 2"]
+}
+
+Candidate JSON:
+${JSON.stringify(candidate)}`
+
+    const { response } = await runWithModelFallback(qaPrompt)
+    let cleaned = response.trim()
+
+    if (cleaned.startsWith("```json")) {
+      cleaned = cleaned.replace(/^```json\s*/, "").replace(/```\s*$/, "")
+    } else if (cleaned.startsWith("```")) {
+      cleaned = cleaned.replace(/^```\s*/, "").replace(/```\s*$/, "")
+    }
+
+    const firstBrace = cleaned.indexOf("{")
+    const lastBrace = cleaned.lastIndexOf("}")
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      cleaned = cleaned.substring(firstBrace, lastBrace + 1)
+    }
+
+    try {
+      const parsed = JSON.parse(cleaned) as StrategyQAVerdict
+      return {
+        pass: Boolean(parsed.pass),
+        score: Math.max(0, Math.min(100, Number(parsed.score || 0))),
+        summary: parsed.summary || "Quality review completed.",
+        issues: Array.isArray(parsed.issues) ? parsed.issues.slice(0, 6) : [],
+      }
+    } catch {
+      return {
+        pass: false,
+        score: 0,
+        summary: "QA parser could not validate the response.",
+        issues: ["Retry generation with stricter structure and clearer implementation steps."],
+      }
+    }
   }
 
   const generateMarketing = async () => {
@@ -391,6 +521,18 @@ CRITICAL REMINDERS:
     setLoadingProgress(0)
     setError(null)
 
+    const memoryContext = buildMemoryContext()
+    const estimatedInputTokens = estimatePromptTokens(`${description}\n${memoryContext}`)
+    const estimatedOutputTokens = strategyPlan === "pro" ? 2600 : 1900
+    const estimatedCostCents = estimateGenerationCostCents(estimatedInputTokens, estimatedOutputTokens, strategyPlan)
+    const projectedSpend = (monthlyStrategySpendCents || 0) + estimatedCostCents
+
+    if (projectedSpend > strategyPlanConfig.monthlyBudgetCents) {
+      const budgetLabel = (strategyPlanConfig.monthlyBudgetCents / 100).toFixed(2)
+      toast.error(`Monthly generation guardrail reached ($${budgetLabel}). Try shorter prompts or upgrade your plan.`)
+      return
+    }
+
     const progressInterval = setInterval(() => {
       setLoadingProgress((prev) => {
         if (prev >= 90) return prev
@@ -398,8 +540,12 @@ CRITICAL REMINDERS:
       })
     }, 500)
 
-    const maxRetries = 3
+    const maxRetries = strategyPlanConfig.maxWorkflowRetries
     let lastError: Error | null = null
+    let finalResult: MarketingResult | null = null
+    let modelUsed = strategyPlan === "pro" ? "gpt-4o" : "gpt-4o-mini"
+    const workflowSteps: StrategyWorkflowRun["steps"] = []
+    let qaFeedback = ""
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
@@ -408,26 +554,43 @@ CRITICAL REMINDERS:
           await new Promise(resolve => setTimeout(resolve, 1000 * attempt))
         }
 
-        const normalizedResult = await attemptGeneration(attempt)
+        const generated = await attemptGeneration(attempt, memoryContext, qaFeedback)
+        modelUsed = generated.modelUsed
+        workflowSteps.push({
+          stage: attempt === 1 ? "draft" : "repair",
+          status: "info",
+          message: `Generation attempt ${attempt} completed with ${modelUsed}.`,
+          timestamp: Date.now(),
+        })
 
-        clearInterval(progressInterval)
-        setLoadingProgress(100)
-        
-        setResult(normalizedResult)
-        rememberPrompt(description, conceptMode)
-        setCurrentDescription(description)
-        
-        if (attempt > 1) {
-          toast.success(`Successfully generated on attempt ${attempt}`)
+        if (!strategyPlanConfig.enableQaLoop) {
+          finalResult = generated.result
+          break
         }
-        
-        setTimeout(() => {
-          resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
-        }, 100)
-        
-        setIsLoading(false)
-        setLoadingProgress(0)
-        return
+
+        const qaVerdict = await runStrategyQA(generated.result)
+        workflowSteps.push({
+          stage: "qa",
+          status: qaVerdict.pass ? "pass" : "fail",
+          message: `QA score ${qaVerdict.score}/100. ${qaVerdict.summary}`,
+          timestamp: Date.now(),
+        })
+
+        if (qaVerdict.pass) {
+          finalResult = generated.result
+          break
+        }
+
+        qaFeedback = qaVerdict.issues.join("; ") || qaVerdict.summary
+
+        if (attempt < maxRetries) {
+          workflowSteps.push({
+            stage: "repair",
+            status: "info",
+            message: "Applying QA feedback for the next attempt.",
+            timestamp: Date.now(),
+          })
+        }
       } catch (err) {
         lastError = err instanceof Error ? err : new Error("An unexpected error occurred")
         console.error(`Attempt ${attempt} failed:`, err)
@@ -458,6 +621,54 @@ CRITICAL REMINDERS:
           }
         }
       }
+    }
+
+    if (finalResult) {
+      clearInterval(progressInterval)
+      setLoadingProgress(100)
+
+      setResult(finalResult)
+      rememberPrompt(description, conceptMode)
+      setCurrentDescription(description)
+      setMonthlyStrategySpendCents((current) => (current || 0) + estimatedCostCents)
+
+      const run: StrategyWorkflowRun = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        description,
+        conceptMode,
+        plan: strategyPlan,
+        estimatedCostCents,
+        modelUsed,
+        resultSnapshot: finalResult,
+        steps: [
+          ...workflowSteps,
+          {
+            stage: "final",
+            status: "pass",
+            message: strategyPlanConfig.enableQaLoop
+              ? "Workflow completed with QA validation."
+              : "Core generation completed.",
+            timestamp: Date.now(),
+          },
+        ],
+        timestamp: Date.now(),
+      }
+
+      setWorkflowRuns((current) => [run, ...(current || [])].slice(0, strategyPlan === "pro" ? 120 : 25))
+
+      if (strategyPlanConfig.enableQaLoop) {
+        toast.success("Strategy generated and validated through QA loop.")
+      } else {
+        toast.success("Strategy generated successfully.")
+      }
+
+      setTimeout(() => {
+        resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+      }, 100)
+
+      setIsLoading(false)
+      setLoadingProgress(0)
+      return
     }
 
     clearInterval(progressInterval)
@@ -492,6 +703,11 @@ CRITICAL REMINDERS:
   const handleSaveStrategy = (name: string) => {
     if (!result || !currentDescription) return
 
+    if ((savedStrategies || []).length >= strategyPlanConfig.maxSavedStrategies) {
+      toast.error(`You've reached the ${strategyPlanConfig.maxSavedStrategies} saved strategy limit for your plan.`)
+      return
+    }
+
     try {
       const newStrategy: SavedStrategy = {
         id: Date.now().toString(),
@@ -520,6 +736,131 @@ CRITICAL REMINDERS:
     setSavedStrategies((current) => (current || []).filter(s => s.id !== id))
     setSelectedForComparison((current) => current.filter(sid => sid !== id))
     toast.success("Strategy deleted")
+  }
+
+  const reserveExportQuota = () => {
+    if ((monthlyExportCount || 0) >= exportPlanConfig.monthlyExports) {
+      toast.error(`Monthly export quota reached (${exportPlanConfig.monthlyExports}). Upgrade for higher limits.`)
+      return false
+    }
+    return true
+  }
+
+  const handleExportStrategyPdf = (strategy: SavedStrategy) => {
+    if (!reserveExportQuota()) return
+
+    try {
+      exportStrategyAsPDF(strategy)
+      setMonthlyExportCount((count) => (count || 0) + 1)
+      toast.success("Strategy exported as PDF")
+    } catch (error) {
+      console.error("Error exporting PDF:", error)
+      toast.error("Failed to export PDF. Please try again.")
+    }
+  }
+
+  const handleExportStrategyWord = async (strategy: SavedStrategy) => {
+    if (!exportPlanConfig.allowWordExport) {
+      toast.info("Word export is available on Pro Individual.")
+      return
+    }
+
+    if (!reserveExportQuota()) return
+
+    try {
+      await exportStrategyAsWord(strategy)
+      setMonthlyExportCount((count) => (count || 0) + 1)
+      toast.success("Strategy exported to Word successfully!")
+    } catch (error) {
+      console.error("Error exporting Word:", error)
+      toast.error("Failed to export to Word. Please try again.")
+    }
+  }
+
+  const handleRestoreWorkflowRun = (run: StrategyWorkflowRun) => {
+    setDescription(run.description)
+    setConceptMode(run.conceptMode)
+    if (run.resultSnapshot) {
+      setResult(run.resultSnapshot)
+      setCurrentDescription(run.description)
+    }
+    setActiveTab("generate")
+    toast.success("Memory checkpoint restored")
+    window.scrollTo({ top: 0, behavior: "smooth" })
+  }
+
+  const getRunStatus = (run: StrategyWorkflowRun): "pass" | "fail" => {
+    const hasQaFail = run.steps.some((step) => step.stage === "qa" && step.status === "fail")
+    if (hasQaFail) return "fail"
+    return "pass"
+  }
+
+  const filteredWorkflowRuns = useMemo(() => {
+    const search = timelineSearch.trim().toLowerCase()
+    return (workflowRuns || []).filter((run) => {
+      if (timelinePlanFilter !== "all" && run.plan !== timelinePlanFilter) {
+        return false
+      }
+
+      const status = getRunStatus(run)
+      if (timelineStatusFilter !== "all" && status !== timelineStatusFilter) {
+        return false
+      }
+
+      if (search.length === 0) {
+        return true
+      }
+
+      return (
+        run.description.toLowerCase().includes(search) ||
+        run.conceptMode.toLowerCase().includes(search) ||
+        run.modelUsed.toLowerCase().includes(search)
+      )
+    })
+  }, [workflowRuns, timelineSearch, timelinePlanFilter, timelineStatusFilter])
+
+  const comparedRuns = useMemo(() => {
+    return (workflowRuns || []).filter((run) => selectedTimelineCompare.includes(run.id)).slice(0, 2)
+  }, [workflowRuns, selectedTimelineCompare])
+
+  const handleToggleTimelineCompare = (id: string) => {
+    setSelectedTimelineCompare((current) => {
+      if (current.includes(id)) {
+        return current.filter((item) => item !== id)
+      }
+
+      if (current.length >= 2) {
+        toast.error("Select up to 2 checkpoints to compare")
+        return current
+      }
+
+      return [...current, id]
+    })
+  }
+
+  const handleUpgradeToProQuick = async () => {
+    if (!user || strategyPlan === "pro") return
+
+    const result = await upgradeToPro(user.id, 25)
+    if (!result.success) {
+      toast.error(result.error || "Failed to upgrade user")
+      return
+    }
+
+    setUser((current) => {
+      if (!current) return current
+      return {
+        ...current,
+        subscription: {
+          plan: "pro",
+          status: "active",
+          proCredits: result.credits,
+          updatedAt: Date.now(),
+        },
+      }
+    })
+
+    toast.success(`Upgraded to Pro Individual. ${result.credits} credits added.`)
   }
 
   const handleViewStrategy = (strategy: SavedStrategy) => {
@@ -576,6 +917,35 @@ CRITICAL REMINDERS:
   const handleProfileUpdate = (updatedUser: UserProfile) => {
     setUser(updatedUser)
   }
+
+  const smartNextAction = useMemo(() => {
+    if (!result) return null
+
+    if ((savedStrategies || []).length === 0) {
+      return {
+        title: "Save this strategy as your baseline",
+        description: "Lock this output before iterating so you can compare quality over time.",
+        actionLabel: "Save Strategy",
+        action: () => setShowSaveDialog(true),
+      }
+    }
+
+    if (strategyPlan === "basic") {
+      return {
+        title: "Run a quick integrity review",
+        description: "Validate quality signals and references before publishing or submission.",
+        actionLabel: "Open Review",
+        action: () => setActiveTab("plagiarism"),
+      }
+    }
+
+    return {
+      title: "Create execution assets from this strategy",
+      description: "Use Ideas to generate business canvas and pitch deck from this strategy direction.",
+      actionLabel: "Open Ideas",
+      action: () => setActiveTab("ideas"),
+    }
+  }, [result, savedStrategies, strategyPlan])
 
   if (isCheckingAuth) {
     return (
@@ -675,7 +1045,7 @@ CRITICAL REMINDERS:
           </AnimatePresence>
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className={`hidden md:grid w-full max-w-4xl mx-auto mb-8 ${user.role === "admin" ? "grid-cols-6" : "grid-cols-5"}`}>
+            <TabsList className={`hidden md:grid w-full max-w-5xl mx-auto mb-8 ${user.role === "admin" ? "grid-cols-7" : "grid-cols-6"}`}>
               <TabsTrigger value="generate" className="gap-2 text-sm">
                 <Lightbulb size={18} weight="bold" />
                 <span>Strategy</span>
@@ -695,6 +1065,10 @@ CRITICAL REMINDERS:
               <TabsTrigger value="saved" className="gap-2 text-sm">
                 <FolderOpen size={18} weight="bold" />
                 <span>Saved ({savedStrategies?.length || 0})</span>
+              </TabsTrigger>
+              <TabsTrigger value="timeline" className="gap-2 text-sm">
+                <ClockCounterClockwise size={18} weight="bold" />
+                <span>Timeline</span>
               </TabsTrigger>
               {user.role === "admin" && (
                 <TabsTrigger value="admin" className="gap-2 text-sm">
@@ -1314,6 +1688,68 @@ CRITICAL REMINDERS:
                     Choose a domain lens for strategy depth, or keep Auto to let AI select the best archetypes.
                   </p>
                 </div>
+
+                <div className="mb-4 rounded-lg border border-border/60 bg-secondary/20 p-3">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                    <span className="font-semibold text-foreground">
+                      Plan: {strategyPlan === "pro" ? "Pro Individual" : "Free Basic"}
+                    </span>
+                    <span className="text-muted-foreground">
+                      Workflow: {strategyPlanConfig.enableQaLoop ? "Orchestrated + QA loops" : "Core generation"}
+                    </span>
+                    <span className="text-muted-foreground">
+                      Monthly spend guardrail: ${(strategyPlanConfig.monthlyBudgetCents / 100).toFixed(2)}
+                    </span>
+                    <span className="text-muted-foreground">
+                      Current estimated spend: ${((monthlyStrategySpendCents || 0) / 100).toFixed(2)}
+                    </span>
+                    <span className="text-muted-foreground">
+                      Exports this month: {monthlyExportCount || 0}/{exportPlanConfig.monthlyExports}
+                    </span>
+                    <span className="text-muted-foreground">
+                      Memory checkpoints: {(workflowRuns || []).length}
+                    </span>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    <div>
+                      <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-1">
+                        <span>Generation budget</span>
+                        <span>{spendProgress}%</span>
+                      </div>
+                      <div className="h-1.5 rounded bg-muted overflow-hidden">
+                        <div className={`h-full ${spendProgress >= 85 ? "bg-destructive" : "bg-primary"}`} style={{ width: `${spendProgress}%` }} />
+                      </div>
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-1">
+                        <span>Monthly exports</span>
+                        <span>{exportProgress}%</span>
+                      </div>
+                      <div className="h-1.5 rounded bg-muted overflow-hidden">
+                        <div className={`h-full ${exportProgress >= 85 ? "bg-destructive" : "bg-primary"}`} style={{ width: `${exportProgress}%` }} />
+                      </div>
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-1">
+                        <span>Saved strategy capacity</span>
+                        <span>{savedProgress}%</span>
+                      </div>
+                      <div className="h-1.5 rounded bg-muted overflow-hidden">
+                        <div className={`h-full ${savedProgress >= 85 ? "bg-destructive" : "bg-primary"}`} style={{ width: `${savedProgress}%` }} />
+                      </div>
+                    </div>
+                  </div>
+                  {strategyPlan === "basic" && (
+                    <div className="mt-3 rounded border border-primary/30 bg-primary/5 p-2.5 flex items-center justify-between gap-2">
+                      <p className="text-xs text-foreground">
+                        Upgrade to Pro Individual for full QA loops, higher quotas, advanced review filters, and Word exports.
+                      </p>
+                      <Button size="sm" className="shrink-0" onClick={handleUpgradeToProQuick}>
+                        Upgrade
+                      </Button>
+                    </div>
+                  )}
+                </div>
                 
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -1388,6 +1824,48 @@ CRITICAL REMINDERS:
                         </Button>
                       </div>
                     </div>
+
+                    {smartNextAction && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="rounded-xl border border-primary/30 bg-primary/5 p-4 flex flex-wrap items-center justify-between gap-3"
+                      >
+                        <div>
+                          <p className="text-sm font-semibold text-foreground">Smart Next Action: {smartNextAction.title}</p>
+                          <p className="text-xs text-muted-foreground mt-1">{smartNextAction.description}</p>
+                        </div>
+                        <Button size="sm" onClick={smartNextAction.action}>
+                          {smartNextAction.actionLabel}
+                        </Button>
+                      </motion.div>
+                    )}
+
+                    {(workflowRuns || []).length > 0 && (
+                      <div className="rounded-xl border border-border/60 bg-card/70 p-4 space-y-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <h3 className="text-sm font-semibold text-foreground">Memory Timeline Checkpoints</h3>
+                          <p className="text-xs text-muted-foreground">Latest {(workflowRuns || []).slice(0, 5).length} shown</p>
+                        </div>
+                        <div className="space-y-2">
+                          {(workflowRuns || []).slice(0, 5).map((run) => (
+                            <div key={run.id} className="rounded-lg border border-border/50 p-3 flex flex-wrap items-center justify-between gap-2">
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-foreground truncate">{run.description}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {new Date(run.timestamp).toLocaleString()} • {run.plan.toUpperCase()} • {run.steps.length} steps • ${(
+                                    run.estimatedCostCents / 100
+                                  ).toFixed(2)} est.
+                                </p>
+                              </div>
+                              <Button size="sm" variant="outline" onClick={() => handleRestoreWorkflowRun(run)}>
+                                Restore
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     
                     <ResultCard
                       title="Marketing Copy"
@@ -1507,8 +1985,115 @@ CRITICAL REMINDERS:
                 onDelete={handleDeleteStrategy}
                 onView={handleViewStrategy}
                 onCompare={handleToggleCompare}
+                onExportPdf={handleExportStrategyPdf}
+                onExportWord={handleExportStrategyWord}
+                canExportWord={exportPlanConfig.allowWordExport}
                 selectedForComparison={selectedForComparison}
               />
+            </TabsContent>
+
+            <TabsContent value="timeline" className="space-y-6">
+              <div className="bg-card/80 backdrop-blur-sm rounded-2xl shadow-lg border border-border/50 p-6 md:p-8 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
+                    <ClockCounterClockwise size={22} weight="duotone" className="text-primary" />
+                    Workflow Timeline
+                  </h2>
+                  <p className="text-xs text-muted-foreground">{filteredWorkflowRuns.length} checkpoints</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <input
+                    value={timelineSearch}
+                    onChange={(e) => setTimelineSearch(e.target.value)}
+                    placeholder="Search by prompt, mode, model..."
+                    className="h-10 rounded border border-input bg-background px-3 text-sm"
+                  />
+                  <select
+                    value={timelinePlanFilter}
+                    onChange={(e) => setTimelinePlanFilter(e.target.value as "all" | "basic" | "pro")}
+                    className="h-10 rounded border border-input bg-background px-3 text-sm"
+                  >
+                    <option value="all">All plans</option>
+                    <option value="basic">Basic</option>
+                    <option value="pro">Pro</option>
+                  </select>
+                  <select
+                    value={timelineStatusFilter}
+                    onChange={(e) => setTimelineStatusFilter(e.target.value as "all" | "pass" | "fail")}
+                    className="h-10 rounded border border-input bg-background px-3 text-sm"
+                  >
+                    <option value="all">All status</option>
+                    <option value="pass">Pass</option>
+                    <option value="fail">Needs repair</option>
+                  </select>
+                </div>
+
+                {selectedTimelineCompare.length > 0 && (
+                  <div className="rounded-lg border border-accent/40 bg-accent/10 p-3 flex items-center justify-between gap-2">
+                    <p className="text-sm text-foreground">
+                      {selectedTimelineCompare.length} checkpoint{selectedTimelineCompare.length === 1 ? "" : "s"} selected for compare
+                    </p>
+                    <Button size="sm" variant="ghost" onClick={() => setSelectedTimelineCompare([])}>
+                      Clear
+                    </Button>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  {filteredWorkflowRuns.length === 0 && (
+                    <div className="rounded border border-border/50 p-6 text-center text-sm text-muted-foreground">
+                      No checkpoints match your filters yet.
+                    </div>
+                  )}
+
+                  {filteredWorkflowRuns.map((run) => {
+                    const status = getRunStatus(run)
+                    const isSelected = selectedTimelineCompare.includes(run.id)
+                    return (
+                      <div key={run.id} className={`rounded-lg border p-3 flex flex-wrap items-center justify-between gap-2 ${isSelected ? "border-accent" : "border-border/50"}`}>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-foreground truncate">{run.description}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(run.timestamp).toLocaleString()} • {run.plan.toUpperCase()} • {run.conceptMode} • {run.modelUsed} • ${(
+                              run.estimatedCostCents / 100
+                            ).toFixed(2)}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-xs px-2 py-1 rounded ${status === "pass" ? "bg-primary/10 text-primary" : "bg-destructive/10 text-destructive"}`}>
+                            {status === "pass" ? "Pass" : "Needs repair"}
+                          </span>
+                          <Button size="sm" variant="outline" onClick={() => handleToggleTimelineCompare(run.id)}>
+                            <ArrowsHorizontal size={14} />
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => handleRestoreWorkflowRun(run)}>
+                            Restore
+                          </Button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {comparedRuns.length === 2 && (
+                  <div className="rounded-lg border border-border/60 p-4 space-y-3">
+                    <h3 className="text-sm font-semibold text-foreground">Checkpoint Compare</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {comparedRuns.map((run) => (
+                        <div key={run.id} className="rounded border border-border/50 p-3 space-y-2">
+                          <p className="text-sm font-semibold text-foreground truncate">{run.description}</p>
+                          <p className="text-xs text-muted-foreground">{new Date(run.timestamp).toLocaleString()}</p>
+                          <p className="text-xs text-muted-foreground">Plan: {run.plan.toUpperCase()} • Model: {run.modelUsed}</p>
+                          <p className="text-xs text-muted-foreground">Workflow steps: {run.steps.length}</p>
+                          <p className="text-xs text-muted-foreground">Marketing copy length: {run.resultSnapshot?.marketingCopy?.length || 0}</p>
+                          <p className="text-xs text-muted-foreground">Checklist length: {run.resultSnapshot?.implementationChecklist?.length || 0}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             </TabsContent>
 
             {user.role === "admin" && (

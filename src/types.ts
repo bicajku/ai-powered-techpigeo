@@ -20,6 +20,27 @@ export interface MarketingResult {
   implementationChecklist?: string
 }
 
+export type StrategyWorkflowStage = "draft" | "qa" | "repair" | "final"
+
+export interface StrategyWorkflowStep {
+  stage: StrategyWorkflowStage
+  status: "pass" | "fail" | "info"
+  message: string
+  timestamp: number
+}
+
+export interface StrategyWorkflowRun {
+  id: string
+  description: string
+  conceptMode: ConceptMode
+  plan: SubscriptionPlan
+  estimatedCostCents: number
+  modelUsed: string
+  steps: StrategyWorkflowStep[]
+  resultSnapshot?: MarketingResult
+  timestamp: number
+}
+
 export interface SavedStrategy {
   id: string
   name: string

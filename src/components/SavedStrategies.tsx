@@ -4,21 +4,21 @@ import { Badge } from "@/components/ui/badge"
 import { FloppyDisk, Trash, Eye, Scales, FilePdf, FileDoc, DownloadSimple } from "@phosphor-icons/react"
 import { motion } from "framer-motion"
 import { SavedStrategy } from "@/types"
-import { exportStrategyAsPDF } from "@/lib/pdf-export"
-import { exportStrategyAsWord } from "@/lib/document-export"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { toast } from "sonner"
 
 interface SavedStrategiesProps {
   strategies: SavedStrategy[]
   onDelete: (id: string) => void
   onView: (strategy: SavedStrategy) => void
   onCompare: (id: string) => void
+  onExportPdf: (strategy: SavedStrategy) => void
+  onExportWord: (strategy: SavedStrategy) => void
+  canExportWord: boolean
   selectedForComparison: string[]
 }
 
@@ -27,6 +27,9 @@ export function SavedStrategies({
   onDelete, 
   onView,
   onCompare,
+  onExportPdf,
+  onExportWord,
+  canExportWord,
   selectedForComparison 
 }: SavedStrategiesProps) {
   if (strategies.length === 0) {
@@ -97,26 +100,19 @@ export function SavedStrategies({
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="start">
                         <DropdownMenuItem 
-                          onClick={() => exportStrategyAsPDF(strategy)} 
+                          onClick={() => onExportPdf(strategy)} 
                           className="gap-2 cursor-pointer"
                         >
                           <FilePdf size={16} weight="bold" />
                           Export as PDF
                         </DropdownMenuItem>
                         <DropdownMenuItem 
-                          onClick={async () => {
-                            try {
-                              await exportStrategyAsWord(strategy)
-                              toast.success("Strategy exported to Word successfully!")
-                            } catch (error) {
-                              console.error("Error exporting Word:", error)
-                              toast.error("Failed to export to Word. Please try again.")
-                            }
-                          }} 
+                          onClick={() => onExportWord(strategy)}
+                          disabled={!canExportWord}
                           className="gap-2 cursor-pointer"
                         >
                           <FileDoc size={16} weight="bold" />
-                          Export as Word
+                          {canExportWord ? "Export as Word" : "Export as Word (Pro)"}
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>

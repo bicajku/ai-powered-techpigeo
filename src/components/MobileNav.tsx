@@ -1,4 +1,4 @@
-import { Lightbulb, Sparkle, MagnifyingGlass, ChartBar, FolderOpen, ShieldCheck } from "@phosphor-icons/react"
+import { Lightbulb, Sparkle, MagnifyingGlass, ChartBar, FolderOpen, ShieldCheck, ClockCounterClockwise } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
@@ -21,6 +21,7 @@ export function MobileNav({ activeTab, onTabChange, isAdmin, savedCount }: Mobil
     { value: "plagiarism", label: "Review", icon: MagnifyingGlass },
     { value: "dashboard", label: "Stats", icon: ChartBar },
     { value: "saved", label: `Saved`, shortLabel: `${savedCount}`, icon: FolderOpen },
+    { value: "timeline", label: "Timeline", icon: ClockCounterClockwise },
   ]
 
   if (isAdmin) {

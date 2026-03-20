@@ -28,6 +28,7 @@ import { SavedReviews } from "@/components/SavedReviews"
 import { exportReviewToPDF } from "@/lib/pdf-export"
 import { computeReviewAnalysis, ReviewComputationMeta, ReviewFilters, SectionSummary } from "@/lib/review-engine"
 import { addProCredits, consumeProCredits, getFeatureEntitlements, upgradeToPro } from "@/lib/subscription"
+import { getCurrentMonthKey, getExportPlanConfig } from "@/lib/strategy-governance"
 import mammoth from "mammoth"
 import { GlobalWorkerOptions, getDocument } from "pdfjs-dist"
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url"
@@ -71,6 +72,10 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
     `saved-reviews-${userId}`,
     []
   )
+  const [monthlyReviewExportCount, setMonthlyReviewExportCount] = useKV<number>(
+    `${getCurrentMonthKey("review-exports")}-${userId}`,
+    0
+  )
   const fileInputRef = useRef<HTMLInputElement>(null)
   const entitlements = getFeatureEntitlements({
     ...user,
@@ -80,6 +85,10 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
       proCredits,
     },
   })
+  const exportPlanConfig = getExportPlanConfig(entitlements.isPro ? "pro" : "basic")
+  const activeReviewFilters = entitlements.isPro
+    ? reviewFilters
+    : { excludeQuotes: true, excludeReferences: true, minMatchWords: 8 }
 
   const resetUploadInput = () => {
     if (fileInputRef.current) {
@@ -528,7 +537,7 @@ Required JSON structure:
       }
       
       const parsedResult = JSON.parse(cleanedResponse) as PlagiarismResult
-      const enriched = computeReviewAnalysis(text, parsedResult, reviewFilters)
+      const enriched = computeReviewAnalysis(text, parsedResult, activeReviewFilters)
 
       setResult(enriched.result)
       setReviewMeta(enriched.meta)
@@ -617,20 +626,26 @@ Required JSON structure:
     setText(review.documentText)
     setFileName(review.fileName)
     setResult(review.plagiarismResult)
-    const enriched = computeReviewAnalysis(review.documentText, review.plagiarismResult, reviewFilters)
+    const enriched = computeReviewAnalysis(review.documentText, review.plagiarismResult, activeReviewFilters)
     setReviewMeta(enriched.meta)
     setSectionSummaries(enriched.sections)
     window.scrollTo({ top: 0, behavior: "smooth" })
   }
 
   const handleExportReview = async (review: SavedReviewDocument) => {
+    if ((monthlyReviewExportCount || 0) >= exportPlanConfig.monthlyExports) {
+      toast.error(`Monthly export quota reached (${exportPlanConfig.monthlyExports}). Upgrade for higher limits.`)
+      return
+    }
+
     try {
-      const enriched = computeReviewAnalysis(review.documentText, review.plagiarismResult, reviewFilters)
+      const enriched = computeReviewAnalysis(review.documentText, review.plagiarismResult, activeReviewFilters)
       await exportReviewToPDF(review, {
         meta: enriched.meta,
         sections: enriched.sections,
-        filters: reviewFilters,
+        filters: activeReviewFilters,
       })
+      setMonthlyReviewExportCount((current) => (current || 0) + 1)
       toast.success("PDF export initiated!")
     } catch (error) {
       console.error("Export error:", error)
@@ -905,11 +920,17 @@ Return ONLY a valid JSON object:
               <p className="text-xs text-muted-foreground">
                 These controls emulate Turnitin-style exclusions and affect displayed similarity/integrity values.
               </p>
+              {!entitlements.isPro && (
+                <p className="text-xs text-primary">
+                  Advanced filter customization is available on Pro. Basic uses safe defaults (quotes/references excluded, min match words = 8).
+                </p>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <label className="flex items-center gap-2 text-sm">
                   <input
                     type="checkbox"
                     checked={reviewFilters.excludeQuotes}
+                    disabled={!entitlements.isPro}
                     onChange={(e) => setReviewFilters((prev) => ({ ...prev, excludeQuotes: e.target.checked }))}
                   />
                   Exclude quoted matches
@@ -918,6 +939,7 @@ Return ONLY a valid JSON object:
                   <input
                     type="checkbox"
                     checked={reviewFilters.excludeReferences}
+                    disabled={!entitlements.isPro}
                     onChange={(e) => setReviewFilters((prev) => ({ ...prev, excludeReferences: e.target.checked }))}
                   />
                   Exclude references/bibliography
@@ -929,6 +951,7 @@ Return ONLY a valid JSON object:
                     min={0}
                     max={30}
                     value={reviewFilters.minMatchWords}
+                    disabled={!entitlements.isPro}
                     onChange={(e) => {
                       const value = Number(e.target.value)
                       setReviewFilters((prev) => ({ ...prev, minMatchWords: Number.isNaN(value) ? 0 : value }))
@@ -939,6 +962,9 @@ Return ONLY a valid JSON object:
               </div>
               <p className="text-xs text-muted-foreground">
                 Suggested defaults: quotes excluded, references excluded, minimum match words = 8.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Exports this month: {monthlyReviewExportCount || 0}/{exportPlanConfig.monthlyExports}
               </p>
             </div>
           </div>
