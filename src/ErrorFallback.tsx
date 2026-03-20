@@ -1,14 +1,14 @@
 import { Alert, AlertTitle, AlertDescription } from "./components/ui/alert"
-import { Button } from "./components/ui/button"
+
 
 export const ErrorFallback = ({ 
   error, 
   resetErrorBoundary 
-}: { 
-  error: Error
-  resetErrorBoundary: () => void 
-}) => {
-  if (import.meta.env.DEV) throw error
+  ret
+      <div cla
+          <AlertTitle>Something w
+       
+        </Alert>
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-6">
@@ -24,15 +24,15 @@ export const ErrorFallback = ({
           <pre className="whitespace-pre-wrap break-words">{error.message}</pre>
         </div>
 
-        <div className="flex gap-4">
+
           <Button onClick={resetErrorBoundary} variant="default">
-            Try again
-          </Button>
+
+
           <Button onClick={() => window.location.reload()} variant="outline">
             Refresh page
           </Button>
         </div>
-      </div>
+
     </div>
-  )
+
 }
