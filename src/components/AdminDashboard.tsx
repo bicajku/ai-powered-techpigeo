@@ -72,6 +72,26 @@ export function AdminDashboard() {
   const [selectedStrategy, setSelectedStrategy] = useState<{ user: UserProfile; strategy: SavedStrategy } | null>(null)
   const [selectedReview, setSelectedReview] = useState<{ user: UserProfile; review: SavedReviewDocument } | null>(null)
 
+  const buildStats = (
+    allUsers: UserProfile[],
+    strategies: { user: UserProfile; strategies: SavedStrategy[] }[],
+    reviews: { user: UserProfile; reviews: SavedReviewDocument[] }[]
+  ) => {
+    const totalStrategies = strategies.reduce((sum, item) => sum + item.strategies.length, 0)
+    const totalReviews = reviews.reduce((sum, item) => sum + item.reviews.length, 0)
+    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
+    const recentUsers = allUsers.filter((user) => user.createdAt >= sevenDaysAgo).length
+
+    return {
+      totalUsers: allUsers.length,
+      totalAdmins: allUsers.filter((user) => user.role === "admin").length,
+      totalClients: allUsers.filter((user) => user.role === "client").length,
+      totalStrategies,
+      totalReviews,
+      recentUsers,
+    }
+  }
+
   useEffect(() => {
     loadData()
   }, [])
@@ -79,14 +99,16 @@ export function AdminDashboard() {
   const loadData = async () => {
     setIsLoading(true)
     try {
-      const [allUsers, systemStats, strategies, reviews] = await Promise.all([
+      const [allUsers, strategies, reviews] = await Promise.all([
         adminService.getAllUsers(),
-        adminService.getSystemStats(),
         adminService.getAllStrategies(),
         adminService.getAllReviews(),
       ])
+
+      const syncedStats = buildStats(allUsers, strategies, reviews)
+
       setUsers(allUsers)
-      setStats(systemStats)
+      setStats(syncedStats)
       setAllStrategies(strategies)
       setAllReviews(reviews)
     } catch (error) {

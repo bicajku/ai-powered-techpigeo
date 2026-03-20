@@ -73,30 +73,105 @@ export function PlagiarismChecker({ userId }: PlagiarismCheckerProps) {
     }
 
     setFileName(file.name)
-    toast.success(`File "${file.name}" uploaded successfully`)
 
     const reader = new FileReader()
+    
     reader.onload = async (e) => {
       const content = e.target?.result as string
       
-      if (file.type === 'application/pdf') {
-        setText("PDF content extraction in progress. For demo purposes, please paste your text manually or upload a TXT file.")
-        toast.info("PDF parsing would require a backend service. Please paste text or use TXT files.")
-      } else {
+      if (file.type === 'text/plain') {
         setText(content)
+        toast.success(`File "${file.name}" loaded successfully`)
+      } else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+        try {
+          const extractedText = await extractTextFromDocx(content)
+          if (extractedText && extractedText.trim().length > 0) {
+            setText(extractedText)
+            toast.success(`File "${file.name}" loaded successfully - ${extractedText.length} characters extracted`)
+          } else {
+            toast.error("Could not extract text from DOCX. Please paste your text manually or use a TXT file.")
+            setText("")
+          }
+        } catch (error) {
+          console.error("DOCX extraction error:", error)
+          toast.error("Failed to extract text from DOCX. Please paste your text manually or use a TXT file.")
+          setText("")
+        }
+      } else if (file.type === 'application/pdf' || file.type === 'application/msword') {
+        toast.warning(`${file.type === 'application/pdf' ? 'PDF' : 'DOC'} extraction requires additional processing. Please copy and paste your text manually, or use a TXT file for direct upload.`)
+        setText("")
       }
+    }
+    
+    reader.onerror = () => {
+      toast.error("Failed to read file. Please try again.")
+      setFileName(null)
     }
     
     if (file.type === 'text/plain') {
       reader.readAsText(file)
+    } else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+      reader.readAsArrayBuffer(file)
     } else {
       reader.readAsDataURL(file)
+    }
+  }
+
+  const extractTextFromDocx = async (arrayBuffer: string | ArrayBuffer): Promise<string> => {
+    try {
+      if (typeof arrayBuffer === 'string') {
+        return ""
+      }
+
+      const uint8Array = new Uint8Array(arrayBuffer)
+      const decoder = new TextDecoder('utf-8', { fatal: false })
+      let fullText = decoder.decode(uint8Array)
+      
+      const xmlRegex = /<w:t[^>]*>([^<]+)<\/w:t>/g
+      const matches = fullText.matchAll(xmlRegex)
+      const extractedParts: string[] = []
+      
+      for (const match of matches) {
+        if (match[1]) {
+          extractedParts.push(match[1])
+        }
+      }
+      
+      if (extractedParts.length > 0) {
+        return extractedParts.join(' ').replace(/\s+/g, ' ').trim()
+      }
+      
+      const paragraphRegex = /<w:p\b[^>]*>(.*?)<\/w:p>/gs
+      const paragraphMatches = fullText.matchAll(paragraphRegex)
+      const paragraphTexts: string[] = []
+      
+      for (const match of paragraphMatches) {
+        const textMatches = match[1].matchAll(/<w:t[^>]*>([^<]+)<\/w:t>/g)
+        const texts = Array.from(textMatches, m => m[1])
+        if (texts.length > 0) {
+          paragraphTexts.push(texts.join(' '))
+        }
+      }
+      
+      if (paragraphTexts.length > 0) {
+        return paragraphTexts.join('\n\n').replace(/\s+/g, ' ').trim()
+      }
+      
+      return ""
+    } catch (error) {
+      console.error("Text extraction error:", error)
+      return ""
     }
   }
 
   const checkPlagiarism = async () => {
     if (!text.trim() || text.trim().length < 50) {
       toast.error("Please enter at least 50 characters to check")
+      return
+    }
+
+    if (text.includes("data:application/") || text.includes("base64,")) {
+      toast.error("The text area contains encoded file data instead of readable text. Please upload a TXT file or paste your text directly.")
       return
     }
 
@@ -161,7 +236,25 @@ Required JSON structure:
 }`
 
       const response = await spark.llm(prompt, "gpt-4o", true)
-      const parsedResult = JSON.parse(response) as PlagiarismResult
+      
+      let cleanedResponse = response.trim()
+      
+      if (cleanedResponse.startsWith("```json")) {
+        cleanedResponse = cleanedResponse.replace(/^```json\s*/, "").replace(/```\s*$/, "")
+      } else if (cleanedResponse.startsWith("```")) {
+        cleanedResponse = cleanedResponse.replace(/^```\s*/, "").replace(/```\s*$/, "")
+      }
+      
+      cleanedResponse = cleanedResponse.trim()
+      
+      const firstBrace = cleanedResponse.indexOf('{')
+      const lastBrace = cleanedResponse.lastIndexOf('}')
+      
+      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+        cleanedResponse = cleanedResponse.substring(firstBrace, lastBrace + 1)
+      }
+      
+      const parsedResult = JSON.parse(cleanedResponse) as PlagiarismResult
 
       setResult(parsedResult)
 
@@ -187,7 +280,13 @@ Required JSON structure:
       }, 1000)
     } catch (error) {
       console.error("Plagiarism check error:", error)
-      toast.error("Failed to analyze document. Please try again.")
+      const errorMessage = error instanceof Error ? error.message : "Unknown error"
+      
+      if (errorMessage.includes("JSON") || errorMessage.includes("parse")) {
+        toast.error("Failed to process the analysis response. Please try again or contact support if the issue persists.")
+      } else {
+        toast.error("Failed to analyze document. Please try again.")
+      }
     } finally {
       setIsChecking(false)
     }
