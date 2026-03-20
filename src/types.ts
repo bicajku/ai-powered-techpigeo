@@ -182,3 +182,5 @@ export interface ErrorLog {
   resolved: boolean
   resolvedAt?: number
 }
+
+export type ConceptMode = "auto" | "sales" | "ecommerce" | "saas" | "education" | "healthcare" | "fintech" | "ops" | "realestate" | "hospitality" | "manufacturing" | "retail" | "logistics" | "legal" | "consulting" | "nonprofit" | "agriculture" | "construction" | "automotive" | "media" | "telecom" | "energy" | "insurance" | "travel" | "foodservice" | "wellness" | "sports" | "entertainment" | "fashion" | "beauty"

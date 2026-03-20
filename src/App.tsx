@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
-import { Sparkle, Lightbulb, ChatsCircle, Palette, Target, ArrowClockwise, FloppyDisk, FolderOpen, Code, Desktop, Database, DeviceMobile, ListChecks, ChartBar, ShieldCheck, MagnifyingGlass, CaretUpDown, Check } from "@phosphor-icons/react"
+import { Sparkle, Lightbulb, ChatsCircle, Palette, Target, ArrowClockwise, FloppyDisk, FolderOpen, Code, Desktop, Database, DeviceMobile, ListChecks, ChartBar, ShieldCheck, MagnifyingGlass, CaretUpDown, Check, BookOpen } from "@phosphor-icons/react"
 import { ResultCard } from "@/components/ResultCard"
 import { LoadingState } from "@/components/LoadingState"
 import { EmptyState } from "@/components/EmptyState"
 import { SavedStrategies } from "@/components/SavedStrategies"
 import { ComparisonView } from "@/components/ComparisonView"
 import { SaveStrategyDialog } from "@/components/SaveStrategyDialog"
+import { StrategyTemplatesBrowser } from "@/components/StrategyTemplatesBrowser"
 import { AuthForm } from "@/components/AuthForm"
 import { UserMenu } from "@/components/UserMenu"
 import { Dashboard } from "@/components/Dashboard"
@@ -23,13 +24,11 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { toast } from "sonner"
 import { useKV } from "@github/spark/hooks"
 import { motion, AnimatePresence } from "framer-motion"
-import { MarketingResult, SavedStrategy, UserProfile } from "@/types"
+import { MarketingResult, SavedStrategy, UserProfile, ConceptMode } from "@/types"
 import { authService } from "@/lib/auth"
 import { BRAND_THEME_STORAGE_KEY, DEFAULT_BRAND_THEME, isBrandThemeName, type BrandThemeName } from "@/lib/brand-theme"
 import { logError } from "@/lib/error-logger"
 import { cn } from "@/lib/utils"
-
-type ConceptMode = "auto" | "sales" | "ecommerce" | "saas" | "education" | "healthcare" | "fintech" | "ops" | "realestate" | "hospitality" | "manufacturing" | "retail" | "logistics" | "legal" | "consulting" | "nonprofit" | "agriculture" | "construction" | "automotive" | "media" | "telecom" | "energy" | "insurance" | "travel" | "foodservice" | "wellness" | "sports" | "entertainment" | "fashion" | "beauty"
 
 interface PromptMemoryItem {
   prompt: string
@@ -101,6 +100,7 @@ function App() {
   const [selectedForComparison, setSelectedForComparison] = useState<string[]>([])
   const [showComparison, setShowComparison] = useState(false)
   const [showSaveDialog, setShowSaveDialog] = useState(false)
+  const [showTemplatesBrowser, setShowTemplatesBrowser] = useState(false)
   const [conceptMode, setConceptMode] = useState<ConceptMode>("auto")
   const [showPromptSuggestions, setShowPromptSuggestions] = useState(false)
   const [openConceptSelector, setOpenConceptSelector] = useState(false)
@@ -611,6 +611,15 @@ CRITICAL REMINDERS:
         onOpenChange={setShowSaveDialog}
         onSave={handleSaveStrategy}
       />
+      <StrategyTemplatesBrowser
+        open={showTemplatesBrowser}
+        onOpenChange={setShowTemplatesBrowser}
+        onSelectTemplate={(description, conceptMode) => {
+          setDescription(description)
+          setConceptMode(conceptMode)
+          toast.success("Template applied! Customize the prompt and generate your strategy.")
+        }}
+      />
       <AnimatePresence>
         {showComparison && (
           <ComparisonView
@@ -699,8 +708,18 @@ CRITICAL REMINDERS:
                 transition={{ duration: 0.5, delay: 0.1 }}
                 className="bg-card/80 backdrop-blur-sm rounded-2xl shadow-lg border border-border/50 p-6 md:p-8"
               >
-                <label htmlFor="product-description" className="block text-sm font-semibold text-foreground mb-3">
-                  Describe your topic, product, or service
+                <label htmlFor="product-description" className="block text-sm font-semibold text-foreground mb-3 flex items-center justify-between">
+                  <span>Describe your topic, product, or service</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="gap-2 text-xs h-7"
+                    onClick={() => setShowTemplatesBrowser(true)}
+                  >
+                    <BookOpen size={14} weight="bold" />
+                    Browse Templates
+                  </Button>
                 </label>
                 <div className="relative mb-4">
                   <Textarea
