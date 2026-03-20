@@ -166,8 +166,19 @@ CRITICAL: Return ONLY valid JSON with no markdown formatting.`
       }
       
       const parsedResult = JSON.parse(cleanedResponse) as BusinessCanvasModel
+      
+      console.log("Business Canvas generated:", parsedResult)
+      console.log("Business Canvas keys:", Object.keys(parsedResult))
+      
       setBusinessCanvas(parsedResult)
-      toast.success("Business Canvas generated!")
+      toast.success("Business Canvas generated successfully!")
+      
+      setTimeout(() => {
+        const canvasElement = document.querySelector('[data-canvas-view]')
+        if (canvasElement) {
+          canvasElement.scrollIntoView({ behavior: "smooth", block: "start" })
+        }
+      }, 100)
     } catch (error) {
       console.error("Error generating business canvas:", error)
       toast.error("Failed to generate Business Canvas. Please try again.")
@@ -270,8 +281,19 @@ CRITICAL: Return ONLY valid JSON.`
       }
       
       const parsedResult = JSON.parse(cleanedResponse) as PitchDeck
+      
+      console.log("Pitch Deck generated:", parsedResult)
+      console.log("Pitch Deck has", parsedResult.slides?.length || 0, "slides")
+      
       setPitchDeck(parsedResult)
-      toast.success("Pitch Deck generated!")
+      toast.success("Pitch Deck generated successfully!")
+      
+      setTimeout(() => {
+        const pitchElement = document.querySelector('[data-pitch-view]')
+        if (pitchElement) {
+          pitchElement.scrollIntoView({ behavior: "smooth", block: "start" })
+        }
+      }, 100)
     } catch (error) {
       console.error("Error generating pitch deck:", error)
       toast.error("Failed to generate Pitch Deck. Please try again.")
@@ -510,11 +532,23 @@ CRITICAL: Return ONLY valid JSON.`
                       variant="outline"
                       className="gap-2 h-auto py-6 flex-col"
                     >
-                      <ChartDonut size={32} weight="duotone" className="text-primary" />
-                      <div>
-                        <div className="font-semibold">Generate Business Canvas</div>
-                        <div className="text-xs text-muted-foreground font-normal">Free - Powered by AI</div>
-                      </div>
+                      {isLoadingCanvas ? (
+                        <>
+                          <ChartDonut size={32} weight="duotone" className="text-primary animate-pulse" />
+                          <div>
+                            <div className="font-semibold">Generating Canvas...</div>
+                            <div className="text-xs text-muted-foreground font-normal">Please wait</div>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <ChartDonut size={32} weight="duotone" className="text-primary" />
+                          <div>
+                            <div className="font-semibold">Generate Business Canvas</div>
+                            <div className="text-xs text-muted-foreground font-normal">Free - Powered by AI</div>
+                          </div>
+                        </>
+                      )}
                     </Button>
 
                     <Button
@@ -524,21 +558,77 @@ CRITICAL: Return ONLY valid JSON.`
                       variant="outline"
                       className="gap-2 h-auto py-6 flex-col"
                     >
-                      <PresentationChart size={32} weight="duotone" className="text-accent" />
-                      <div>
-                        <div className="font-semibold">Generate Pitch Deck</div>
-                        <div className="text-xs text-muted-foreground font-normal">Free - Investor Ready</div>
-                      </div>
+                      {isLoadingPitch ? (
+                        <>
+                          <PresentationChart size={32} weight="duotone" className="text-accent animate-pulse" />
+                          <div>
+                            <div className="font-semibold">Generating Pitch Deck...</div>
+                            <div className="text-xs text-muted-foreground font-normal">Please wait</div>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <PresentationChart size={32} weight="duotone" className="text-accent" />
+                          <div>
+                            <div className="font-semibold">Generate Pitch Deck</div>
+                            <div className="text-xs text-muted-foreground font-normal">Free - Investor Ready</div>
+                          </div>
+                        </>
+                      )}
                     </Button>
                   </div>
 
-                  {businessCanvas && (
-                    <BusinessCanvasView canvas={businessCanvas} ideaName={currentIdeaInput} />
-                  )}
+                  <AnimatePresence mode="wait">
+                    {isLoadingCanvas && (
+                      <motion.div
+                        key="canvas-loading"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="bg-card/80 backdrop-blur-sm rounded-2xl shadow-lg border border-border/50 p-8 text-center"
+                      >
+                        <ChartDonut size={48} weight="duotone" className="text-primary animate-pulse mx-auto mb-4" />
+                        <p className="text-muted-foreground">Generating Business Canvas Model...</p>
+                      </motion.div>
+                    )}
 
-                  {pitchDeck && (
-                    <PitchDeckView pitchDeck={pitchDeck} ideaName={currentIdeaInput} />
-                  )}
+                    {!isLoadingCanvas && businessCanvas && (
+                      <motion.div
+                        key="canvas-result"
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -20 }}
+                      >
+                        <BusinessCanvasView canvas={businessCanvas} ideaName={currentIdeaInput} />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  <AnimatePresence mode="wait">
+                    {isLoadingPitch && (
+                      <motion.div
+                        key="pitch-loading"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="bg-card/80 backdrop-blur-sm rounded-2xl shadow-lg border border-border/50 p-8 text-center"
+                      >
+                        <PresentationChart size={48} weight="duotone" className="text-accent animate-pulse mx-auto mb-4" />
+                        <p className="text-muted-foreground">Generating Pitch Deck...</p>
+                      </motion.div>
+                    )}
+
+                    {!isLoadingPitch && pitchDeck && (
+                      <motion.div
+                        key="pitch-result"
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -20 }}
+                      >
+                        <PitchDeckView pitchDeck={pitchDeck} ideaName={currentIdeaInput} />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </motion.div>
               )}
             </AnimatePresence>

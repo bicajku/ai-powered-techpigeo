@@ -33,6 +33,7 @@ export function BusinessCanvasView({ canvas, ideaName }: BusinessCanvasViewProps
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       className="space-y-6 mt-8"
+      data-canvas-view
     >
       <div className="flex items-center justify-between">
         <h3 className="text-2xl font-bold text-foreground">Business Model Canvas</h3>
