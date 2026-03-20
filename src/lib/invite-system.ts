@@ -9,6 +9,31 @@ export interface InviteLink {
 }
 
 const INVITES_STORAGE_KEY = "invite-links"
+const DEFAULT_PUBLIC_APP_URL = "https://ai-powered-techpigeo--umerslone.github.app"
+
+function getPublicAppUrl(): string {
+  if (typeof window === "undefined") {
+    return DEFAULT_PUBLIC_APP_URL
+  }
+
+  const envUrl = (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_PUBLIC_APP_URL
+  if (envUrl) {
+    return envUrl.replace(/\/$/, "")
+  }
+
+  const currentOrigin = window.location.origin
+  const isCodespacesPreview = /github\.(dev|app)$/i.test(window.location.hostname)
+
+  if (isCodespacesPreview) {
+    return DEFAULT_PUBLIC_APP_URL
+  }
+
+  return currentOrigin
+}
+
+export function buildInviteLink(code: string): string {
+  return `${getPublicAppUrl()}?invite=${encodeURIComponent(code)}`
+}
 
 export const inviteService = {
   async generateInviteLink(createdByUserId: string, expirationDays: number = 30): Promise<{ success: boolean; code?: string; link?: string; error?: string }> {
@@ -29,8 +54,7 @@ export const inviteService = {
 
       await spark.kv.set(INVITES_STORAGE_KEY, invites)
 
-      const baseUrl = typeof window !== "undefined" ? window.location.origin : "https://example.com"
-      const link = `${baseUrl}?invite=${code}`
+  const link = buildInviteLink(code)
 
       return { success: true, code, link }
     } catch (error) {

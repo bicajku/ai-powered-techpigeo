@@ -4,7 +4,7 @@ import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Copy, QrCode, Trash, Link as LinkIcon } from "@phosphor-icons/react"
 import { toast } from "sonner"
-import { inviteService, type InviteLink } from "@/lib/invite-system"
+import { inviteService, buildInviteLink, type InviteLink } from "@/lib/invite-system"
 import { QRCodeGenerator } from "@/components/QRCodeGenerator"
 import { UserProfile } from "@/types"
 import {
@@ -23,7 +23,6 @@ interface InviteManagerProps {
 export function InviteManager({ user }: InviteManagerProps) {
   const [invites, setInvites] = useState<InviteLink[]>([])
   const [isLoading, setIsLoading] = useState(false)
-  const [showQR, setShowQR] = useState<string | null>(null)
 
   useEffect(() => {
     loadInvites()
@@ -64,11 +63,6 @@ export function InviteManager({ user }: InviteManagerProps) {
     }
   }
 
-  const getInviteLink = (code: string) => {
-    const baseUrl = typeof window !== "undefined" ? window.location.origin : "https://example.com"
-    return `${baseUrl}?invite=${code}`
-  }
-
   const getTimeRemaining = (expiresAt: number) => {
     const now = Date.now()
     const diff = expiresAt - now
@@ -106,7 +100,7 @@ export function InviteManager({ user }: InviteManagerProps) {
         ) : (
           <div className="space-y-3">
             {invites.map((invite) => {
-              const link = getInviteLink(invite.code)
+              const link = buildInviteLink(invite.code)
               const timeRemaining = getTimeRemaining(invite.expiresAt)
               const isExpired = invite.expiresAt < Date.now()
               const isUsed = !invite.isActive && invite.usedAt

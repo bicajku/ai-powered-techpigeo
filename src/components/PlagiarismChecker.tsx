@@ -793,13 +793,15 @@ Return ONLY a valid JSON object:
                 )}
 
                 <Tabs defaultValue="summary" className="w-full">
-                  <TabsList className="grid w-full grid-cols-5">
-                    <TabsTrigger value="summary">Summary</TabsTrigger>
-                    <TabsTrigger value="plagiarism">Similarity</TabsTrigger>
-                    <TabsTrigger value="ai">AI Detection</TabsTrigger>
-                    <TabsTrigger value="references">References</TabsTrigger>
-                    <TabsTrigger value="recommendations">Actions</TabsTrigger>
-                  </TabsList>
+                  <div className="overflow-x-auto pb-1">
+                    <TabsList className="grid min-w-[680px] grid-cols-5">
+                      <TabsTrigger value="summary">Summary</TabsTrigger>
+                      <TabsTrigger value="plagiarism">Similarity</TabsTrigger>
+                      <TabsTrigger value="ai">AI Detection</TabsTrigger>
+                      <TabsTrigger value="references">References</TabsTrigger>
+                      <TabsTrigger value="recommendations">Actions</TabsTrigger>
+                    </TabsList>
+                  </div>
 
                   <TabsContent value="summary" className="space-y-3">
                     <div className="prose prose-sm max-w-none">

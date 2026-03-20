@@ -453,28 +453,30 @@ export function AdminDashboard() {
           transition={{ duration: 0.5, delay: 0.7 }}
         >
           <Tabs defaultValue="users" className="w-full">
-            <TabsList className="grid w-full grid-cols-5 mb-4">
-              <TabsTrigger value="users" className="gap-2">
-                <Users size={18} weight="bold" />
-                User Management
-              </TabsTrigger>
-              <TabsTrigger value="strategies" className="gap-2">
-                <FolderOpen size={18} weight="bold" />
-                All Strategies ({allStrategies.reduce((sum, item) => sum + item.strategies.length, 0)})
-              </TabsTrigger>
-              <TabsTrigger value="reviews" className="gap-2">
-                <MagnifyingGlass size={18} weight="bold" />
-                All Reviews ({allReviews.reduce((sum, item) => sum + item.reviews.length, 0)})
-              </TabsTrigger>
-              <TabsTrigger value="invites" className="gap-2">
-                <LinkIcon size={18} weight="bold" />
-                Invites
-              </TabsTrigger>
-              <TabsTrigger value="errors" className="gap-2">
-                <Bug size={18} weight="bold" />
-                Error Logs
-              </TabsTrigger>
-            </TabsList>
+            <div className="mb-4 overflow-x-auto pb-1">
+              <TabsList className="grid min-w-[900px] grid-cols-5">
+                <TabsTrigger value="users" className="gap-2">
+                  <Users size={18} weight="bold" />
+                  User Management
+                </TabsTrigger>
+                <TabsTrigger value="strategies" className="gap-2">
+                  <FolderOpen size={18} weight="bold" />
+                  All Strategies ({allStrategies.reduce((sum, item) => sum + item.strategies.length, 0)})
+                </TabsTrigger>
+                <TabsTrigger value="reviews" className="gap-2">
+                  <MagnifyingGlass size={18} weight="bold" />
+                  All Reviews ({allReviews.reduce((sum, item) => sum + item.reviews.length, 0)})
+                </TabsTrigger>
+                <TabsTrigger value="invites" className="gap-2">
+                  <LinkIcon size={18} weight="bold" />
+                  Invites
+                </TabsTrigger>
+                <TabsTrigger value="errors" className="gap-2">
+                  <Bug size={18} weight="bold" />
+                  Error Logs
+                </TabsTrigger>
+              </TabsList>
+            </div>
 
             <TabsContent value="users">
               <Card>
