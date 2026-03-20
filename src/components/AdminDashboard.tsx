@@ -49,8 +49,6 @@ import {
   FileText,
   Bug,
   Key,
-  Archive,
-  ArrowClockwise,
 } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { UserProfile, UserRole, SavedStrategy, SavedReviewDocument } from "@/types"
@@ -194,36 +192,6 @@ export function AdminDashboard() {
     }
   }
 
-  const handleDeleteReview = async (reviewId: string, userId: string) => {
-    if (!confirm("Are you sure you want to delete this review?")) return
-
-    try {
-      const reviews = await spark.kv.get<SavedReviewDocument[]>(`saved-reviews-${userId}`) || []
-      const updatedReviews = reviews.filter(r => r.id !== reviewId)
-      await spark.kv.set(`saved-reviews-${userId}`, updatedReviews)
-      toast.success("Review deleted successfully")
-      await loadData()
-    } catch (error) {
-      console.error("Failed to delete review:", error)
-      toast.error("Failed to delete review")
-    }
-  }
-
-  const handleArchiveReview = async (reviewId: string, userId: string) => {
-    try {
-      const reviews = await spark.kv.get<SavedReviewDocument[]>(`saved-reviews-${userId}`) || []
-      const updatedReviews = reviews.map(r => 
-        r.id === reviewId ? { ...r, archived: true } : r
-      )
-      await spark.kv.set(`saved-reviews-${userId}`, updatedReviews)
-      toast.success("Review archived successfully")
-      await loadData()
-    } catch (error) {
-      console.error("Failed to archive review:", error)
-      toast.error("Failed to archive review")
-    }
-  }
-
   const formatDate = (timestamp: number) => {
     return new Date(timestamp).toLocaleDateString("en-US", {
       year: "numeric",
@@ -284,25 +252,10 @@ export function AdminDashboard() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
         >
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h2 className="text-2xl font-bold text-foreground flex items-center gap-2">
-                <ShieldCheck size={28} weight="duotone" className="text-primary" />
-                Admin Dashboard
-              </h2>
-              <p className="text-sm text-muted-foreground mt-1">Auto-refreshes every 30s</p>
-            </div>
-            <Button
-              onClick={loadData}
-              variant="outline"
-              size="sm"
-              className="gap-2"
-              disabled={isLoading}
-            >
-              <ArrowClockwise size={16} weight="bold" className={isLoading ? "animate-spin" : ""} />
-              Refresh
-            </Button>
-          </div>
+          <h2 className="text-2xl font-bold text-foreground mb-6 flex items-center gap-2">
+            <ShieldCheck size={28} weight="duotone" className="text-primary" />
+            Admin Dashboard
+          </h2>
         </motion.div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
@@ -660,33 +613,13 @@ export function AdminDashboard() {
                                   {formatDate(review.timestamp)}
                                 </TableCell>
                                 <TableCell className="text-right">
-                                  <div className="flex items-center justify-end gap-1">
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() => setSelectedReview({ user, review })}
-                                      title="View Review"
-                                    >
-                                      <Eye size={16} weight="bold" />
-                                    </Button>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() => handleArchiveReview(review.id, user.id)}
-                                      title="Archive Review"
-                                    >
-                                      <Archive size={16} weight="bold" />
-                                    </Button>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() => handleDeleteReview(review.id, user.id)}
-                                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                                      title="Delete Review"
-                                    >
-                                      <Trash size={16} weight="bold" />
-                                    </Button>
-                                  </div>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setSelectedReview({ user, review })}
+                                  >
+                                    <Eye size={16} weight="bold" />
+                                  </Button>
                                 </TableCell>
                               </TableRow>
                             ))

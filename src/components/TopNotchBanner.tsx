@@ -7,7 +7,9 @@ import { Button } from "@/components/ui/button"
 interface TopNotchBannerProps {
   user: UserProfile
   onExpand: () => void
+  onDismiss: () => void
   isVisible: boolean
+  notchDismissedAt: number
 }
 
 interface SparkleParticle {
@@ -19,8 +21,9 @@ interface SparkleParticle {
   size: number
 }
 
-export function TopNotchBanner({ user, onExpand, isVisible }: TopNotchBannerProps) {
-  const [isDismissed, setIsDismissed] = useState(false)
+export function TopNotchBanner({ user, onExpand, onDismiss, isVisible, notchDismissedAt }: TopNotchBannerProps) {
+  // Don't show if dismissed in this session
+  const [isDismissed, setIsDismissed] = useState(notchDismissedAt > 0)
 
   const sparkleParticles = useMemo<SparkleParticle[]>(() => {
     const particles: SparkleParticle[] = []
@@ -51,6 +54,7 @@ export function TopNotchBanner({ user, onExpand, isVisible }: TopNotchBannerProp
   const handleDismiss = (e: React.MouseEvent) => {
     e.stopPropagation()
     setIsDismissed(true)
+    onDismiss()
   }
 
   return (

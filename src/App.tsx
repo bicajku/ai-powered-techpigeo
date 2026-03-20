@@ -64,8 +64,15 @@ function App() {
   const [result, setResult] = useState<MarketingResult | null>(null)
   const [currentDescription, setCurrentDescription] = useState("")
   const [error, setError] = useState<string | null>(null)
-  const [showExpandedWelcome, setShowExpandedWelcome] = useState(true)
-  const [shouldShowTopNotch, setShouldShowTopNotch] = useState(false)
+  const [hasShownWelcomeThisSession, setHasShownWelcomeThisSession] = useState(false)
+  const [showExpandedWelcome, setShowExpandedWelcome] = useState(false)
+  const [notchDismissedAt, setNotchDismissedAt] = useState<number>(() => {
+    if (typeof window === "undefined") {
+      return 0
+    }
+    const stored = window.localStorage.getItem("notch-dismissed-at")
+    return stored ? parseInt(stored, 10) : 0
+  })
   const [savedStrategies, setSavedStrategies] = useKV<SavedStrategy[]>(
     `saved-strategies-${userIdForKV}`,
     []
@@ -98,6 +105,11 @@ function App() {
       setUser(currentUser)
       if (currentUser) {
         setUserIdForKV(currentUser.id)
+        // Only show welcome banner once per login session
+        if (!hasShownWelcomeThisSession) {
+          setShowExpandedWelcome(true)
+          setHasShownWelcomeThisSession(true)
+        }
       }
       setIsCheckingAuth(false)
     }
@@ -109,16 +121,16 @@ function App() {
     window.localStorage.setItem(BRAND_THEME_STORAGE_KEY, brandTheme)
   }, [brandTheme])
 
+  // Dismiss welcome banner after 15 seconds on initial display only
   useEffect(() => {
-    if (showExpandedWelcome) {
+    if (showExpandedWelcome && hasShownWelcomeThisSession) {
       const timer = setTimeout(() => {
         setShowExpandedWelcome(false)
-        setShouldShowTopNotch(true)
       }, 15000)
 
       return () => clearTimeout(timer)
     }
-  }, [showExpandedWelcome])
+  }, [showExpandedWelcome, hasShownWelcomeThisSession])
 
   const isValidInput = description.trim().length >= 10
   const charCount = description.length
@@ -539,10 +551,15 @@ FORMATTING GUIDELINES:
     <>
       <TopNotchBanner 
         user={user} 
-        isVisible={shouldShowTopNotch}
+        isVisible={!showExpandedWelcome && hasShownWelcomeThisSession}
+        notchDismissedAt={notchDismissedAt}
+        onDismiss={() => {
+          const now = Date.now()
+          setNotchDismissedAt(now)
+          window.localStorage.setItem("notch-dismissed-at", now.toString())
+        }}
         onExpand={() => {
           setShowExpandedWelcome(true)
-          setShouldShowTopNotch(false)
           window.scrollTo({ top: 0, behavior: "smooth" })
         }}
       />
