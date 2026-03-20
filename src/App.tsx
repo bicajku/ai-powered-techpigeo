@@ -28,14 +28,6 @@ import { authService } from "@/lib/auth"
 import { BRAND_THEME_STORAGE_KEY, DEFAULT_BRAND_THEME, isBrandThemeName, type BrandThemeName } from "@/lib/brand-theme"
 import { logError } from "@/lib/error-logger"
 import { cn } from "@/lib/utils"
-import {
-  DEFAULT_KNOWLEDGEBASE_CONCEPTS,
-  DEFAULT_KNOWLEDGE_FEED_ITEMS,
-  KnowledgebaseConcept,
-  KnowledgeFeedItem,
-  formatFeedForPrompt,
-  formatKnowledgebaseForPrompt,
-} from "@/lib/concept-playbooks"
 
 type ConceptMode = "auto" | "sales" | "ecommerce" | "saas" | "education" | "healthcare" | "fintech" | "ops" | "realestate" | "hospitality" | "manufacturing" | "retail" | "logistics" | "legal" | "consulting" | "nonprofit" | "agriculture" | "construction" | "automotive" | "media" | "telecom" | "energy" | "insurance" | "travel" | "foodservice" | "wellness" | "sports" | "entertainment" | "fashion" | "beauty"
 
@@ -85,6 +77,7 @@ function App() {
   const [userIdForKV, setUserIdForKV] = useState<string>("temp")
   const [description, setDescription] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+  const [loadingProgress, setLoadingProgress] = useState(0)
   const [result, setResult] = useState<MarketingResult | null>(null)
   const [currentDescription, setCurrentDescription] = useState("")
   const [error, setError] = useState<string | null>(null)
@@ -105,8 +98,6 @@ function App() {
     `user-prompt-memory-${userIdForKV}`,
     []
   )
-  const [knowledgebaseConcepts, setKnowledgebaseConcepts] = useKV<KnowledgebaseConcept[]>("knowledgebase-concepts", [])
-  const [knowledgeFeed, setKnowledgeFeed] = useKV<KnowledgeFeedItem[]>("knowledge-feed", [])
   const [selectedForComparison, setSelectedForComparison] = useState<string[]>([])
   const [showComparison, setShowComparison] = useState(false)
   const [showSaveDialog, setShowSaveDialog] = useState(false)
@@ -160,36 +151,6 @@ function App() {
   const isValidInput = description.trim().length >= 10
   const charCount = description.length
   const showCharCounter = charCount >= 900
-
-  useEffect(() => {
-    if (!knowledgebaseConcepts || knowledgebaseConcepts.length === 0) {
-      setKnowledgebaseConcepts(DEFAULT_KNOWLEDGEBASE_CONCEPTS)
-    }
-
-    if (!knowledgeFeed || knowledgeFeed.length === 0) {
-      setKnowledgeFeed(DEFAULT_KNOWLEDGE_FEED_ITEMS)
-    }
-  }, [knowledgebaseConcepts, knowledgeFeed, setKnowledgebaseConcepts, setKnowledgeFeed])
-
-  const activeKnowledgebase = useMemo(
-    () => (knowledgebaseConcepts && knowledgebaseConcepts.length > 0 ? knowledgebaseConcepts : DEFAULT_KNOWLEDGEBASE_CONCEPTS),
-    [knowledgebaseConcepts]
-  )
-
-  const activeFeed = useMemo(
-    () => (knowledgeFeed && knowledgeFeed.length > 0 ? knowledgeFeed : DEFAULT_KNOWLEDGE_FEED_ITEMS),
-    [knowledgeFeed]
-  )
-
-  const knowledgebasePrompt = useMemo(
-    () => formatKnowledgebaseForPrompt(activeKnowledgebase),
-    [activeKnowledgebase]
-  )
-
-  const feedPrompt = useMemo(
-    () => formatFeedForPrompt(activeFeed),
-    [activeFeed]
-  )
 
   const quickPromptSuggestions = useMemo(() => {
     const current = description.trim().toLowerCase()
@@ -257,20 +218,19 @@ function App() {
       throw error
     }
 
+    const contextSection = conceptMode !== "auto" 
+      ? `Selected Concept Mode: ${conceptMode}
+Mode Instruction: ${CONCEPT_MODE_INSTRUCTION[conceptMode]}
+
+Apply the above concept mode guidance to provide domain-specific insights.`
+      : `Selected Concept Mode: Auto
+Automatically select the most relevant archetypes and implementation patterns based on the topic.`
+
     const prompt = spark.llmPrompt`You are an elite marketing strategist, solutions architect, and AI automation consultant. Based on the topic below, produce a comprehensive strategy and implementation guidance at production depth.
 
 Topic/Description: ${description}
 
-Selected Concept Mode: ${conceptMode}
-Mode Instruction: ${CONCEPT_MODE_INSTRUCTION[conceptMode]}
-
-Knowledgebase Database (persistent concept records):
-${knowledgebasePrompt}
-
-Knowledge Feed Database (recent examples and references):
-${feedPrompt}
-
-Use both databases as a quality bar and adapt to the user's domain.
+${contextSection}
 
 CRITICAL JSON FORMATTING RULES:
 1. Return ONLY a valid JSON object with no markdown, no code blocks, no text before or after
@@ -382,7 +342,15 @@ FORMATTING GUIDELINES:
     }
 
     setIsLoading(true)
+    setLoadingProgress(0)
     setError(null)
+
+    const progressInterval = setInterval(() => {
+      setLoadingProgress((prev) => {
+        if (prev >= 90) return prev
+        return prev + 5
+      })
+    }, 500)
 
     const maxRetries = 3
     let lastError: Error | null = null
@@ -396,6 +364,9 @@ FORMATTING GUIDELINES:
 
         const normalizedResult = await attemptGeneration(attempt)
 
+        clearInterval(progressInterval)
+        setLoadingProgress(100)
+        
         setResult(normalizedResult)
         rememberPrompt(description, conceptMode)
         setCurrentDescription(description)
@@ -409,6 +380,7 @@ FORMATTING GUIDELINES:
         }, 100)
         
         setIsLoading(false)
+        setLoadingProgress(0)
         return
       } catch (err) {
         lastError = err instanceof Error ? err : new Error("An unexpected error occurred")
@@ -442,6 +414,7 @@ FORMATTING GUIDELINES:
       }
     }
 
+    clearInterval(progressInterval)
     const errorMessage = lastError?.message || "Failed to generate strategy after multiple attempts"
     console.error("All attempts failed. Last error:", lastError)
     await logError(
@@ -459,6 +432,7 @@ FORMATTING GUIDELINES:
     setError(errorMessage)
     toast.error(`Generation failed after ${maxRetries} attempts. Please try again.`)
     setIsLoading(false)
+    setLoadingProgress(0)
   }
 
   const handleNewGeneration = () => {
@@ -1273,9 +1247,6 @@ FORMATTING GUIDELINES:
                   <p className="text-xs text-muted-foreground mt-2">
                     Choose a domain lens for strategy depth, or keep Auto to let AI select the best archetypes.
                   </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Database loaded: {activeKnowledgebase.length} concepts • {activeFeed.length} feed items
-                  </p>
                 </div>
                 
                 <div className="flex items-center justify-between gap-4">
@@ -1324,7 +1295,7 @@ FORMATTING GUIDELINES:
               )}
 
               <div ref={resultsRef}>
-                {isLoading && <LoadingState />}
+                {isLoading && <LoadingState progress={loadingProgress} />}
                 
                 {!isLoading && result && (
                   <div className="space-y-6">
