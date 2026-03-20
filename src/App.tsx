@@ -24,6 +24,7 @@ import { useKV } from "@github/spark/hooks"
 import { motion, AnimatePresence } from "framer-motion"
 import { MarketingResult, SavedStrategy, UserProfile } from "@/types"
 import { authService } from "@/lib/auth"
+import { logError } from "@/lib/error-logger"
 import {
   DEFAULT_KNOWLEDGEBASE_CONCEPTS,
   DEFAULT_KNOWLEDGE_FEED_ITEMS,
@@ -194,11 +195,15 @@ function App() {
 
   const attemptGeneration = async (attemptNumber: number): Promise<MarketingResult> => {
     if (typeof spark === "undefined") {
-      throw new Error("Spark API is not available. Please refresh the page.")
+      const error = new Error("Spark API is not available. Please refresh the page.")
+      await logError("Spark API unavailable", error, "system", "critical", user?.id)
+      throw error
     }
 
     if (typeof spark.llmPrompt === "undefined") {
-      throw new Error("Spark LLM prompt is not available.")
+      const error = new Error("Spark LLM prompt is not available.")
+      await logError("Spark LLM prompt unavailable", error, "system", "critical", user?.id)
+      throw error
     }
 
     const prompt = spark.llmPrompt`You are an elite marketing strategist, solutions architect, and AI automation consultant. Based on the topic below, produce a comprehensive strategy and implementation guidance at production depth.
@@ -245,13 +250,21 @@ FORMATTING GUIDELINES:
 - Ensure ALL strings are properly terminated and escaped`
 
     if (typeof spark.llm !== "function") {
-      throw new Error("Spark LLM function is not available.")
+      const error = new Error("Spark LLM function is not available.")
+      await logError("Spark LLM function unavailable", error, "system", "critical", user?.id)
+      throw error
     }
 
     const response = await spark.llm(prompt, "gpt-4o", true)
     
     if (!response) {
-      throw new Error("Empty response from LLM")
+      const error = new Error("Empty response from LLM")
+      await logError("Empty LLM response", error, "generation", "high", user?.id, {
+        attemptNumber,
+        description: description.substring(0, 100),
+        conceptMode,
+      })
+      throw error
     }
 
     let cleanedResponse = response.trim()
@@ -280,11 +293,21 @@ FORMATTING GUIDELINES:
     console.log(`Attempt ${attemptNumber} - Successfully parsed with keys:`, Object.keys(parsedResult))
 
     if (!parsedResult || typeof parsedResult !== 'object') {
-      throw new Error("Invalid response format - expected an object")
+      const error = new Error("Invalid response format - expected an object")
+      await logError("Invalid LLM response format", error, "generation", "high", user?.id, {
+        attemptNumber,
+        responseType: typeof parsedResult,
+      })
+      throw error
     }
 
     if (!parsedResult.marketingCopy || !parsedResult.visualStrategy || !parsedResult.targetAudience) {
-      throw new Error(`Missing required fields. Got: ${Object.keys(parsedResult).join(', ')}`)
+      const error = new Error(`Missing required fields. Got: ${Object.keys(parsedResult).join(', ')}`)
+      await logError("Missing required fields in LLM response", error, "generation", "medium", user?.id, {
+        attemptNumber,
+        receivedFields: Object.keys(parsedResult),
+      })
+      throw error
     }
 
     const normalizedResult: MarketingResult = {
@@ -340,6 +363,20 @@ FORMATTING GUIDELINES:
         lastError = err instanceof Error ? err : new Error("An unexpected error occurred")
         console.error(`Attempt ${attempt} failed:`, err)
 
+        await logError(
+          `Strategy generation failed on attempt ${attempt}`,
+          lastError,
+          "generation",
+          attempt === maxRetries ? "high" : "medium",
+          user?.id,
+          {
+            attemptNumber: attempt,
+            description: description.substring(0, 100),
+            conceptMode,
+            errorMessage: lastError.message,
+          }
+        )
+
         if (attempt < maxRetries) {
           const isParseError = lastError.message.includes("JSON") || 
                                lastError.message.includes("parse") || 
@@ -356,6 +393,18 @@ FORMATTING GUIDELINES:
 
     const errorMessage = lastError?.message || "Failed to generate strategy after multiple attempts"
     console.error("All attempts failed. Last error:", lastError)
+    await logError(
+      "Strategy generation failed after all retries",
+      lastError || new Error(errorMessage),
+      "generation",
+      "critical",
+      user?.id,
+      {
+        maxRetries,
+        description: description.substring(0, 100),
+        conceptMode,
+      }
+    )
     setError(errorMessage)
     toast.error(`Generation failed after ${maxRetries} attempts. Please try again.`)
     setIsLoading(false)
@@ -372,16 +421,28 @@ FORMATTING GUIDELINES:
   const handleSaveStrategy = (name: string) => {
     if (!result || !currentDescription) return
 
-    const newStrategy: SavedStrategy = {
-      id: Date.now().toString(),
-      name: name,
-      description: currentDescription,
-      result: result,
-      timestamp: Date.now()
-    }
+    try {
+      const newStrategy: SavedStrategy = {
+        id: Date.now().toString(),
+        name: name,
+        description: currentDescription,
+        result: result,
+        timestamp: Date.now()
+      }
 
-    setSavedStrategies((current) => [newStrategy, ...(current || [])])
-    toast.success("Strategy saved successfully")
+      setSavedStrategies((current) => [newStrategy, ...(current || [])])
+      toast.success("Strategy saved successfully")
+    } catch (error) {
+      console.error("Failed to save strategy:", error)
+      logError(
+        "Failed to save strategy",
+        error instanceof Error ? error : new Error(String(error)),
+        "storage",
+        "medium",
+        user?.id
+      )
+      toast.error("Failed to save strategy")
+    }
   }
 
   const handleDeleteStrategy = (id: string) => {

@@ -47,10 +47,12 @@ import {
   MagnifyingGlass,
   Eye,
   FileText,
+  Bug,
 } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { UserProfile, UserRole, SavedStrategy, SavedReviewDocument } from "@/types"
 import { adminService } from "@/lib/admin"
+import { ErrorLogsViewer } from "@/components/ErrorLogsViewer"
 
 export function AdminDashboard() {
   const [users, setUsers] = useState<UserProfile[]>([])
@@ -331,7 +333,7 @@ export function AdminDashboard() {
           transition={{ duration: 0.5, delay: 0.7 }}
         >
           <Tabs defaultValue="users" className="w-full">
-            <TabsList className="grid w-full grid-cols-3 mb-4">
+            <TabsList className="grid w-full grid-cols-4 mb-4">
               <TabsTrigger value="users" className="gap-2">
                 <Users size={18} weight="bold" />
                 User Management
@@ -343,6 +345,10 @@ export function AdminDashboard() {
               <TabsTrigger value="reviews" className="gap-2">
                 <MagnifyingGlass size={18} weight="bold" />
                 All Reviews ({allReviews.reduce((sum, item) => sum + item.reviews.length, 0)})
+              </TabsTrigger>
+              <TabsTrigger value="errors" className="gap-2">
+                <Bug size={18} weight="bold" />
+                Error Logs
               </TabsTrigger>
             </TabsList>
 
@@ -562,6 +568,10 @@ export function AdminDashboard() {
                   </div>
                 </CardContent>
               </Card>
+            </TabsContent>
+
+            <TabsContent value="errors">
+              <ErrorLogsViewer />
             </TabsContent>
           </Tabs>
         </motion.div>

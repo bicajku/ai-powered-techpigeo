@@ -142,3 +142,31 @@ export interface SavedIdea {
   timestamp: number
   userId: string
 }
+
+export type ErrorSeverity = "low" | "medium" | "high" | "critical"
+
+export type ErrorCategory = 
+  | "authentication"
+  | "generation"
+  | "storage"
+  | "export"
+  | "network"
+  | "validation"
+  | "system"
+  | "unknown"
+
+export interface ErrorLog {
+  id: string
+  timestamp: number
+  message: string
+  stack?: string
+  errorType: string
+  category: ErrorCategory
+  severity: ErrorSeverity
+  userId?: string
+  userAgent: string
+  url: string
+  metadata?: Record<string, unknown>
+  resolved: boolean
+  resolvedAt?: number
+}
