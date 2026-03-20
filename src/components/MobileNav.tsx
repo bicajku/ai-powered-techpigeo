@@ -19,8 +19,8 @@ export function MobileNav({ activeTab, onTabChange, isAdmin, savedCount }: Mobil
     { value: "generate", label: "Strategy", icon: Lightbulb },
     { value: "ideas", label: "Ideas", icon: Sparkle },
     { value: "plagiarism", label: "Review", icon: MagnifyingGlass },
-    { value: "dashboard", label: "Dashboard", icon: ChartBar },
-    { value: "saved", label: `Saved (${savedCount})`, icon: FolderOpen },
+    { value: "dashboard", label: "Stats", icon: ChartBar },
+    { value: "saved", label: `Saved`, shortLabel: `${savedCount}`, icon: FolderOpen },
   ]
 
   if (isAdmin) {
@@ -28,11 +28,12 @@ export function MobileNav({ activeTab, onTabChange, isAdmin, savedCount }: Mobil
   }
 
   return (
-    <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-card/95 backdrop-blur-sm border-t border-border">
-      <nav className="flex items-center justify-around p-2 gap-1">
+    <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-card/95 backdrop-blur-sm border-t border-border shadow-lg">
+      <nav className="flex items-center justify-around p-1.5 gap-0.5 max-w-full overflow-x-auto">
         {navItems.map((item) => {
           const Icon = item.icon
           const isActive = activeTab === item.value
+          const displayLabel = item.value === "saved" && item.shortLabel ? item.shortLabel : item.label
           
           return (
             <Button
@@ -41,12 +42,12 @@ export function MobileNav({ activeTab, onTabChange, isAdmin, savedCount }: Mobil
               variant={isActive ? "default" : "ghost"}
               size="sm"
               className={cn(
-                "flex-1 flex-col h-auto py-2 gap-1 text-xs",
-                isActive && "bg-primary text-primary-foreground"
+                "flex-1 min-w-[60px] max-w-[80px] flex-col h-auto py-1.5 px-1 gap-0.5 text-[10px] leading-tight",
+                isActive && "bg-primary text-primary-foreground shadow-sm"
               )}
             >
-              <Icon size={20} weight={isActive ? "fill" : "regular"} />
-              <span className="truncate max-w-full">{item.label}</span>
+              <Icon size={18} weight={isActive ? "fill" : "regular"} />
+              <span className="truncate w-full text-center">{displayLabel}</span>
             </Button>
           )
         })}

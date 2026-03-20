@@ -387,7 +387,7 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
         canvas.width = Math.ceil(viewport.width)
         canvas.height = Math.ceil(viewport.height)
 
-        await page.render({ canvasContext: context, viewport }).promise
+        await page.render({ canvasContext: context, viewport, canvas }).promise
 
         const {
           data: { text: firstPassText },
