@@ -8,8 +8,6 @@ import {
   Sparkle, 
   FloppyDisk, 
   ArrowClockwise, 
-  Eye,
-  DownloadSimple,
   ChartDonut,
   PresentationChart
 } from "@phosphor-icons/react"
@@ -56,6 +54,126 @@ export function IdeaGeneration({ userId }: IdeaGenerationProps) {
 
   const isValidInput = ideaInput.trim().length >= 10
 
+  const cleanJsonResponse = (raw: string): string => {
+    let cleanedResponse = raw.trim()
+
+    if (cleanedResponse.startsWith("```json")) {
+      cleanedResponse = cleanedResponse.replace(/^```json\s*/, "").replace(/```\s*$/, "")
+    } else if (cleanedResponse.startsWith("```")) {
+      cleanedResponse = cleanedResponse.replace(/^```\s*/, "").replace(/```\s*$/, "")
+    }
+
+    const firstBrace = cleanedResponse.indexOf("{")
+    const lastBrace = cleanedResponse.lastIndexOf("}")
+
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      cleanedResponse = cleanedResponse.substring(firstBrace, lastBrace + 1)
+    }
+
+    return cleanedResponse.trim()
+  }
+
+  const asText = (value: unknown, fallback: string): string => {
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim()
+    }
+    return fallback
+  }
+
+  const asTextArray = (value: unknown, fallback: string[]): string[] => {
+    if (!Array.isArray(value)) {
+      return fallback
+    }
+
+    const items = value
+      .filter((entry): entry is string => typeof entry === "string")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0)
+
+    return items.length > 0 ? items : fallback
+  }
+
+  const normalizeCookedIdea = (raw: unknown, originalIdea: string): CookedIdea => {
+    const source = (raw ?? {}) as Partial<CookedIdea>
+    return {
+      originalIdea,
+      refinedIdea: asText(source.refinedIdea, "Refined idea was not generated. Please try again."),
+      marketOpportunity: asText(source.marketOpportunity, "Market opportunity analysis was not generated."),
+      competitiveAdvantage: asText(source.competitiveAdvantage, "Competitive advantage analysis was not generated."),
+      targetMarket: asText(source.targetMarket, "Target market analysis was not generated."),
+      revenueModel: asText(source.revenueModel, "Revenue model analysis was not generated."),
+      keyInsights: asTextArray(source.keyInsights, ["Key insights were not generated."]),
+      keyRisks: asTextArray(source.keyRisks, ["Key risks were not generated."]),
+      nextSteps: asTextArray(source.nextSteps, ["Next steps were not generated."]),
+    }
+  }
+
+  const normalizeBusinessCanvas = (raw: unknown): BusinessCanvasModel => {
+    const source = (raw ?? {}) as Partial<BusinessCanvasModel>
+    return {
+      keyPartners: asText(source.keyPartners, "Key partners were not generated."),
+      keyActivities: asText(source.keyActivities, "Key activities were not generated."),
+      keyResources: asText(source.keyResources, "Key resources were not generated."),
+      valueProposition: asText(source.valueProposition, "Value proposition was not generated."),
+      customerRelationships: asText(source.customerRelationships, "Customer relationship strategy was not generated."),
+      channels: asText(source.channels, "Channels were not generated."),
+      customerSegments: asText(source.customerSegments, "Customer segments were not generated."),
+      costStructure: asText(source.costStructure, "Cost structure was not generated."),
+      revenueStreams: asText(source.revenueStreams, "Revenue streams were not generated."),
+    }
+  }
+
+  const normalizePitchDeck = (raw: unknown): PitchDeck => {
+    const source = (raw ?? {}) as Partial<PitchDeck>
+    const fallbackTitles = [
+      "Problem",
+      "Solution",
+      "Market Opportunity",
+      "Product/Service",
+      "Business Model",
+      "Go-to-Market Strategy",
+      "Competitive Advantage",
+      "Financial Projections & Ask",
+    ]
+
+    const normalizedSlides = Array.isArray(source.slides)
+      ? source.slides
+          .filter((slide): slide is PitchDeck["slides"][number] => Boolean(slide))
+          .map((slide, index) => ({
+            slideNumber:
+              typeof slide.slideNumber === "number" && Number.isFinite(slide.slideNumber)
+                ? slide.slideNumber
+                : index + 1,
+            title: asText(slide.title, fallbackTitles[index] || `Slide ${index + 1}`),
+            content: asText(slide.content, "Slide content was not generated."),
+            notes: asText(slide.notes, "Speaker notes were not generated."),
+          }))
+      : []
+
+    return {
+      executiveSummary: asText(source.executiveSummary, "Executive summary was not generated."),
+      slides: normalizedSlides,
+    }
+  }
+
+  const normalizeSavedIdeaRecord = (record: SavedIdea): SavedIdea => {
+    const normalizedCooked = normalizeCookedIdea(record.cookedIdea, record.originalIdea || "")
+
+    return {
+      ...record,
+      name: asText(record.name, "Untitled Idea"),
+      originalIdea: asText(record.originalIdea, normalizedCooked.originalIdea || "Untitled idea"),
+      cookedIdea: normalizedCooked,
+      businessCanvas: record.businessCanvas ? normalizeBusinessCanvas(record.businessCanvas) : undefined,
+      pitchDeck: record.pitchDeck ? normalizePitchDeck(record.pitchDeck) : undefined,
+      timestamp:
+        typeof record.timestamp === "number" && Number.isFinite(record.timestamp)
+          ? record.timestamp
+          : Date.now(),
+      userId: asText(record.userId, userId),
+    }
+  }
+
   const cookIdea = async () => {
     if (!isValidInput) {
       toast.error("Please enter at least 10 characters")
@@ -88,29 +206,9 @@ Provide a comprehensive analysis in valid JSON format with the following structu
 CRITICAL: Return ONLY valid JSON with no markdown, no code blocks, no explanatory text.`
 
       const response = await spark.llm(prompt, "gpt-4o", true)
-      let cleanedResponse = response.trim()
-      
-      if (cleanedResponse.startsWith("```json")) {
-        cleanedResponse = cleanedResponse.replace(/^```json\s*/, "").replace(/```\s*$/, "")
-      } else if (cleanedResponse.startsWith("```")) {
-        cleanedResponse = cleanedResponse.replace(/^```\s*/, "").replace(/```\s*$/, "")
-      }
-      
-      cleanedResponse = cleanedResponse.trim()
-      
-      const firstBrace = cleanedResponse.indexOf('{')
-      const lastBrace = cleanedResponse.lastIndexOf('}')
-      
-      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-        cleanedResponse = cleanedResponse.substring(firstBrace, lastBrace + 1)
-      }
-      
-      const parsedResult = JSON.parse(cleanedResponse) as CookedIdea
-
-      const cookedIdeaWithOriginal: CookedIdea = {
-        ...parsedResult,
-        originalIdea: ideaInput
-      }
+      const cleanedResponse = cleanJsonResponse(response)
+      const parsedResult = JSON.parse(cleanedResponse)
+      const cookedIdeaWithOriginal = normalizeCookedIdea(parsedResult, ideaInput)
 
       setCookedIdea(cookedIdeaWithOriginal)
       setBusinessCanvas(null)
@@ -121,12 +219,12 @@ CRITICAL: Return ONLY valid JSON with no markdown, no code blocks, no explanator
         id: crypto.randomUUID(),
         userId,
         type: "idea",
-        title: parsedResult.refinedIdea.slice(0, 90),
+        title: cookedIdeaWithOriginal.refinedIdea.slice(0, 90),
         facts: [
-          `Market: ${parsedResult.marketOpportunity.slice(0, 80)}`,
-          `Revenue: ${parsedResult.revenueModel.slice(0, 80)}`,
-          `Top risk: ${parsedResult.keyRisks[0] ?? "—"}`,
-          `Target: ${parsedResult.targetMarket.slice(0, 60)}`,
+          `Market: ${cookedIdeaWithOriginal.marketOpportunity.slice(0, 80)}`,
+          `Revenue: ${cookedIdeaWithOriginal.revenueModel.slice(0, 80)}`,
+          `Top risk: ${cookedIdeaWithOriginal.keyRisks[0] ?? "—"}`,
+          `Target: ${cookedIdeaWithOriginal.targetMarket.slice(0, 60)}`,
         ],
         createdAt: Date.now(),
       }
@@ -177,29 +275,11 @@ Return a valid JSON object with this exact structure:
 CRITICAL: Return ONLY valid JSON with no markdown formatting.`
 
       const response = await spark.llm(prompt, "gpt-4o", true)
-      let cleanedResponse = response.trim()
-      
-      if (cleanedResponse.startsWith("```json")) {
-        cleanedResponse = cleanedResponse.replace(/^```json\s*/, "").replace(/```\s*$/, "")
-      } else if (cleanedResponse.startsWith("```")) {
-        cleanedResponse = cleanedResponse.replace(/^```\s*/, "").replace(/```\s*$/, "")
-      }
-      
-      cleanedResponse = cleanedResponse.trim()
-      
-      const firstBrace = cleanedResponse.indexOf('{')
-      const lastBrace = cleanedResponse.lastIndexOf('}')
-      
-      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-        cleanedResponse = cleanedResponse.substring(firstBrace, lastBrace + 1)
-      }
-      
-      const parsedResult = JSON.parse(cleanedResponse) as BusinessCanvasModel
-      
-      console.log("Business Canvas generated:", parsedResult)
-      console.log("Business Canvas keys:", Object.keys(parsedResult))
-      
-      setBusinessCanvas(parsedResult)
+      const cleanedResponse = cleanJsonResponse(response)
+      const parsedResult = JSON.parse(cleanedResponse)
+      const normalizedCanvas = normalizeBusinessCanvas(parsedResult)
+
+      setBusinessCanvas(normalizedCanvas)
 
       const canvasMemory: UserMemoryEntry = {
         id: crypto.randomUUID(),
@@ -207,9 +287,9 @@ CRITICAL: Return ONLY valid JSON with no markdown formatting.`
         type: "canvas",
         title: `Canvas for: ${cookedIdea.refinedIdea.slice(0, 70)}`,
         facts: [
-          `Value prop: ${parsedResult.valueProposition.slice(0, 80)}`,
-          `Revenue streams: ${parsedResult.revenueStreams.slice(0, 80)}`,
-          `Key activities: ${parsedResult.keyActivities.slice(0, 60)}`,
+          `Value prop: ${normalizedCanvas.valueProposition.slice(0, 80)}`,
+          `Revenue streams: ${normalizedCanvas.revenueStreams.slice(0, 80)}`,
+          `Key activities: ${normalizedCanvas.keyActivities.slice(0, 60)}`,
         ],
         createdAt: Date.now(),
       }
@@ -307,29 +387,15 @@ Generate a pitch deck with exactly 8 slides. Return valid JSON with this structu
 CRITICAL: Return ONLY valid JSON.`
 
       const response = await spark.llm(prompt, "gpt-4o", true)
-      let cleanedResponse = response.trim()
-      
-      if (cleanedResponse.startsWith("```json")) {
-        cleanedResponse = cleanedResponse.replace(/^```json\s*/, "").replace(/```\s*$/, "")
-      } else if (cleanedResponse.startsWith("```")) {
-        cleanedResponse = cleanedResponse.replace(/^```\s*/, "").replace(/```\s*$/, "")
+      const cleanedResponse = cleanJsonResponse(response)
+      const parsedResult = JSON.parse(cleanedResponse)
+      const normalizedPitchDeck = normalizePitchDeck(parsedResult)
+
+      if (normalizedPitchDeck.slides.length === 0) {
+        throw new Error("Pitch deck response did not include any slides")
       }
-      
-      cleanedResponse = cleanedResponse.trim()
-      
-      const firstBrace = cleanedResponse.indexOf('{')
-      const lastBrace = cleanedResponse.lastIndexOf('}')
-      
-      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-        cleanedResponse = cleanedResponse.substring(firstBrace, lastBrace + 1)
-      }
-      
-      const parsedResult = JSON.parse(cleanedResponse) as PitchDeck
-      
-      console.log("Pitch Deck generated:", parsedResult)
-      console.log("Pitch Deck has", parsedResult.slides?.length || 0, "slides")
-      
-      setPitchDeck(parsedResult)
+
+      setPitchDeck(normalizedPitchDeck)
 
       const pitchMemory: UserMemoryEntry = {
         id: crypto.randomUUID(),
@@ -337,8 +403,8 @@ CRITICAL: Return ONLY valid JSON.`
         type: "pitch",
         title: `Pitch for: ${cookedIdea.refinedIdea.slice(0, 70)}`,
         facts: [
-          `Summary: ${parsedResult.executiveSummary.slice(0, 100)}`,
-          `Slides: ${parsedResult.slides?.length ?? 0} slides generated`,
+          `Summary: ${normalizedPitchDeck.executiveSummary.slice(0, 100)}`,
+          `Slides: ${normalizedPitchDeck.slides.length} slides generated`,
         ],
         createdAt: Date.now(),
       }
@@ -393,11 +459,17 @@ CRITICAL: Return ONLY valid JSON.`
   }
 
   const handleViewIdea = (idea: SavedIdea) => {
-    setIdeaInput(idea.originalIdea)
-    setCookedIdea(idea.cookedIdea)
-    setBusinessCanvas(idea.businessCanvas || null)
-    setPitchDeck(idea.pitchDeck || null)
-    setCurrentIdeaInput(idea.originalIdea)
+    const normalized = normalizeSavedIdeaRecord(idea)
+    setIdeaInput(normalized.originalIdea)
+    setCookedIdea(normalized.cookedIdea)
+    setBusinessCanvas(normalized.businessCanvas || null)
+    setPitchDeck(normalized.pitchDeck || null)
+    setCurrentIdeaInput(normalized.originalIdea)
+
+    setSavedIdeas((current) =>
+      (current || []).map((entry) => (entry.id === idea.id ? normalized : entry))
+    )
+
     window.scrollTo({ top: 0, behavior: "smooth" })
   }
 

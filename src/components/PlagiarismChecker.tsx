@@ -16,8 +16,7 @@ import {
   CheckCircle,
   WarningCircle,
   XCircle,
-  LockKey,
-  FloppyDisk
+  LockKey
 } from "@phosphor-icons/react"
 import { motion, AnimatePresence } from "framer-motion"
 import { toast } from "sonner"
@@ -64,7 +63,7 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
   })
   const [subscriptionPlan, setSubscriptionPlan] = useState<"basic" | "pro">(user.subscription?.plan || "basic")
   const [proCredits, setProCredits] = useState(user.subscription?.proCredits || 0)
-  const [documentReviews, setDocumentReviews] = useKV<DocumentReviewResult[]>(
+  const [, setDocumentReviews] = useKV<DocumentReviewResult[]>(
     `document-reviews-${userId}`,
     []
   )
@@ -98,7 +97,7 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
 
   const normalizeExtractedText = (rawText: string): string => {
     return rawText
-      .replace(/\u0000/g, "")
+      .replaceAll("\u0000", "")
       .replace(/\r\n/g, "\n")
       .replace(/[ \t]+/g, " ")
       .replace(/\n{3,}/g, "\n\n")

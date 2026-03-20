@@ -150,11 +150,14 @@ function App() {
       setUser(currentUser)
       if (currentUser) {
         setUserIdForKV(currentUser.id)
-        // Only show welcome banner once per login session
-        if (!hasShownWelcomeThisSession) {
-          setShowExpandedWelcome(true)
-          setHasShownWelcomeThisSession(true)
-        }
+        // Only show welcome banner once per login session.
+        setHasShownWelcomeThisSession((alreadyShown) => {
+          if (!alreadyShown) {
+            setShowExpandedWelcome(true)
+            return true
+          }
+          return alreadyShown
+        })
       }
       setIsCheckingAuth(false)
     }

@@ -15,6 +15,7 @@ interface PitchDeckViewProps {
 
 export function PitchDeckView({ pitchDeck, ideaName }: PitchDeckViewProps) {
   const [currentSlide, setCurrentSlide] = useState(0)
+  const hasSlides = pitchDeck.slides.length > 0
 
   const handleExportWord = async () => {
     try {
@@ -27,18 +28,18 @@ export function PitchDeckView({ pitchDeck, ideaName }: PitchDeckViewProps) {
   }
 
   const nextSlide = () => {
-    if (currentSlide < pitchDeck.slides.length - 1) {
+    if (hasSlides && currentSlide < pitchDeck.slides.length - 1) {
       setCurrentSlide(currentSlide + 1)
     }
   }
 
   const prevSlide = () => {
-    if (currentSlide > 0) {
+    if (hasSlides && currentSlide > 0) {
       setCurrentSlide(currentSlide - 1)
     }
   }
 
-  const slide = pitchDeck.slides[currentSlide]
+  const slide = hasSlides ? pitchDeck.slides[currentSlide] : null
 
   return (
     <motion.div
@@ -71,7 +72,7 @@ export function PitchDeckView({ pitchDeck, ideaName }: PitchDeckViewProps) {
         <div className="bg-gradient-to-r from-primary/20 via-accent/20 to-primary/20 p-4 flex items-center justify-between">
           <Button
             onClick={prevSlide}
-            disabled={currentSlide === 0}
+            disabled={!hasSlides || currentSlide === 0}
             variant="ghost"
             size="sm"
             className="gap-2"
@@ -82,13 +83,13 @@ export function PitchDeckView({ pitchDeck, ideaName }: PitchDeckViewProps) {
           
           <div className="flex items-center gap-2">
             <Badge variant="secondary" className="text-sm">
-              Slide {currentSlide + 1} of {pitchDeck.slides.length}
+              Slide {hasSlides ? currentSlide + 1 : 0} of {pitchDeck.slides.length}
             </Badge>
           </div>
           
           <Button
             onClick={nextSlide}
-            disabled={currentSlide === pitchDeck.slides.length - 1}
+            disabled={!hasSlides || currentSlide === pitchDeck.slides.length - 1}
             variant="ghost"
             size="sm"
             className="gap-2"
@@ -108,21 +109,27 @@ export function PitchDeckView({ pitchDeck, ideaName }: PitchDeckViewProps) {
             className="p-8"
           >
             <div className="mb-6">
-              <div className="flex items-center gap-3 mb-4">
-                <Badge className="text-xs">{slide.slideNumber}</Badge>
-                <h4 className="text-2xl font-bold text-foreground">{slide.title}</h4>
-              </div>
-              <div className="prose prose-sm max-w-none">
-                <p className="text-foreground leading-relaxed whitespace-pre-wrap text-base">
-                  {slide.content}
-                </p>
-              </div>
+              {slide ? (
+                <>
+                  <div className="flex items-center gap-3 mb-4">
+                    <Badge className="text-xs">{slide.slideNumber}</Badge>
+                    <h4 className="text-2xl font-bold text-foreground">{slide.title}</h4>
+                  </div>
+                  <div className="prose prose-sm max-w-none">
+                    <p className="text-foreground leading-relaxed whitespace-pre-wrap text-base">
+                      {slide.content}
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">No slides available in this saved pitch deck.</p>
+              )}
             </div>
 
             <div className="border-t border-border pt-4 mt-6">
               <h5 className="text-sm font-semibold text-muted-foreground mb-2">Speaker Notes</h5>
               <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
-                {slide.notes}
+                {slide?.notes || "No speaker notes available."}
               </p>
             </div>
           </motion.div>

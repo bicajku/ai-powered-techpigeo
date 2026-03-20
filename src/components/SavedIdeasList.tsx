@@ -13,6 +13,19 @@ interface SavedIdeasListProps {
 }
 
 export function SavedIdeasList({ ideas, onDelete, onView }: SavedIdeasListProps) {
+  const formatTimestamp = (timestamp: number): string => {
+    if (typeof timestamp !== "number" || !Number.isFinite(timestamp)) {
+      return "Unknown date"
+    }
+
+    const date = new Date(timestamp)
+    if (Number.isNaN(date.getTime())) {
+      return "Unknown date"
+    }
+
+    return `${format(date, "MMM dd, yyyy")} at ${format(date, "hh:mm a")}`
+  }
+
   if (ideas.length === 0) {
     return (
       <Card className="p-12 text-center">
@@ -35,7 +48,7 @@ export function SavedIdeasList({ ideas, onDelete, onView }: SavedIdeasListProps)
       <div className="grid gap-4">
         {ideas.map((idea, index) => (
           <motion.div
-            key={idea.id}
+            key={idea.id || `saved-idea-${index}`}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.05 }}
@@ -45,11 +58,11 @@ export function SavedIdeasList({ ideas, onDelete, onView }: SavedIdeasListProps)
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-3 mb-2">
                     <Lightbulb size={24} weight="duotone" className="text-primary flex-shrink-0" />
-                    <h4 className="text-lg font-semibold text-foreground truncate">{idea.name}</h4>
+                    <h4 className="text-lg font-semibold text-foreground truncate">{idea.name || "Untitled Idea"}</h4>
                   </div>
                   
                   <p className="text-sm text-muted-foreground mb-3 line-clamp-2">
-                    {idea.originalIdea}
+                    {idea.originalIdea || "No idea description available."}
                   </p>
 
                   <div className="flex items-center gap-2 flex-wrap mb-3">
@@ -71,7 +84,7 @@ export function SavedIdeasList({ ideas, onDelete, onView }: SavedIdeasListProps)
                   </div>
 
                   <p className="text-xs text-muted-foreground">
-                    Saved on {format(new Date(idea.timestamp), 'MMM dd, yyyy')} at {format(new Date(idea.timestamp), 'hh:mm a')}
+                    Saved on {formatTimestamp(idea.timestamp)}
                   </p>
                 </div>
 
@@ -89,6 +102,7 @@ export function SavedIdeasList({ ideas, onDelete, onView }: SavedIdeasListProps)
                     onClick={() => onDelete(idea.id)}
                     variant="ghost"
                     size="sm"
+                    disabled={!idea.id}
                     className="text-destructive hover:text-destructive hover:bg-destructive/10"
                   >
                     <Trash weight="bold" size={16} />
