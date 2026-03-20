@@ -1,6 +1,8 @@
 import { SavedStrategy, BusinessCanvasModel, PitchDeck } from "@/types"
+import { REPORT_BRAND, reportLogoMarkup } from "@/lib/report-branding"
 
 export function exportStrategyAsWord(strategy: SavedStrategy) {
+  const brand = REPORT_BRAND
   const htmlContent = `
 <!DOCTYPE html>
 <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
@@ -27,20 +29,20 @@ export function exportStrategyAsWord(strategy: SavedStrategy) {
       font-family: 'Lora', 'Cambria', serif;
       font-size: 24pt;
       font-weight: bold;
-      color: #33334D;
+      color: ${brand.colors.primary};
       margin-top: 0;
       page-break-inside: avoid;
     }
     h2 {
       font-size: 16pt;
       font-weight: bold;
-      color: #33334D;
+      color: ${brand.colors.primary};
       margin-top: 18pt;
       margin-bottom: 8pt;
       page-break-inside: avoid;
     }
     .header {
-      background: #8A91E3;
+      background: ${brand.colors.primary};
       color: white;
       padding: 24pt;
       margin: -1in -1in 24pt -1in;
@@ -66,12 +68,12 @@ export function exportStrategyAsWord(strategy: SavedStrategy) {
     .implementation-section {
       margin-top: 24pt;
       padding-top: 18pt;
-      border-top: 2pt solid #8A91E3;
+      border-top: 2pt solid ${brand.colors.accent};
     }
     .footer {
       margin-top: 36pt;
       padding-top: 18pt;
-      border-top: 2pt solid #8A91E3;
+      border-top: 2pt solid ${brand.colors.accent};
       text-align: center;
       font-size: 9pt;
       color: #666;
@@ -79,15 +81,16 @@ export function exportStrategyAsWord(strategy: SavedStrategy) {
     .footer-brand {
       font-size: 20pt;
       font-weight: bold;
-      color: #8A91E3;
+      color: ${brand.colors.primary};
       margin-bottom: 8pt;
     }
   </style>
 </head>
 <body>
   <div class="header">
-    <h1>TECHPIGEON</h1>
-    <div>Pakistan's Leading AI Platform for Intelligent Marketing Strategies</div>
+    <div style="margin-bottom: 8pt;">${reportLogoMarkup(36)}</div>
+    <h1>${brand.companyName}</h1>
+    <div>${brand.projectName}</div>
   </div>
 
   <h1>${strategy.name}</h1>
@@ -155,9 +158,9 @@ export function exportStrategyAsWord(strategy: SavedStrategy) {
   </div>
 
   <div class="footer">
-    <div class="footer-brand">TECHPIGEON</div>
-    <p>G-7/4, Islamabad 44000, Pakistan • Ph: +92(300) 0529697 | USA: +1(786) 8226386 | Oman: +968 76786324</p>
-    <p>© ${new Date().getFullYear()} Techpigeon. All rights reserved. | www.techpigeon.org</p>
+    <div class="footer-brand">${brand.companyName}</div>
+    <p>${brand.contactLine}</p>
+    <p>© ${new Date().getFullYear()} ${brand.companyName}. All rights reserved. | ${brand.website.replace("https://", "")}</p>
   </div>
 </body>
 </html>
@@ -178,6 +181,7 @@ export function exportStrategyAsWord(strategy: SavedStrategy) {
 }
 
 export function exportBusinessCanvasAsWord(canvas: BusinessCanvasModel, ideaName: string) {
+  const brand = REPORT_BRAND
   const htmlContent = `
 <!DOCTYPE html>
 <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
@@ -204,20 +208,20 @@ export function exportBusinessCanvasAsWord(canvas: BusinessCanvasModel, ideaName
       font-family: 'Lora', 'Cambria', serif;
       font-size: 24pt;
       font-weight: bold;
-      color: #33334D;
+      color: ${brand.colors.primary};
       margin-top: 0;
       page-break-inside: avoid;
     }
     h2 {
       font-size: 16pt;
       font-weight: bold;
-      color: #33334D;
+      color: ${brand.colors.primary};
       margin-top: 18pt;
       margin-bottom: 8pt;
       page-break-inside: avoid;
     }
     .header {
-      background: #8A91E3;
+      background: ${brand.colors.primary};
       color: white;
       padding: 24pt;
       margin: -1in -1in 24pt -1in;
@@ -243,7 +247,7 @@ export function exportBusinessCanvasAsWord(canvas: BusinessCanvasModel, ideaName
     .footer {
       margin-top: 36pt;
       padding-top: 18pt;
-      border-top: 2pt solid #8A91E3;
+      border-top: 2pt solid ${brand.colors.accent};
       text-align: center;
       font-size: 9pt;
       color: #666;
@@ -251,15 +255,16 @@ export function exportBusinessCanvasAsWord(canvas: BusinessCanvasModel, ideaName
     .footer-brand {
       font-size: 20pt;
       font-weight: bold;
-      color: #8A91E3;
+      color: ${brand.colors.primary};
       margin-bottom: 8pt;
     }
   </style>
 </head>
 <body>
   <div class="header">
-    <h1>TECHPIGEON</h1>
-    <div>AI-Powered Business Intelligence</div>
+    <div style="margin-bottom: 8pt;">${reportLogoMarkup(36)}</div>
+    <h1>${brand.companyName}</h1>
+    <div>${brand.projectName}</div>
   </div>
 
   <h1>Business Model Canvas</h1>
@@ -319,9 +324,9 @@ export function exportBusinessCanvasAsWord(canvas: BusinessCanvasModel, ideaName
   </div>
 
   <div class="footer">
-    <div class="footer-brand">TECHPIGEON</div>
-    <p>G-7/4, Islamabad 44000, Pakistan • Ph: +92(300) 0529697</p>
-    <p>© ${new Date().getFullYear()} Techpigeon. All rights reserved. | www.techpigeon.org</p>
+    <div class="footer-brand">${brand.companyName}</div>
+    <p>${brand.contactLine}</p>
+    <p>© ${new Date().getFullYear()} ${brand.companyName}. All rights reserved. | ${brand.website.replace("https://", "")}</p>
   </div>
 </body>
 </html>
@@ -342,14 +347,15 @@ export function exportBusinessCanvasAsWord(canvas: BusinessCanvasModel, ideaName
 }
 
 export function exportPitchDeckAsWord(pitchDeck: PitchDeck, ideaName: string) {
+  const brand = REPORT_BRAND
   const slidesHtml = pitchDeck.slides.map((slide, index) => `
     <div class="slide">
-      <h2 style="background: ${index % 2 === 0 ? '#8A91E3' : '#90CA77'}; color: white; padding: 12pt;">Slide ${slide.slideNumber}: ${slide.title}</h2>
+      <h2 style="background: ${index % 2 === 0 ? brand.colors.primary : brand.colors.secondary}; color: white; padding: 12pt;">Slide ${slide.slideNumber}: ${slide.title}</h2>
       <div class="slide-content">
         <p>${slide.content.replace(/\n/g, '</p><p>')}</p>
       </div>
       ${slide.notes ? `
-      <div style="margin-top: 12pt; padding: 12pt; background: #F0F0F0; border-left: 4pt solid #8A91E3;">
+      <div style="margin-top: 12pt; padding: 12pt; background: #F0F0F0; border-left: 4pt solid ${brand.colors.accent};">
         <h3>Speaker Notes:</h3>
         <p style="font-style: italic; color: #666;">${slide.notes}</p>
       </div>
@@ -397,14 +403,14 @@ export function exportPitchDeckAsWord(pitchDeck: PitchDeck, ideaName: string) {
     h3 {
       font-size: 12pt;
       font-weight: bold;
-      color: #33334D;
+      color: ${brand.colors.primary};
       margin: 12pt 0 6pt 0;
     }
     p {
       margin: 0 0 10pt 0;
     }
     .cover {
-      background: #8A91E3;
+      background: ${brand.colors.primary};
       color: white;
       padding: 72pt;
       text-align: center;
@@ -427,7 +433,7 @@ export function exportPitchDeckAsWord(pitchDeck: PitchDeck, ideaName: string) {
     .footer {
       margin-top: 36pt;
       padding-top: 18pt;
-      border-top: 2pt solid #8A91E3;
+      border-top: 2pt solid ${brand.colors.accent};
       text-align: center;
       font-size: 9pt;
       color: #666;
@@ -435,17 +441,19 @@ export function exportPitchDeckAsWord(pitchDeck: PitchDeck, ideaName: string) {
     .footer-brand {
       font-size: 20pt;
       font-weight: bold;
-      color: #8A91E3;
+      color: ${brand.colors.primary};
       margin-bottom: 8pt;
     }
   </style>
 </head>
 <body>
   <div class="cover">
+    <div style="margin-bottom: 12pt;">${reportLogoMarkup(40)}</div>
     <h1>${ideaName}</h1>
     <div class="cover-subtitle">Pitch Deck</div>
     <div style="margin-top: 24pt; font-size: 12pt;">
-      Generated by Techpigeon AI Platform<br>
+      ${brand.projectName}<br>
+      Generated by ${brand.companyName} AI Platform<br>
       ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
     </div>
   </div>
@@ -453,9 +461,9 @@ export function exportPitchDeckAsWord(pitchDeck: PitchDeck, ideaName: string) {
   ${slidesHtml}
 
   <div class="footer">
-    <div class="footer-brand">TECHPIGEON</div>
-    <p>G-7/4, Islamabad 44000, Pakistan • Ph: +92(300) 0529697</p>
-    <p>© ${new Date().getFullYear()} Techpigeon. All rights reserved. | www.techpigeon.org</p>
+    <div class="footer-brand">${brand.companyName}</div>
+    <p>${brand.contactLine}</p>
+    <p>© ${new Date().getFullYear()} ${brand.companyName}. All rights reserved. | ${brand.website.replace("https://", "")}</p>
   </div>
 </body>
 </html>

@@ -21,18 +21,20 @@ import {
 } from "@phosphor-icons/react"
 import { motion, AnimatePresence } from "framer-motion"
 import { toast } from "sonner"
-import { PlagiarismResult, DocumentReviewResult, HumanizedResult, SavedReviewDocument } from "@/types"
+import { PlagiarismResult, DocumentReviewResult, HumanizedResult, SavedReviewDocument, UserProfile } from "@/types"
 import { useKV } from "@github/spark/hooks"
 import { SaveReviewDialog } from "@/components/SaveReviewDialog"
 import { SavedReviews } from "@/components/SavedReviews"
 import { exportReviewToPDF } from "@/lib/pdf-export"
 import { computeReviewAnalysis, ReviewComputationMeta, ReviewFilters, SectionSummary } from "@/lib/review-engine"
+import { consumeProCredits, getFeatureEntitlements } from "@/lib/subscription"
 
 interface PlagiarismCheckerProps {
-  userId: string
+  user: UserProfile
 }
 
-export function PlagiarismChecker({ userId }: PlagiarismCheckerProps) {
+export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
+  const userId = user.id
   const [text, setText] = useState("")
   const [isChecking, setIsChecking] = useState(false)
   const [isHumanizing, setIsHumanizing] = useState(false)
@@ -49,6 +51,7 @@ export function PlagiarismChecker({ userId }: PlagiarismCheckerProps) {
     excludeReferences: true,
     minMatchWords: 8,
   })
+  const [proCredits, setProCredits] = useState(user.subscription?.proCredits || 0)
   const [documentReviews, setDocumentReviews] = useKV<DocumentReviewResult[]>(
     `document-reviews-${userId}`,
     []
@@ -58,6 +61,13 @@ export function PlagiarismChecker({ userId }: PlagiarismCheckerProps) {
     []
   )
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const entitlements = getFeatureEntitlements({
+    ...user,
+    subscription: {
+      ...(user.subscription || { plan: "basic", status: "active", proCredits: 0, updatedAt: Date.now() }),
+      proCredits,
+    },
+  })
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -363,8 +373,15 @@ Required JSON structure:
       return
     }
 
-    toast.info("🔒 Humanizer is a premium feature. Upgrade to unlock advanced text humanization.")
-    return
+    if (!entitlements.isPro) {
+      toast.info("🔒 Humanizer is available in Pro. Upgrade to unlock this feature.")
+      return
+    }
+
+    if (!entitlements.canUseHumanizer) {
+      toast.error("No Pro credits remaining. Please buy credits to continue using Humanizer.")
+      return
+    }
 
     setIsHumanizing(true)
 
@@ -394,17 +411,39 @@ Return ONLY a valid JSON object:
 }`
 
       const response = await spark.llm(prompt, "gpt-4o", true)
-      const parsed = JSON.parse(response)
+
+      let cleaned = response.trim()
+      if (cleaned.startsWith("```json")) {
+        cleaned = cleaned.replace(/^```json\s*/, "").replace(/```\s*$/, "")
+      } else if (cleaned.startsWith("```")) {
+        cleaned = cleaned.replace(/^```\s*/, "").replace(/```\s*$/, "")
+      }
+
+      cleaned = cleaned.trim()
+      const firstBrace = cleaned.indexOf("{")
+      const lastBrace = cleaned.lastIndexOf("}")
+      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+        cleaned = cleaned.substring(firstBrace, lastBrace + 1)
+      }
+
+      const parsed = JSON.parse(cleaned)
 
       const humanized: HumanizedResult = {
         originalText: text,
         humanizedText: parsed.humanizedText,
         changes: parsed.changes || [],
-        timestamp: Date.now()
+        timestamp: Date.now(),
       }
 
+      const creditUse = await consumeProCredits(user.id, 1)
+      if (!creditUse.success) {
+        toast.error(creditUse.error || "Failed to consume Pro credit")
+        return
+      }
+
+      setProCredits(creditUse.remainingCredits)
       setHumanizedResult(humanized)
-      toast.success("Text humanized successfully!")
+      toast.success(`Text humanized successfully! ${creditUse.remainingCredits} Pro credits left.`)
     } catch (error) {
       console.error("Humanization error:", error)
       toast.error("Failed to humanize text. Please try again.")
@@ -434,9 +473,9 @@ Return ONLY a valid JSON object:
               <MagnifyingGlass size={24} weight="duotone" className="text-primary" />
             </div>
             <div>
-              <CardTitle>Document Review & Plagiarism Checker</CardTitle>
+              <CardTitle>Academic Review & Integrity Analyzer</CardTitle>
               <CardDescription>
-                Analyze documents for plagiarism, AI content, and academic integrity
+                Analyze thesis/article documents for similarity, AI-writing risk, and citation quality
               </CardDescription>
             </div>
           </div>
@@ -499,7 +538,7 @@ Return ONLY a valid JSON object:
 
           <div>
             <label htmlFor="plagiarism-text" className="block text-sm font-medium mb-2">
-              Text to Analyze
+              Document Text
             </label>
             <Textarea
               id="plagiarism-text"
@@ -516,13 +555,13 @@ Return ONLY a valid JSON object:
               <div className="flex items-center gap-2">
                 <Button
                   onClick={humanizeText}
-                  disabled={!text.trim() || isHumanizing || isChecking}
+                  disabled={!text.trim() || isHumanizing || isChecking || (entitlements.isPro && proCredits <= 0)}
                   variant="outline"
                   size="sm"
                   className="gap-2"
                 >
                   <LockKey size={16} weight="duotone" />
-                  {isHumanizing ? "Humanizing..." : "Humanize (Premium)"}
+                  {isHumanizing ? "Humanizing..." : entitlements.isPro ? `Humanize (Pro: ${proCredits})` : "Humanize (Pro)"}
                 </Button>
                 <Button
                   onClick={checkPlagiarism}
@@ -535,7 +574,7 @@ Return ONLY a valid JSON object:
                   ) : (
                     <>
                       <MagnifyingGlass size={18} weight="duotone" />
-                      Check Document
+                      Run Integrity Check
                     </>
                   )}
                 </Button>
@@ -544,6 +583,9 @@ Return ONLY a valid JSON object:
 
             <div className="mt-4 p-3 border border-border rounded-lg space-y-3">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Scoring Filters</p>
+              <p className="text-xs text-muted-foreground">
+                These controls emulate Turnitin-style exclusions and affect displayed similarity/integrity values.
+              </p>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <label className="flex items-center gap-2 text-sm">
                   <input
@@ -576,6 +618,9 @@ Return ONLY a valid JSON object:
                   />
                 </label>
               </div>
+              <p className="text-xs text-muted-foreground">
+                Suggested defaults: quotes excluded, references excluded, minimum match words = 8.
+              </p>
             </div>
           </div>
         </CardContent>
@@ -595,7 +640,7 @@ Return ONLY a valid JSON object:
                   <div>
                     <p className="font-medium text-foreground mb-1">Analyzing Document...</p>
                     <p className="text-sm text-muted-foreground">
-                      Checking for plagiarism, AI content, and validating references
+                      Computing similarity, AI-writing risk, reference quality, and evidence highlights
                     </p>
                   </div>
                   <Progress value={undefined} className="w-full" />
@@ -697,10 +742,10 @@ Return ONLY a valid JSON object:
                 <Tabs defaultValue="summary" className="w-full">
                   <TabsList className="grid w-full grid-cols-5">
                     <TabsTrigger value="summary">Summary</TabsTrigger>
-                    <TabsTrigger value="plagiarism">Plagiarism</TabsTrigger>
+                    <TabsTrigger value="plagiarism">Similarity</TabsTrigger>
                     <TabsTrigger value="ai">AI Detection</TabsTrigger>
                     <TabsTrigger value="references">References</TabsTrigger>
-                    <TabsTrigger value="recommendations">Tips</TabsTrigger>
+                    <TabsTrigger value="recommendations">Actions</TabsTrigger>
                   </TabsList>
 
                   <TabsContent value="summary" className="space-y-3">

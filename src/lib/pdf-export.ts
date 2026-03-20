@@ -1,8 +1,10 @@
 import { SavedReviewDocument, SavedStrategy } from "@/types"
 import { format } from "date-fns"
 import { ReviewComputationMeta, ReviewFilters, SectionSummary, enrichReviewResult } from "@/lib/review-engine"
+import { REPORT_BRAND, reportLogoMarkup } from "@/lib/report-branding"
 
 export async function exportStrategyAsPDF(strategy: SavedStrategy) {
+  const brand = REPORT_BRAND
   const htmlContent = `
 <!DOCTYPE html>
 <html>
@@ -10,13 +12,21 @@ export async function exportStrategyAsPDF(strategy: SavedStrategy) {
   <meta charset="UTF-8">
   <title>${strategy.name}</title>
   <style>
-    body { font-family: Inter, sans-serif; padding: 40px; max-width: 1000px; margin: 0 auto; }
-    h1 { color: #E0BF6B; }
-    .section { margin: 20px 0; padding: 15px; border-left: 3px solid #E0BF6B; background: #f8f9fa; }
-    .footer { margin-top: 50px; border-top: 2px solid #E0BF6B; padding-top: 20px; text-align: center; font-size: 12px; }
+    body { font-family: Inter, sans-serif; padding: 40px; max-width: 1000px; margin: 0 auto; color: ${brand.colors.text}; }
+    .header { border-bottom: 3px solid ${brand.colors.accent}; padding-bottom: 16px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; }
+    h1 { color: ${brand.colors.primary}; }
+    .section { margin: 20px 0; padding: 15px; border-left: 3px solid ${brand.colors.accent}; background: ${brand.colors.panel}; }
+    .footer { margin-top: 50px; border-top: 2px solid ${brand.colors.accent}; padding-top: 20px; text-align: center; font-size: 12px; color: ${brand.colors.muted}; }
   </style>
 </head>
 <body>
+  <div class="header">
+    <div>
+      <div style="font-weight: 700; color: ${brand.colors.primary};">${brand.companyName}</div>
+      <div style="font-size: 12px; color: ${brand.colors.muted};">${brand.projectName}</div>
+    </div>
+    ${reportLogoMarkup(42)}
+  </div>
   <h1>${strategy.name}</h1>
   <p><strong>Created:</strong> ${format(strategy.timestamp, "MMM d, yyyy")}</p>
   <div class="section">
@@ -36,9 +46,9 @@ export async function exportStrategyAsPDF(strategy: SavedStrategy) {
     <p>${strategy.result.targetAudience}</p>
   </div>
   <div class="footer">
-    <strong>Techpigeon</strong><br>
-    G-7/4, Islamabad 44000, Pakistan • Ph: +92(300) 0529697<br>
-    Ph: +1(786) 8226386 • Techpigeon Spark LLC, Muscat, Oman 🇴🇲 • Ph: +968 76786324
+    <strong>${brand.companyName}</strong><br>
+    ${brand.projectName}<br>
+    ${brand.contactLine}
   </div>
 </body>
 </html>
@@ -65,20 +75,13 @@ export async function exportReviewToPDF(
     filters?: ReviewFilters
   }
 ) {
+  const brand = REPORT_BRAND
   const fallback = enrichReviewResult(review.documentText, review.plagiarismResult)
   const meta = options?.meta || fallback.meta
   const sections = options?.sections || []
   const filters = options?.filters
 
-  const techpigeonLogo = `
-    <svg width="40" height="40" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="50" cy="50" r="45" fill="#E0BF6B" opacity="0.2"/>
-      <path d="M50 20 L35 45 L50 40 L65 45 Z" fill="#E0BF6B"/>
-      <circle cx="50" cy="55" r="20" fill="#E0BF6B"/>
-      <circle cx="43" cy="52" r="3" fill="#000"/>
-      <circle cx="57" cy="52" r="3" fill="#000"/>
-    </svg>
-  `
+  const techpigeonLogo = reportLogoMarkup(50)
 
   const highlightText = (text: string) => {
     let highlightedText = text
@@ -113,7 +116,7 @@ export async function exportReviewToPDF(
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${review.name} - Techpigeon Review Report</title>
+  <title>${review.name} - ${brand.companyName} Review Report</title>
   <style>
     * {
       margin: 0;
@@ -124,7 +127,7 @@ export async function exportReviewToPDF(
     body {
       font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       line-height: 1.6;
-      color: #1a1a1a;
+      color: ${brand.colors.text};
       background: #ffffff;
       padding: 40px;
       max-width: 1000px;
@@ -132,7 +135,7 @@ export async function exportReviewToPDF(
     }
     
     .header {
-      border-bottom: 3px solid #E0BF6B;
+      border-bottom: 3px solid ${brand.colors.accent};
       padding-bottom: 20px;
       margin-bottom: 30px;
       display: flex;
@@ -142,13 +145,13 @@ export async function exportReviewToPDF(
     
     .header-content h1 {
       font-size: 28px;
-      color: #1a1a1a;
+      color: ${brand.colors.text};
       margin-bottom: 8px;
     }
     
     .header-content .subtitle {
       font-size: 14px;
-      color: #666;
+      color: ${brand.colors.muted};
     }
     
     .logo-section {
@@ -163,13 +166,13 @@ export async function exportReviewToPDF(
     .company-name {
       font-size: 18px;
       font-weight: 700;
-      color: #E0BF6B;
+      color: ${brand.colors.primary};
       margin-top: 5px;
     }
     
     .meta-info {
-      background: #f8f9fa;
-      border-left: 4px solid #E0BF6B;
+      background: ${brand.colors.panel};
+      border-left: 4px solid ${brand.colors.accent};
       padding: 20px;
       margin-bottom: 30px;
       border-radius: 4px;
@@ -178,7 +181,7 @@ export async function exportReviewToPDF(
     .meta-info h2 {
       font-size: 18px;
       margin-bottom: 15px;
-      color: #1a1a1a;
+      color: ${brand.colors.text};
     }
     
     .meta-grid {
@@ -193,12 +196,12 @@ export async function exportReviewToPDF(
     
     .meta-label {
       font-weight: 600;
-      color: #666;
+      color: ${brand.colors.muted};
       margin-bottom: 4px;
     }
     
     .meta-value {
-      color: #1a1a1a;
+      color: ${brand.colors.text};
     }
     
     .scores-section {
@@ -219,7 +222,7 @@ export async function exportReviewToPDF(
     .score-label {
       font-size: 12px;
       text-transform: uppercase;
-      color: #666;
+      color: ${brand.colors.muted};
       margin-bottom: 10px;
       font-weight: 600;
       letter-spacing: 0.5px;
@@ -250,21 +253,21 @@ export async function exportReviewToPDF(
     .section-title {
       font-size: 20px;
       font-weight: 700;
-      color: #1a1a1a;
+      color: ${brand.colors.text};
       margin-bottom: 15px;
       padding-bottom: 8px;
-      border-bottom: 2px solid #e0e0e0;
+      border-bottom: 2px solid ${brand.colors.border};
     }
     
     .section-content {
       font-size: 14px;
       line-height: 1.8;
-      color: #333;
+      color: ${brand.colors.text};
     }
     
     .document-text {
-      background: #f8f9fa;
-      border: 1px solid #e0e0e0;
+      background: ${brand.colors.panel};
+      border: 1px solid ${brand.colors.border};
       border-radius: 6px;
       padding: 20px;
       font-size: 14px;
@@ -275,7 +278,7 @@ export async function exportReviewToPDF(
     
     .legend {
       background: #fffbf0;
-      border: 1px solid #E0BF6B;
+      border: 1px solid ${brand.colors.accent};
       border-radius: 6px;
       padding: 15px;
       margin-bottom: 20px;
@@ -285,7 +288,7 @@ export async function exportReviewToPDF(
       font-size: 14px;
       font-weight: 700;
       margin-bottom: 10px;
-      color: #1a1a1a;
+      color: ${brand.colors.text};
     }
     
     .legend-items {
@@ -329,8 +332,8 @@ export async function exportReviewToPDF(
     }
     
     .recommendations li {
-      background: #f8f9fa;
-      border-left: 3px solid #E0BF6B;
+      background: ${brand.colors.panel};
+      border-left: 3px solid ${brand.colors.accent};
       padding: 12px 15px;
       margin-bottom: 10px;
       border-radius: 4px;
@@ -339,7 +342,7 @@ export async function exportReviewToPDF(
     
     .recommendations li:before {
       content: "✓";
-      color: #E0BF6B;
+      color: ${brand.colors.accent};
       font-weight: bold;
       margin-right: 10px;
     }
@@ -347,15 +350,15 @@ export async function exportReviewToPDF(
     .footer {
       margin-top: 50px;
       padding-top: 20px;
-      border-top: 2px solid #e0e0e0;
+      border-top: 2px solid ${brand.colors.border};
       text-align: center;
       font-size: 12px;
-      color: #666;
+      color: ${brand.colors.muted};
     }
     
     .footer-brand {
       font-weight: 700;
-      color: #E0BF6B;
+      color: ${brand.colors.primary};
       font-size: 14px;
       margin-bottom: 8px;
     }
@@ -395,12 +398,12 @@ export async function exportReviewToPDF(
 <body>
   <div class="header">
     <div class="header-content">
-      <h1>Document Review Report</h1>
-      <div class="subtitle">Reviewed by Techpigeon Review System</div>
+      <h1>Academic Integrity Report</h1>
+      <div class="subtitle">${brand.projectName} | Generated by ${brand.companyName} Review System</div>
     </div>
     <div class="logo-section">
       ${techpigeonLogo}
-      <div class="company-name">Techpigeon</div>
+      <div class="company-name">${brand.companyName}</div>
     </div>
   </div>
 
@@ -480,7 +483,7 @@ export async function exportReviewToPDF(
       ${sections
         .map(
           (item) => `
-            <div style="background: #f8f9fa; border-left: 3px solid #E0BF6B; padding: 12px 15px; margin-bottom: 10px; border-radius: 4px;">
+            <div style="background: ${brand.colors.panel}; border-left: 3px solid ${brand.colors.accent}; padding: 12px 15px; margin-bottom: 10px; border-radius: 4px;">
               <strong>${item.section}</strong><br>
               <span>${item.summary}</span>
             </div>
@@ -502,7 +505,7 @@ export async function exportReviewToPDF(
 
   ${(review.plagiarismResult.highlights.length > 0 || review.plagiarismResult.aiHighlights.length > 0) ? `
   <div class="section">
-    <h2 class="section-title">Document Analysis with Highlights</h2>
+    <h2 class="section-title">Evidence Highlights</h2>
     <div class="legend">
       <h3>Highlight Legend</h3>
       <div class="legend-items">
@@ -546,7 +549,7 @@ export async function exportReviewToPDF(
     <h2 class="section-title">Detected Sources</h2>
     <div class="section-content">
       ${review.plagiarismResult.detectedSources.map(source => `
-        <div style="background: #f8f9fa; border-left: 3px solid #E0BF6B; padding: 12px 15px; margin-bottom: 10px; border-radius: 4px;">
+        <div style="background: ${brand.colors.panel}; border-left: 3px solid ${brand.colors.accent}; padding: 12px 15px; margin-bottom: 10px; border-radius: 4px;">
           <strong>${source.source}</strong> - ${source.similarity}% similarity
         </div>
       `).join('')}
@@ -555,15 +558,13 @@ export async function exportReviewToPDF(
   ` : ''}
 
   <div class="footer">
-    <div class="footer-brand">TECHPIGEON</div>
-    <div>AI-Powered Document Review & Plagiarism Detection System</div>
+    <div class="footer-brand">${brand.companyName}</div>
+    <div>${brand.projectName}</div>
     <div class="footer-address">
-      <strong>Pakistan Office:</strong> G-7/4, Islamabad 44000, Pakistan • Ph: +92(300) 0529697<br>
-      <strong>USA Office:</strong> Ph: +1(786) 8226386<br>
-      <strong>Oman Office:</strong> Techpigeon Spark LLC, Dohat al adab st, Alkhuwair, 133, Muscat, Oman 🇴🇲 • Ph: +968 76786324
+      ${brand.contactLine}
     </div>
     <div style="margin-top: 15px; font-size: 11px;">
-      © ${new Date().getFullYear()} Techpigeon. All rights reserved. | <a href="https://www.techpigeon.org" style="color: #E0BF6B; text-decoration: none;">www.techpigeon.org</a>
+      © ${new Date().getFullYear()} ${brand.companyName}. All rights reserved. | <a href="${brand.website}" style="color: ${brand.colors.accent}; text-decoration: none;">${brand.website.replace("https://", "")}</a>
     </div>
   </div>
 </body>

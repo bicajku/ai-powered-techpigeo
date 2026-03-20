@@ -19,6 +19,16 @@ export interface SavedStrategy {
 
 export type UserRole = "admin" | "client"
 
+export type SubscriptionPlan = "basic" | "pro"
+export type SubscriptionStatus = "active" | "inactive" | "grace"
+
+export interface SubscriptionInfo {
+  plan: SubscriptionPlan
+  status: SubscriptionStatus
+  proCredits: number
+  updatedAt: number
+}
+
 export interface UserProfile {
   id: string
   email: string
@@ -28,6 +38,7 @@ export interface UserProfile {
   industry?: string
   bio?: string
   avatarUrl?: string
+  subscription?: SubscriptionInfo
   createdAt: number
   lastLoginAt: number
 }

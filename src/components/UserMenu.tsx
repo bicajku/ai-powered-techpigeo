@@ -65,6 +65,14 @@ export function UserMenu({ user, onLogout, onProfileUpdate }: UserMenuProps) {
               <p className="text-xs leading-none text-muted-foreground mt-1">
                 Role: {user.role === "admin" ? "Administrator" : "Client"}
               </p>
+              <p className="text-xs leading-none text-muted-foreground">
+                Plan: {user.subscription?.plan === "pro" ? "Pro" : "Basic"}
+              </p>
+              {user.subscription?.plan === "pro" && (
+                <p className="text-xs leading-none text-muted-foreground">
+                  Pro Credits: {user.subscription.proCredits}
+                </p>
+              )}
               {user.company && (
                 <p className="text-xs leading-none text-muted-foreground">
                   {user.company}

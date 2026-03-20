@@ -387,6 +387,8 @@ export function AdminDashboard() {
                           <TableHead>User</TableHead>
                           <TableHead>Email</TableHead>
                           <TableHead>Role</TableHead>
+                          <TableHead>Plan</TableHead>
+                          <TableHead>Pro Credits</TableHead>
                           <TableHead>Created</TableHead>
                           <TableHead>Last Login</TableHead>
                           <TableHead className="text-right">Actions</TableHead>
@@ -395,7 +397,7 @@ export function AdminDashboard() {
                       <TableBody>
                         {users.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                            <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                               No users found
                             </TableCell>
                           </TableRow>
@@ -434,6 +436,14 @@ export function AdminDashboard() {
                                     </SelectContent>
                                   </Select>
                                 )}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={user.subscription?.plan === "pro" ? "default" : "secondary"}>
+                                  {user.subscription?.plan === "pro" ? "Pro" : "Basic"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-sm text-muted-foreground">
+                                {user.subscription?.plan === "pro" ? user.subscription.proCredits : "-"}
                               </TableCell>
                               <TableCell className="text-sm text-muted-foreground">
                                 {formatDate(user.createdAt)}

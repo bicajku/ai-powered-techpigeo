@@ -1,4 +1,5 @@
 import { UserProfile } from "@/types"
+import { ensureUserSubscription, getDefaultSubscription } from "@/lib/subscription"
 
 const USERS_STORAGE_KEY = "platform-users"
 const CURRENT_USER_KEY = "current-user-id"
@@ -57,6 +58,7 @@ export const authService = {
         email: email.toLowerCase(),
         fullName: fullName,
         role: "client",
+        subscription: getDefaultSubscription(),
         createdAt: Date.now(),
         lastLoginAt: Date.now(),
       }
@@ -106,12 +108,13 @@ export const authService = {
         return { success: false, error: "User not found" }
       }
 
-      user.lastLoginAt = Date.now()
-      users[credential.userId] = user
+      const normalizedUser = ensureUserSubscription(user)
+      normalizedUser.lastLoginAt = Date.now()
+      users[credential.userId] = normalizedUser
       await spark.kv.set(USERS_STORAGE_KEY, users)
-      await spark.kv.set(CURRENT_USER_KEY, user.id)
+      await spark.kv.set(CURRENT_USER_KEY, normalizedUser.id)
 
-      return { success: true, user }
+      return { success: true, user: normalizedUser }
     } catch (error) {
       console.error("Login error:", error)
       return { success: false, error: "Login failed. Please try again." }
@@ -141,6 +144,7 @@ export const authService = {
           fullName: githubUser.login,
           role: role,
           avatarUrl: githubUser.avatarUrl,
+          subscription: getDefaultSubscription(),
           createdAt: Date.now(),
           lastLoginAt: Date.now(),
         }
@@ -148,7 +152,7 @@ export const authService = {
         users[githubUser.id] = user
         await spark.kv.set(USERS_STORAGE_KEY, users)
       } else {
-        user = existingUser
+        user = ensureUserSubscription(existingUser)
         user.lastLoginAt = Date.now()
         user.role = role
         user.avatarUrl = githubUser.avatarUrl
@@ -180,7 +184,16 @@ export const authService = {
       
       if (currentUserId) {
         const users = await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
-        return users[currentUserId] || null
+        const storedUser = users[currentUserId]
+        if (!storedUser) return null
+
+        const normalized = ensureUserSubscription(storedUser)
+        if (!storedUser.subscription) {
+          users[currentUserId] = normalized
+          await spark.kv.set(USERS_STORAGE_KEY, users)
+        }
+
+        return normalized
       }
 
       try {
@@ -191,8 +204,13 @@ export const authService = {
           const existingUser = Object.values(users).find(u => u.id === githubUser.id)
           
           if (existingUser) {
-            await spark.kv.set(CURRENT_USER_KEY, existingUser.id)
-            return existingUser
+            const normalized = ensureUserSubscription(existingUser)
+            if (!existingUser.subscription) {
+              users[existingUser.id] = normalized
+              await spark.kv.set(USERS_STORAGE_KEY, users)
+            }
+            await spark.kv.set(CURRENT_USER_KEY, normalized.id)
+            return normalized
           }
         }
       } catch (githubError) {
@@ -222,6 +240,7 @@ export const authService = {
         email: user.email, 
         createdAt: user.createdAt,
         role: user.role,
+        subscription: user.subscription || getDefaultSubscription(),
       }
 
       try {

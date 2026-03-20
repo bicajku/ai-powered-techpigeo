@@ -831,7 +831,7 @@ FORMATTING GUIDELINES:
             </TabsContent>
 
             <TabsContent value="plagiarism" className="space-y-6">
-              <PlagiarismChecker userId={user.id} />
+              <PlagiarismChecker user={user} />
             </TabsContent>
 
             <TabsContent value="dashboard" className="space-y-6">
