@@ -82,10 +82,21 @@ export function AdminDashboard() {
     strategies: { user: UserProfile; strategies: SavedStrategy[] }[],
     reviews: { user: UserProfile; reviews: SavedReviewDocument[] }[]
   ) => {
-    const totalStrategies = strategies.reduce((sum, item) => sum + item.strategies.length, 0)
-    const totalReviews = reviews.reduce((sum, item) => sum + item.reviews.length, 0)
+    const totalStrategies = strategies.reduce((sum, item) => sum + (item.strategies?.length || 0), 0)
+    const totalReviews = reviews.reduce((sum, item) => sum + (item.reviews?.length || 0), 0)
     const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
-    const recentUsers = allUsers.filter((user) => user.lastLoginAt >= sevenDaysAgo).length
+    const recentUsers = allUsers.filter((user) => user.lastLoginAt && user.lastLoginAt >= sevenDaysAgo).length
+
+    console.log("Admin Dashboard Stats Calculation:", {
+      totalUsers: allUsers.length,
+      totalAdmins: allUsers.filter((user) => user.role === "admin").length,
+      totalClients: allUsers.filter((user) => user.role === "client").length,
+      totalStrategies,
+      totalReviews,
+      recentUsers,
+      strategiesBreakdown: strategies.map(s => ({ user: s.user.email, count: s.strategies?.length || 0 })),
+      reviewsBreakdown: reviews.map(r => ({ user: r.user.email, count: r.reviews?.length || 0 }))
+    })
 
     return {
       totalUsers: allUsers.length,

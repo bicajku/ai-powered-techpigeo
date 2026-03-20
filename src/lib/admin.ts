@@ -36,8 +36,8 @@ export const adminService = {
 
   async getUserStrategies(userId: string): Promise<SavedStrategy[]> {
     try {
-      const strategies = await spark.kv.get<SavedStrategy[]>(`saved-strategies-${userId}`) || []
-      return strategies
+      const strategies = await spark.kv.get<SavedStrategy[]>(`saved-strategies-${userId}`)
+      return Array.isArray(strategies) ? strategies : []
     } catch (error) {
       console.error(`Failed to get strategies for user ${userId}:`, error)
       return []
@@ -46,8 +46,8 @@ export const adminService = {
 
   async getUserReviews(userId: string): Promise<SavedReviewDocument[]> {
     try {
-      const reviews = await spark.kv.get<SavedReviewDocument[]>(`saved-reviews-${userId}`) || []
-      return reviews
+      const reviews = await spark.kv.get<SavedReviewDocument[]>(`saved-reviews-${userId}`)
+      return Array.isArray(reviews) ? reviews : []
     } catch (error) {
       console.error(`Failed to get reviews for user ${userId}:`, error)
       return []
