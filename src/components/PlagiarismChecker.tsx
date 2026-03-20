@@ -84,69 +84,64 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
 
     if (!validTypes.includes(file.type)) {
       toast.error("Please upload a valid document (PDF, DOC, DOCX, or TXT)")
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
       return
     }
 
     if (file.size > 10 * 1024 * 1024) {
       toast.error("File size must be less than 10MB")
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
       return
     }
 
     setFileName(file.name)
+    toast.info(`Processing "${file.name}"...`)
 
-    const reader = new FileReader()
-    
-    reader.onload = async (e) => {
-      const content = e.target?.result
-      if (!content) {
-        toast.error("Unable to read file content")
-        return
-      }
-      
+    try {
       if (file.type === 'text/plain') {
-        setText(String(content))
-        toast.success(`File "${file.name}" loaded successfully`)
+        const content = await file.text()
+        if (content && content.trim().length > 0) {
+          setText(content)
+          toast.success(`File "${file.name}" loaded successfully - ${content.length} characters`)
+        } else {
+          toast.error("File is empty. Please upload a file with content.")
+          setFileName(null)
+        }
       } else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-        try {
-          const extractedText = await extractTextFromDocx(content)
-          if (extractedText && extractedText.trim().length > 0) {
-            setText(extractedText)
-            toast.success(`File "${file.name}" loaded successfully - ${extractedText.length} characters extracted`)
-          } else {
-            toast.error("Could not extract text from DOCX. Please paste your text manually or use a TXT file.")
-            setText("")
-          }
-        } catch (error) {
-          console.error("DOCX extraction error:", error)
-          toast.error("Failed to extract text from DOCX. Please paste your text manually or use a TXT file.")
+        const arrayBuffer = await file.arrayBuffer()
+        const extractedText = await extractTextFromDocx(arrayBuffer)
+        
+        if (extractedText && extractedText.trim().length > 0) {
+          setText(extractedText)
+          toast.success(`File "${file.name}" loaded successfully - ${extractedText.length} characters extracted`)
+        } else {
+          toast.error("Could not extract text from DOCX. Please paste your text manually or use a TXT file.")
           setText("")
+          setFileName(null)
         }
       } else if (file.type === 'application/pdf' || file.type === 'application/msword') {
         toast.warning(`${file.type === 'application/pdf' ? 'PDF' : 'DOC'} extraction requires additional processing. Please copy and paste your text manually, or use a TXT file for direct upload.`)
         setText("")
+        setFileName(null)
       }
-    }
-    
-    reader.onerror = () => {
-      toast.error("Failed to read file. Please try again.")
+    } catch (error) {
+      console.error("File upload error:", error)
+      toast.error("Failed to process file. Please try again or paste your text manually.")
+      setText("")
       setFileName(null)
     }
-    
-    if (file.type === 'text/plain') {
-      reader.readAsText(file)
-    } else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-      reader.readAsArrayBuffer(file)
-    } else {
-      reader.readAsText(file)
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
     }
   }
 
-  const extractTextFromDocx = async (arrayBuffer: string | ArrayBuffer): Promise<string> => {
+  const extractTextFromDocx = async (arrayBuffer: ArrayBuffer): Promise<string> => {
     try {
-      if (typeof arrayBuffer === 'string') {
-        return ""
-      }
-
       const uint8Array = new Uint8Array(arrayBuffer)
       const decoder = new TextDecoder('utf-8', { fatal: false })
       let fullText = decoder.decode(uint8Array)
