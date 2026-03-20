@@ -18,6 +18,7 @@ import { TopNotchBanner } from "@/components/TopNotchBanner"
 import { Footer } from "@/components/Footer"
 import { PlagiarismChecker } from "@/components/PlagiarismChecker"
 import { IdeaGeneration } from "@/components/IdeaGeneration"
+import { MobileNav } from "@/components/MobileNav"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
@@ -112,6 +113,7 @@ function App() {
     const storedTheme = window.localStorage.getItem(BRAND_THEME_STORAGE_KEY)
     return isBrandThemeName(storedTheme) ? storedTheme : DEFAULT_BRAND_THEME
   })
+  const [activeTab, setActiveTab] = useState("generate")
   const resultsRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -671,8 +673,8 @@ CRITICAL REMINDERS:
             {showExpandedWelcome && <WelcomeBanner user={user} />}
           </AnimatePresence>
 
-          <Tabs defaultValue="generate" className="w-full">
-            <TabsList className={`grid w-full max-w-4xl mx-auto mb-8 grid-cols-3 sm:grid-cols-3 md:grid-cols-5 ${user.role === "admin" ? "lg:grid-cols-6" : "lg:grid-cols-5"}`}>
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className={`hidden md:grid w-full max-w-4xl mx-auto mb-8 grid-cols-3 sm:grid-cols-3 md:grid-cols-5 ${user.role === "admin" ? "lg:grid-cols-6" : "lg:grid-cols-5"}`}>
               <TabsTrigger value="generate" className="gap-1 sm:gap-2 text-xs sm:text-sm flex-col sm:flex-row py-2 sm:py-1.5 px-1 sm:px-3">
                 <Lightbulb size={16} weight="bold" className="sm:size-[18px]" />
                 <span className="hidden sm:inline">Strategy</span>
@@ -1521,6 +1523,13 @@ CRITICAL REMINDERS:
             )}
           </Tabs>
         </div>
+        
+        <MobileNav
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          isAdmin={user.role === "admin"}
+          savedCount={savedStrategies?.length || 0}
+        />
         
         <Footer />
       </div>
