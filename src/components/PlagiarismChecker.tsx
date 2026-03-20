@@ -352,6 +352,15 @@ Required JSON structure:
     toast.success("Review archived")
   }
 
+  const handleUnarchiveReview = (id: string) => {
+    setSavedReviews((current) => 
+      (current || []).map(r => 
+        r.id === id ? { ...r, archived: false } : r
+      )
+    )
+    toast.success("Review unarchived")
+  }
+
   const handleViewReview = (review: SavedReviewDocument) => {
     setText(review.documentText)
     setFileName(review.fileName)
@@ -1001,6 +1010,7 @@ Return ONLY a valid JSON object:
             reviews={savedReviews}
             onDelete={handleDeleteReview}
             onArchive={handleArchiveReview}
+            onUnarchive={handleUnarchiveReview}
             onView={handleViewReview}
             onExport={handleExportReview}
           />

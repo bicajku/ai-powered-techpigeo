@@ -98,6 +98,7 @@ export interface SavedReviewDocument {
   plagiarismResult: PlagiarismResult
   timestamp: number
   userId: string
+  archived?: boolean
 }
 
 export interface HumanizedResult {
