@@ -97,3 +97,69 @@ export async function consumeProCredits(userId: string, creditsToConsume: number
     return { success: false, remainingCredits: 0, error: "Failed to consume credits" }
   }
 }
+
+export async function upgradeToPro(userId: string, initialCredits = 25): Promise<{ success: boolean; credits: number; error?: string }> {
+  try {
+    const users = (await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
+    const user = users[userId]
+
+    if (!user) {
+      return { success: false, credits: 0, error: "User not found" }
+    }
+
+    const safeUser = ensureUserSubscription(user)
+    users[userId] = {
+      ...safeUser,
+      subscription: {
+        plan: "pro",
+        status: "active",
+        proCredits: Math.max(0, initialCredits),
+        updatedAt: Date.now(),
+      },
+    }
+
+    await spark.kv.set(USERS_STORAGE_KEY, users)
+    return { success: true, credits: Math.max(0, initialCredits) }
+  } catch (error) {
+    console.error("Failed to upgrade user to Pro:", error)
+    return { success: false, credits: 0, error: "Failed to upgrade user" }
+  }
+}
+
+export async function addProCredits(userId: string, creditsToAdd: number): Promise<{ success: boolean; credits: number; error?: string }> {
+  if (creditsToAdd <= 0) {
+    return { success: false, credits: 0, error: "Credits to add must be greater than zero" }
+  }
+
+  try {
+    const users = (await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
+    const user = users[userId]
+
+    if (!user) {
+      return { success: false, credits: 0, error: "User not found" }
+    }
+
+    const safeUser = ensureUserSubscription(user)
+    const subscription = safeUser.subscription || getDefaultSubscription()
+
+    if (subscription.plan !== "pro") {
+      return { success: false, credits: subscription.proCredits || 0, error: "Upgrade to Pro first" }
+    }
+
+    const newCredits = Math.max(0, (subscription.proCredits || 0) + creditsToAdd)
+    users[userId] = {
+      ...safeUser,
+      subscription: {
+        ...subscription,
+        proCredits: newCredits,
+        updatedAt: Date.now(),
+      },
+    }
+
+    await spark.kv.set(USERS_STORAGE_KEY, users)
+    return { success: true, credits: newCredits }
+  } catch (error) {
+    console.error("Failed to add Pro credits:", error)
+    return { success: false, credits: 0, error: "Failed to add credits" }
+  }
+}

@@ -527,7 +527,7 @@ CRITICAL: Return ONLY valid JSON.`
                   <div className="grid md:grid-cols-2 gap-4 pt-4">
                     <Button
                       onClick={generateBusinessCanvas}
-                      disabled={isLoadingCanvas}
+                      disabled={!cookedIdea || isLoadingCanvas}
                       size="lg"
                       variant="outline"
                       className="gap-2 h-auto py-6 flex-col"
@@ -545,7 +545,7 @@ CRITICAL: Return ONLY valid JSON.`
                           <ChartDonut size={32} weight="duotone" className="text-primary" />
                           <div>
                             <div className="font-semibold">Generate Business Canvas</div>
-                            <div className="text-xs text-muted-foreground font-normal">Free - Powered by AI</div>
+                            <div className="text-xs text-muted-foreground font-normal">{cookedIdea ? "Free - Powered by AI" : "Cook idea first"}</div>
                           </div>
                         </>
                       )}
@@ -553,7 +553,7 @@ CRITICAL: Return ONLY valid JSON.`
 
                     <Button
                       onClick={generatePitchDeck}
-                      disabled={isLoadingPitch}
+                      disabled={!cookedIdea || isLoadingPitch}
                       size="lg"
                       variant="outline"
                       className="gap-2 h-auto py-6 flex-col"
@@ -571,7 +571,7 @@ CRITICAL: Return ONLY valid JSON.`
                           <PresentationChart size={32} weight="duotone" className="text-accent" />
                           <div>
                             <div className="font-semibold">Generate Pitch Deck</div>
-                            <div className="text-xs text-muted-foreground font-normal">Free - Investor Ready</div>
+                            <div className="text-xs text-muted-foreground font-normal">{cookedIdea ? "Free - Investor Ready" : "Cook idea first"}</div>
                           </div>
                         </>
                       )}

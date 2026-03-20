@@ -27,7 +27,7 @@ import { SaveReviewDialog } from "@/components/SaveReviewDialog"
 import { SavedReviews } from "@/components/SavedReviews"
 import { exportReviewToPDF } from "@/lib/pdf-export"
 import { computeReviewAnalysis, ReviewComputationMeta, ReviewFilters, SectionSummary } from "@/lib/review-engine"
-import { consumeProCredits, getFeatureEntitlements } from "@/lib/subscription"
+import { addProCredits, consumeProCredits, getFeatureEntitlements, upgradeToPro } from "@/lib/subscription"
 
 interface PlagiarismCheckerProps {
   user: UserProfile
@@ -51,6 +51,7 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
     excludeReferences: true,
     minMatchWords: 8,
   })
+  const [subscriptionPlan, setSubscriptionPlan] = useState<"basic" | "pro">(user.subscription?.plan || "basic")
   const [proCredits, setProCredits] = useState(user.subscription?.proCredits || 0)
   const [documentReviews, setDocumentReviews] = useKV<DocumentReviewResult[]>(
     `document-reviews-${userId}`,
@@ -65,6 +66,7 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
     ...user,
     subscription: {
       ...(user.subscription || { plan: "basic", status: "active", proCredits: 0, updatedAt: Date.now() }),
+      plan: subscriptionPlan,
       proCredits,
     },
   })
@@ -95,10 +97,14 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
     const reader = new FileReader()
     
     reader.onload = async (e) => {
-      const content = e.target?.result as string
+      const content = e.target?.result
+      if (!content) {
+        toast.error("Unable to read file content")
+        return
+      }
       
       if (file.type === 'text/plain') {
-        setText(content)
+        setText(String(content))
         toast.success(`File "${file.name}" loaded successfully`)
       } else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
         try {
@@ -131,7 +137,7 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
     } else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
       reader.readAsArrayBuffer(file)
     } else {
-      reader.readAsDataURL(file)
+      reader.readAsText(file)
     }
   }
 
@@ -452,6 +458,27 @@ Return ONLY a valid JSON object:
     }
   }
 
+  const handleUpgradeToPro = async () => {
+    const result = await upgradeToPro(user.id, 25)
+    if (result.success) {
+      setSubscriptionPlan("pro")
+      setProCredits(result.credits)
+      toast.success(`Upgraded to Pro. ${result.credits} credits added.`)
+    } else {
+      toast.error(result.error || "Failed to upgrade to Pro")
+    }
+  }
+
+  const handleBuyCredits = async () => {
+    const result = await addProCredits(user.id, 25)
+    if (result.success) {
+      setProCredits(result.credits)
+      toast.success(`Credits purchased. New balance: ${result.credits}`)
+    } else {
+      toast.error(result.error || "Failed to add credits")
+    }
+  }
+
   const getScoreColor = (score: number) => {
     if (score >= 80) return "text-green-600"
     if (score >= 60) return "text-yellow-600"
@@ -548,11 +575,11 @@ Return ONLY a valid JSON object:
               className="min-h-64 resize-none"
               maxLength={50000}
             />
-            <div className="flex items-center justify-between mt-2">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mt-2">
               <p className="text-xs text-muted-foreground">
                 {text.length.toLocaleString()} / 50,000 characters
               </p>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Button
                   onClick={humanizeText}
                   disabled={!text.trim() || isHumanizing || isChecking || (entitlements.isPro && proCredits <= 0)}
@@ -563,6 +590,19 @@ Return ONLY a valid JSON object:
                   <LockKey size={16} weight="duotone" />
                   {isHumanizing ? "Humanizing..." : entitlements.isPro ? `Humanize (Pro: ${proCredits})` : "Humanize (Pro)"}
                 </Button>
+
+                {!entitlements.isPro && (
+                  <Button onClick={handleUpgradeToPro} variant="secondary" size="sm">
+                    Upgrade to Pro
+                  </Button>
+                )}
+
+                {entitlements.isPro && proCredits <= 0 && (
+                  <Button onClick={handleBuyCredits} variant="secondary" size="sm">
+                    Buy Credits
+                  </Button>
+                )}
+
                 <Button
                   onClick={checkPlagiarism}
                   disabled={!text.trim() || text.trim().length < 50 || isChecking}

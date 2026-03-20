@@ -48,6 +48,7 @@ import {
   Eye,
   FileText,
   Bug,
+  Key,
 } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { UserProfile, UserRole, SavedStrategy, SavedReviewDocument } from "@/types"
@@ -80,7 +81,7 @@ export function AdminDashboard() {
     const totalStrategies = strategies.reduce((sum, item) => sum + item.strategies.length, 0)
     const totalReviews = reviews.reduce((sum, item) => sum + item.reviews.length, 0)
     const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
-    const recentUsers = allUsers.filter((user) => user.createdAt >= sevenDaysAgo).length
+    const recentUsers = allUsers.filter((user) => user.lastLoginAt >= sevenDaysAgo).length
 
     return {
       totalUsers: allUsers.length,
@@ -170,6 +171,22 @@ export function AdminDashboard() {
       toast.error("Failed to delete user")
     } finally {
       setDeleteTarget(null)
+    }
+  }
+
+  const handleResetPassword = async (email: string) => {
+    const newPassword = prompt(`Set a new password for ${email} (min 6 chars):`)
+    if (!newPassword) return
+
+    try {
+      const result = await adminService.updateUserPassword(email, newPassword)
+      if (result.success) {
+        toast.success("Password updated successfully")
+      } else {
+        toast.error(result.error || "Failed to update password")
+      }
+    } catch (error) {
+      toast.error("Failed to update password")
     }
   }
 
@@ -339,7 +356,7 @@ export function AdminDashboard() {
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                   <ChartBar size={16} weight="duotone" />
-                  New (7d)
+                  Active (7d)
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -453,14 +470,25 @@ export function AdminDashboard() {
                               </TableCell>
                               <TableCell className="text-right">
                                 {user.email !== "admin" && (
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleDelete(user.email)}
-                                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                                  >
-                                    <Trash size={16} weight="bold" />
-                                  </Button>
+                                  <div className="flex items-center justify-end gap-1">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => handleResetPassword(user.email)}
+                                      title="Set Password"
+                                    >
+                                      <Key size={16} weight="bold" />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => handleDelete(user.email)}
+                                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                      title="Delete User"
+                                    >
+                                      <Trash size={16} weight="bold" />
+                                    </Button>
+                                  </div>
                                 )}
                               </TableCell>
                             </TableRow>

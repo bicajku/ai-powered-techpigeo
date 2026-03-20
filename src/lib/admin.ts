@@ -1,6 +1,21 @@
 import { UserProfile, SavedStrategy, UserRole, SavedReviewDocument } from "@/types"
 
 const USERS_STORAGE_KEY = "platform-users"
+const USER_CREDENTIALS_KEY = "user-credentials"
+
+interface StoredCredential {
+  email: string
+  passwordHash: string
+  userId: string
+}
+
+async function simpleHash(text: string): Promise<string> {
+  const encoder = new TextEncoder()
+  const data = encoder.encode(text)
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data)
+  const hashArray = Array.from(new Uint8Array(hashBuffer))
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("")
+}
 
 export const adminService = {
   async getAllUsers(): Promise<UserProfile[]> {
@@ -68,14 +83,16 @@ export const adminService = {
   async updateUserRole(email: string, newRole: UserRole): Promise<{ success: boolean; error?: string }> {
     try {
       const users = await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
-      const user = users[email]
+      const userEntry = Object.entries(users).find(([, candidate]) => candidate.email === email)
+      const user = userEntry?.[1]
+      const userId = userEntry?.[0]
 
-      if (!user) {
+      if (!user || !userId) {
         return { success: false, error: "User not found" }
       }
 
       user.role = newRole
-      users[email] = user
+      users[userId] = user
       await spark.kv.set(USERS_STORAGE_KEY, users)
 
       return { success: true }
@@ -92,15 +109,21 @@ export const adminService = {
       }
 
       const users = await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
-      const user = users[email]
+      const userEntry = Object.entries(users).find(([, candidate]) => candidate.email === email)
+      const user = userEntry?.[1]
+      const userId = userEntry?.[0]
 
-      if (!user) {
+      if (!user || !userId) {
         return { success: false, error: "User not found" }
       }
 
-      delete users[email]
+      delete users[userId]
       await spark.kv.set(USERS_STORAGE_KEY, users)
-      await spark.kv.delete(`password_${email}`)
+
+      const credentials = await spark.kv.get<Record<string, StoredCredential>>(USER_CREDENTIALS_KEY) || {}
+      delete credentials[email.toLowerCase()]
+      await spark.kv.set(USER_CREDENTIALS_KEY, credentials)
+
       await spark.kv.delete(`saved-strategies-${user.id}`)
       await spark.kv.delete(`saved-reviews-${user.id}`)
       await spark.kv.delete(`user-prompt-memory-${user.id}`)
@@ -156,6 +179,30 @@ export const adminService = {
         totalReviews: 0,
         recentUsers: 0,
       }
+    }
+  },
+
+  async updateUserPassword(email: string, newPassword: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      if (!newPassword || newPassword.length < 6) {
+        return { success: false, error: "Password must be at least 6 characters" }
+      }
+
+      const credentials = await spark.kv.get<Record<string, StoredCredential>>(USER_CREDENTIALS_KEY) || {}
+      const credential = credentials[email.toLowerCase()]
+
+      if (!credential) {
+        return { success: false, error: "Credentials not found for this user" }
+      }
+
+      credential.passwordHash = await simpleHash(newPassword)
+      credentials[email.toLowerCase()] = credential
+      await spark.kv.set(USER_CREDENTIALS_KEY, credentials)
+
+      return { success: true }
+    } catch (error) {
+      console.error("Failed to update user password:", error)
+      return { success: false, error: "Failed to update password" }
     }
   },
 }
