@@ -16,7 +16,8 @@ import {
   CheckCircle,
   WarningCircle,
   XCircle,
-  LockKey
+  LockKey,
+  FloppyDisk
 } from "@phosphor-icons/react"
 import { motion, AnimatePresence } from "framer-motion"
 import { toast } from "sonner"
@@ -56,6 +57,20 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
   const [currentReviewResult, setCurrentReviewResult] = useState<DocumentReviewResult | null>(null)
   const [reviewMeta, setReviewMeta] = useState<ReviewComputationMeta | null>(null)
   const [sectionSummaries, setSectionSummaries] = useState<SectionSummary[]>([])
+  const [showSavePlagiarismCheck, setShowSavePlagiarismCheck] = useState(false)
+  const [plagiarismCheckLabel, setPlagiarismCheckLabel] = useState("")
+  const [savedPlagiarismChecks, setSavedPlagiarismChecks] = useKV<Array<{
+    id: string
+    label: string
+    documentName: string
+    plagiarismScore: number
+    aiContentScore: number
+    timestamp: number
+    summary: string
+  }>>(
+    `plagiarism-checks-${userId}`,
+    []
+  )
   const [reviewFilters, setReviewFilters] = useState<ReviewFilters>({
     excludeQuotes: true,
     excludeReferences: true,
@@ -851,6 +866,33 @@ Required JSON structure:
     }
   }
 
+  const savePlagiarismCheckResult = async () => {
+    if (!result || !plagiarismCheckLabel.trim()) {
+      toast.error("Please provide a label for this plagiarism check result")
+      return
+    }
+
+    try {
+      const newCheck = {
+        id: `check-${Date.now()}`,
+        label: plagiarismCheckLabel,
+        documentName: fileName || "Direct Input",
+        plagiarismScore: result.plagiarismScore,
+        aiContentScore: result.aiContentPercentage,
+        timestamp: Date.now(),
+        summary: result.summary.substring(0, 200)
+      }
+
+      setSavedPlagiarismChecks((current) => [newCheck, ...(current || [])])
+      setPlagiarismCheckLabel("")
+      setShowSavePlagiarismCheck(false)
+      toast.success(`Plagiarism check saved as "${plagiarismCheckLabel}"`)
+    } catch (error) {
+      console.error("Save plagiarism check error:", error)
+      toast.error("Failed to save plagiarism check result")
+    }
+  }
+
   const humanizeText = async () => {
     if (!text.trim()) {
       toast.error("Please enter text to humanize")
@@ -1458,6 +1500,85 @@ Return ONLY a valid JSON object:
                     ))}
                   </TabsContent>
                 </Tabs>
+
+                <div className="flex gap-2 pt-4 border-t">
+                  <Button
+                    onClick={() => setShowSavePlagiarismCheck(true)}
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                  >
+                    <FloppyDisk size={16} weight="duotone" />
+                    Save Check Result
+                  </Button>
+                  <Button
+                    onClick={handleExportReviewPdf}
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                  >
+                    <FileText size={16} weight="duotone" />
+                    Export PDF
+                  </Button>
+                </div>
+
+                {showSavePlagiarismCheck && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="mt-4 p-4 border border-border rounded-lg bg-muted/30 space-y-3"
+                  >
+                    <p className="text-sm font-semibold">Save this plagiarism check for future reference</p>
+                    <input
+                      type="text"
+                      value={plagiarismCheckLabel}
+                      onChange={(e) => setPlagiarismCheckLabel(e.target.value)}
+                      placeholder="e.g., Final Essay Review, Report v2"
+                      className="w-full px-3 py-2 border border-border rounded-lg bg-background text-sm"
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={savePlagiarismCheckResult}
+                        disabled={!plagiarismCheckLabel.trim()}
+                        size="sm"
+                        className="gap-2"
+                      >
+                        <CheckCircle size={16} weight="duotone" />
+                        Save Result
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          setShowSavePlagiarismCheck(false)
+                          setPlagiarismCheckLabel("")
+                        }}
+                        variant="ghost"
+                        size="sm"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </motion.div>
+                )}
+
+                {(savedPlagiarismChecks || []).length > 0 && (
+                  <div className="mt-4 pt-4 border-t space-y-3">
+                    <h4 className="text-sm font-semibold">Your Saved Checks ({(savedPlagiarismChecks || []).length})</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-64 overflow-y-auto">
+                      {(savedPlagiarismChecks || []).map((check) => (
+                        <div key={check.id} className="p-3 border border-border rounded-lg bg-muted/30 space-y-1">
+                          <p className="text-sm font-medium truncate">{check.label}</p>
+                          <p className="text-xs text-muted-foreground">{check.documentName}</p>
+                          <div className="flex gap-4 text-xs">
+                            <span>Similarity: <span className={getScoreColor(check.plagiarismScore)}>{check.plagiarismScore}%</span></span>
+                            <span>AI: <span className={getScoreColor(check.aiContentScore)}>{check.aiContentScore}%</span></span>
+                          </div>
+                          <p className="text-xs text-muted-foreground">{new Date(check.timestamp).toLocaleDateString()}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {result.detectedSources.length > 0 && (
                   <div className="pt-4 border-t">
