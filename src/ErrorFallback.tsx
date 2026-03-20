@@ -24,13 +24,14 @@ export const ErrorFallback = ({
           <pre className="whitespace-pre-wrap break-words">{error.message}</pre>
         </div>
 
-        <Button 
-          onClick={resetErrorBoundary}
-          variant="outline"
-          className="w-full"
-        >
-          Try Again
-        </Button>
+        <div className="flex gap-4">
+          <Button onClick={resetErrorBoundary} variant="default">
+            Try again
+          </Button>
+          <Button onClick={() => window.location.reload()} variant="outline">
+            Refresh page
+          </Button>
+        </div>
       </div>
     </div>
   )
