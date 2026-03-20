@@ -1,12 +1,13 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
-import { Sparkle, GithubLogo, Envelope, LockKey, User } from "@phosphor-icons/react"
+import { Sparkle, GithubLogo, Envelope, LockKey, User, CheckCircle } from "@phosphor-icons/react"
 import { motion } from "framer-motion"
 import { authService } from "@/lib/auth"
+import { inviteService } from "@/lib/invite-system"
 import { toast } from "sonner"
 import { UserProfile } from "@/types"
 import { PasswordResetFlow } from "@/components/PasswordResetFlow"
@@ -22,6 +23,37 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [fullName, setFullName] = useState("")
+  const [inviteCode, setInviteCode] = useState<string | null>(null)
+  const [inviteValid, setInviteValid] = useState(false)
+  const [invitedBy, setInvitedBy] = useState<string | null>(null)
+
+  // Check for invite link on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const code = params.get("invite")
+
+    if (code) {
+      setInviteCode(code)
+      setIsSignUp(true)
+
+      // Validate the invite
+      const validateInvite = async () => {
+        const result = await inviteService.validateInviteLink(code)
+        if (result.valid && result.invite) {
+          setInviteValid(true)
+          setInvitedBy(result.invite.createdBy || null)
+        } else {
+          toast.error(result.error || "Invalid or expired invite link")
+          setInviteCode(null)
+        }
+      }
+
+      validateInvite()
+    }
+  }, [])
+  const [inviteCode, setInviteCode] = useState<string | null>(null)
+  const [inviteValid, setInviteValid] = useState(false)
+  const [invitedBy, setInvitedBy] = useState<string | null>(null)
 
   if (showPasswordReset) {
     return <PasswordResetFlow onBack={() => setShowPasswordReset(false)} />
@@ -66,6 +98,11 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
       }
 
       if (result.success && result.user) {
+        // Mark invite as used if present
+        if (inviteCode && result.user.id) {
+          await inviteService.useInviteLink(inviteCode, result.user.id)
+        }
+
         toast.success(`Welcome, ${result.user.fullName}!`)
         onAuthSuccess(result.user)
       } else {
@@ -107,6 +144,24 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
             {isSignUp ? "Create your account" : "Sign in to your account"}
           </p>
         </div>
+
+        {inviteCode && inviteValid && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-4 p-4 bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-lg flex items-center gap-3"
+          >
+            <CheckCircle size={20} className="text-green-600 dark:text-green-400 flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-green-900 dark:text-green-200">
+                Invited Registration
+              </p>
+              <p className="text-xs text-green-700 dark:text-green-300">
+                {invitedBy ? `You've been invited by ${invitedBy}` : "Complete your registration to get started"}
+              </p>
+            </div>
+          </motion.div>
+        )}
 
         <Card className="p-8 bg-card/80 backdrop-blur-sm border-border/50">
           <form onSubmit={handleEmailAuth} className="space-y-6">

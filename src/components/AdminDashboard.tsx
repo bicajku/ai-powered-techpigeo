@@ -50,6 +50,7 @@ import {
   Bug,
   Key,
   Archive,
+  ArrowCounterClockwise,
 } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { UserProfile, UserRole, SavedStrategy, SavedReviewDocument } from "@/types"
@@ -73,6 +74,7 @@ export function AdminDashboard() {
   const [allReviews, setAllReviews] = useState<{ user: UserProfile; reviews: SavedReviewDocument[] }[]>([])
   const [selectedStrategy, setSelectedStrategy] = useState<{ user: UserProfile; strategy: SavedStrategy } | null>(null)
   const [selectedReview, setSelectedReview] = useState<{ user: UserProfile; review: SavedReviewDocument } | null>(null)
+  const [reviewActionTarget, setReviewActionTarget] = useState<{ userId: string; reviewId: string; action: "archive" | "unarchive" | "delete" } | null>(null)
 
   const buildStats = (
     allUsers: UserProfile[],
@@ -193,6 +195,52 @@ export function AdminDashboard() {
     }
   }
 
+  const handleArchiveReview = async (userId: string, reviewId: string) => {
+    setReviewActionTarget({ userId, reviewId, action: "archive" })
+  }
+
+  const handleUnarchiveReview = async (userId: string, reviewId: string) => {
+    setReviewActionTarget({ userId, reviewId, action: "unarchive" })
+  }
+
+  const handleDeleteReview = async (userId: string, reviewId: string) => {
+    setReviewActionTarget({ userId, reviewId, action: "delete" })
+  }
+
+  const confirmReviewAction = async () => {
+    if (!reviewActionTarget) return
+
+    try {
+      const { userId, reviewId, action } = reviewActionTarget
+      const reviews = await spark.kv.get<SavedReviewDocument[]>(`saved-reviews-${userId}`) || []
+
+      if (action === "delete") {
+        const updatedReviews = reviews.filter(r => r.id !== reviewId)
+        await spark.kv.set(`saved-reviews-${userId}`, updatedReviews)
+        toast.success("Review deleted successfully")
+      } else if (action === "archive") {
+        const updatedReviews = reviews.map(r =>
+          r.id === reviewId ? { ...r, archived: true } : r
+        )
+        await spark.kv.set(`saved-reviews-${userId}`, updatedReviews)
+        toast.success("Review archived successfully")
+      } else if (action === "unarchive") {
+        const updatedReviews = reviews.map(r =>
+          r.id === reviewId ? { ...r, archived: false } : r
+        )
+        await spark.kv.set(`saved-reviews-${userId}`, updatedReviews)
+        toast.success("Review unarchived successfully")
+      }
+
+      await loadData()
+    } catch (error) {
+      console.error("Failed to perform review action:", error)
+      toast.error(`Failed to ${reviewActionTarget.action} review`)
+    } finally {
+      setReviewActionTarget(null)
+    }
+  }
+
   const formatDate = (timestamp: number) => {
     return new Date(timestamp).toLocaleDateString("en-US", {
       year: "numeric",
@@ -242,6 +290,34 @@ export function AdminDashboard() {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={confirmRoleChange}>
               Confirm
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!reviewActionTarget} onOpenChange={() => setReviewActionTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {reviewActionTarget?.action === "delete" && "Delete Review"}
+              {reviewActionTarget?.action === "archive" && "Archive Review"}
+              {reviewActionTarget?.action === "unarchive" && "Unarchive Review"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {reviewActionTarget?.action === "delete" && "Are you sure you want to permanently delete this review? This action cannot be undone."}
+              {reviewActionTarget?.action === "archive" && "This will move the review to the archived section. You can unarchive it later if needed."}
+              {reviewActionTarget?.action === "unarchive" && "This will restore the review to the active section."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={confirmReviewAction}
+              className={reviewActionTarget?.action === "delete" ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : ""}
+            >
+              {reviewActionTarget?.action === "delete" && "Delete"}
+              {reviewActionTarget?.action === "archive" && "Archive"}
+              {reviewActionTarget?.action === "unarchive" && "Unarchive"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -627,13 +703,33 @@ export function AdminDashboard() {
                                       {formatDate(review.timestamp)}
                                     </TableCell>
                                     <TableCell className="text-right">
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => setSelectedReview({ user, review })}
-                                      >
-                                        <Eye size={16} weight="bold" />
-                                      </Button>
+                                      <div className="flex items-center justify-end gap-1">
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => setSelectedReview({ user, review })}
+                                          title="View Details"
+                                        >
+                                          <Eye size={16} weight="bold" />
+                                        </Button>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => handleArchiveReview(user.id, review.id)}
+                                          title="Archive Review"
+                                        >
+                                          <Archive size={16} weight="bold" />
+                                        </Button>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => handleDeleteReview(user.id, review.id)}
+                                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                          title="Delete Review"
+                                        >
+                                          <Trash size={16} weight="bold" />
+                                        </Button>
+                                      </div>
                                     </TableCell>
                                   </TableRow>
                                 ))
@@ -688,13 +784,34 @@ export function AdminDashboard() {
                                       {formatDate(review.timestamp)}
                                     </TableCell>
                                     <TableCell className="text-right">
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => setSelectedReview({ user, review })}
-                                      >
-                                        <Eye size={16} weight="bold" />
-                                      </Button>
+                                      <div className="flex items-center justify-end gap-1">
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => setSelectedReview({ user, review })}
+                                          title="View Details"
+                                        >
+                                          <Eye size={16} weight="bold" />
+                                        </Button>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => handleUnarchiveReview(user.id, review.id)}
+                                          title="Unarchive Review"
+                                          className="text-accent hover:text-accent hover:bg-accent/10"
+                                        >
+                                          <ArrowCounterClockwise size={16} weight="bold" />
+                                        </Button>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => handleDeleteReview(user.id, review.id)}
+                                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                          title="Delete Review"
+                                        >
+                                          <Trash size={16} weight="bold" />
+                                        </Button>
+                                      </div>
                                     </TableCell>
                                   </TableRow>
                                 ))
