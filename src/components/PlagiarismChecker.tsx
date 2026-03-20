@@ -206,8 +206,8 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
             setUploadStatus(`PDF OCR complete: ${ocrText.length.toLocaleString()} characters extracted.`)
             toast.success(`OCR completed for "${file.name}" - ${ocrText.length} characters extracted`)
           } else {
-            toast.error("Could not extract readable text from this PDF, even with OCR. Please paste text manually.")
-            setUploadStatus("Upload failed: OCR could not detect readable text.")
+            toast.error("Could not extract readable text from this PDF, even with OCR. Try a clearer scan (300 DPI+) or paste text manually.")
+            setUploadStatus("Upload failed: OCR could not detect readable text. Try a higher-quality scan.")
             setText("")
             setFileName(null)
           }
@@ -267,6 +267,38 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
     }
   }
 
+  const preprocessCanvasForOcr = (source: HTMLCanvasElement): HTMLCanvasElement => {
+    const canvas = document.createElement("canvas")
+    canvas.width = source.width
+    canvas.height = source.height
+    const ctx = canvas.getContext("2d")
+
+    if (!ctx) {
+      return source
+    }
+
+    ctx.drawImage(source, 0, 0)
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+    const { data } = imageData
+
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i]
+      const g = data[i + 1]
+      const b = data[i + 2]
+
+      // Grayscale + threshold improves OCR on low-contrast scanned pages.
+      const grayscale = 0.299 * r + 0.587 * g + 0.114 * b
+      const thresholded = grayscale > 180 ? 255 : 0
+
+      data[i] = thresholded
+      data[i + 1] = thresholded
+      data[i + 2] = thresholded
+    }
+
+    ctx.putImageData(imageData, 0, 0)
+    return canvas
+  }
+
   const extractTextFromPdfWithOcr = async (arrayBuffer: ArrayBuffer): Promise<string> => {
     let worker: Awaited<ReturnType<typeof createWorker>> | null = null
 
@@ -287,7 +319,7 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
       for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
         setUploadStatus(`Running OCR on page ${pageNumber} of ${pdf.numPages}...`)
         const page = await pdf.getPage(pageNumber)
-        const viewport = page.getViewport({ scale: 2 })
+        const viewport = page.getViewport({ scale: 3 })
         const canvas = document.createElement("canvas")
         const context = canvas.getContext("2d")
 
@@ -301,11 +333,27 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
         await page.render({ canvasContext: context, viewport }).promise
 
         const {
-          data: { text: ocrText },
+          data: { text: firstPassText },
         } = await worker.recognize(canvas)
 
-        if (ocrText && ocrText.trim().length > 0) {
-          pages.push(ocrText.trim())
+        const firstPass = firstPassText.trim()
+        let bestText = firstPass
+
+        // If first pass is too short, try a thresholded second pass.
+        if (firstPass.length < 40) {
+          const enhancedCanvas = preprocessCanvasForOcr(canvas)
+          const {
+            data: { text: secondPassText },
+          } = await worker.recognize(enhancedCanvas)
+
+          const secondPass = secondPassText.trim()
+          if (secondPass.length > bestText.length) {
+            bestText = secondPass
+          }
+        }
+
+        if (bestText.length > 0) {
+          pages.push(bestText)
         }
 
         const pageProgress = Math.round((pageNumber / pdf.numPages) * 100)
