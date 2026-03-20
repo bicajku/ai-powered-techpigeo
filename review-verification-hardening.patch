@@ -1,0 +1,1486 @@
+From 8974e094b1b551373a034f1918ec0249f7800f5e Mon Sep 17 00:00:00 2001
+From: UMER SIDDIQUE LONE <57206503+umerslone@users.noreply.github.com>
+Date: Fri, 20 Mar 2026 23:13:28 +0000
+Subject: [PATCH] Enhance review verification and harden analysis parsing
+
+---
+ src/components/PlagiarismChecker.tsx | 287 +++++++++++++++-
+ src/lib/document-fingerprint.ts      |  70 ++++
+ src/lib/enhanced-plagiarism.ts       | 295 +++++++++++++++--
+ src/lib/external-source-check.ts     | 473 +++++++++++++++++++++++++++
+ src/lib/pdf-export.ts                |  42 +++
+ src/types.ts                         |  64 ++++
+ 6 files changed, 1195 insertions(+), 36 deletions(-)
+ create mode 100644 src/lib/document-fingerprint.ts
+ create mode 100644 src/lib/external-source-check.ts
+
+diff --git a/src/components/PlagiarismChecker.tsx b/src/components/PlagiarismChecker.tsx
+index d360862..03c8ae2 100644
+--- a/src/components/PlagiarismChecker.tsx
++++ b/src/components/PlagiarismChecker.tsx
+@@ -21,13 +21,14 @@ import {
+ } from "@phosphor-icons/react"
+ import { motion, AnimatePresence } from "framer-motion"
+ import { toast } from "sonner"
+-import { PlagiarismResult, DocumentReviewResult, HumanizedResult, SavedReviewDocument, UserProfile } from "@/types"
++import { DocumentFingerprintRecord, PlagiarismResult, DocumentReviewResult, ExternalSourceCheckResult, HumanizedResult, SavedReviewDocument, UserProfile } from "@/types"
+ import { useKV } from "@github/spark/hooks"
+ import { SaveReviewDialog } from "@/components/SaveReviewDialog"
+ import { SavedReviews } from "@/components/SavedReviews"
+-import { performAdvancedDetection } from "@/lib/advanced-detection"
++import { buildDocumentPreview, createDocumentFingerprint, findFingerprintMatches, normalizeDocumentText } from "@/lib/document-fingerprint"
+ import { exportReviewToPDF } from "@/lib/pdf-export"
+ import { performEnhancedPlagiarismCheck } from "@/lib/enhanced-plagiarism"
++import { getExternalSourceIntegrationSummary, performExternalSourceCheck } from "@/lib/external-source-check"
+ import { computeReviewAnalysis, ReviewComputationMeta, ReviewFilters, SectionSummary } from "@/lib/review-engine"
+ import { addProCredits, consumeProCredits, getFeatureEntitlements, upgradeToPro } from "@/lib/subscription"
+ import { getCurrentMonthKey, getExportPlanConfig } from "@/lib/strategy-governance"
+@@ -40,10 +41,26 @@ GlobalWorkerOptions.workerSrc = pdfWorkerUrl
+ const MAX_DOCUMENT_CHARS = 50000
+ 
+ interface PlagiarismCheckerProps {
+-  user: UserProfile
++  user: UserProfile | null
+ }
+ 
+ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
++  if (!user) {
++    return (
++      <Card className="border-destructive/40">
++        <CardHeader>
++          <CardTitle className="flex items-center gap-2 text-destructive">
++            <LockKey size={20} weight="duotone" />
++            Authentication Required
++          </CardTitle>
++          <CardDescription>
++            Sign in to access plagiarism review, AI detection, and re-upload history.
++          </CardDescription>
++        </CardHeader>
++      </Card>
++    )
++  }
++
+   const userId = user.id
+   const [text, setText] = useState("")
+   const [isChecking, setIsChecking] = useState(false)
+@@ -59,6 +76,7 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
+   const [currentReviewResult, setCurrentReviewResult] = useState<DocumentReviewResult | null>(null)
+   const [reviewMeta, setReviewMeta] = useState<ReviewComputationMeta | null>(null)
+   const [sectionSummaries, setSectionSummaries] = useState<SectionSummary[]>([])
++  const [externalSourceCheck, setExternalSourceCheck] = useState<ExternalSourceCheckResult | null>(null)
+   const [showSavePlagiarismCheck, setShowSavePlagiarismCheck] = useState(false)
+   const [plagiarismCheckLabel, setPlagiarismCheckLabel] = useState("")
+   const [savedPlagiarismChecks, setSavedPlagiarismChecks] = useKV<Array<{
+@@ -84,6 +102,10 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
+     `document-reviews-${userId}`,
+     []
+   )
++  const [documentFingerprintRegistry, setDocumentFingerprintRegistry] = useKV<DocumentFingerprintRecord[]>(
++    `document-fingerprint-registry-${userId}`,
++    []
++  )
+   const [savedReviews, setSavedReviews] = useKV<SavedReviewDocument[]>(
+     `saved-reviews-${userId}`,
+     []
+@@ -105,6 +127,10 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
+   const activeReviewFilters = entitlements.isPro
+     ? reviewFilters
+     : { excludeQuotes: true, excludeReferences: true, minMatchWords: 8 }
++  const externalIntegration = getExternalSourceIntegrationSummary()
++  const normalizedFingerprintRegistry = Array.isArray(documentFingerprintRegistry) ? documentFingerprintRegistry : []
++  const reuploadHistory = [...normalizedFingerprintRegistry].sort((left, right) => right.lastReviewedAt - left.lastReviewedAt)
++  const totalFingerprintReviews = reuploadHistory.reduce((sum, entry) => sum + entry.reviewCount, 0)
+ 
+   const resetUploadInput = () => {
+     if (fileInputRef.current) {
+@@ -113,12 +139,7 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
+   }
+ 
+   const normalizeExtractedText = (rawText: string): string => {
+-    return rawText
+-      .replaceAll("\u0000", "")
+-      .replace(/\r\n/g, "\n")
+-      .replace(/[ \t]+/g, " ")
+-      .replace(/\n{3,}/g, "\n\n")
+-      .trim()
++    return normalizeDocumentText(rawText)
+   }
+ 
+   const applyExtractedText = (rawText: string, sourceLabel: string): boolean => {
+@@ -143,6 +164,64 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
+     return true
+   }
+ 
++  const getFingerprintRegistryMatches = async (candidateText: string) => {
++    const fingerprint = await createDocumentFingerprint(candidateText)
++    const matches = findFingerprintMatches(fingerprint, normalizedFingerprintRegistry)
++
++    return { fingerprint, matches }
++  }
++
++  const notifyIfPreviouslyReviewed = async (candidateText: string, candidateFileName: string) => {
++    const { matches } = await getFingerprintRegistryMatches(candidateText)
++
++    if (matches.length > 0) {
++      const latestMatch = matches[0]
++      toast.warning(
++        `Exact re-upload detected for ${candidateFileName}. A matching reviewed document already exists${latestMatch.lastSeenAt ? ` from ${new Date(latestMatch.lastSeenAt).toLocaleDateString()}` : ""}.`
++      )
++    }
++  }
++
++  const registerReviewedDocumentFingerprint = async (candidateText: string, candidateFileName: string) => {
++    const fingerprint = await createDocumentFingerprint(candidateText)
++    const preview = buildDocumentPreview(candidateText)
++    const now = Date.now()
++
++    setDocumentFingerprintRegistry((current) => {
++      const existing = Array.isArray(current) ? current : []
++      const existingIndex = existing.findIndex((entry) => entry.fingerprint === fingerprint)
++
++      if (existingIndex >= 0) {
++        const updated = [...existing]
++        const previous = updated[existingIndex]
++        updated[existingIndex] = {
++          ...previous,
++          fileName: candidateFileName || previous.fileName,
++          preview,
++          charCount: candidateText.length,
++          lastReviewedAt: now,
++          reviewCount: previous.reviewCount + 1,
++        }
++        return updated
++      }
++
++      return [
++        {
++          id: `${fingerprint.slice(0, 12)}-${now}`,
++          fingerprint,
++          userId,
++          fileName: candidateFileName,
++          preview,
++          charCount: candidateText.length,
++          firstReviewedAt: now,
++          lastReviewedAt: now,
++          reviewCount: 1,
++        },
++        ...existing,
++      ].slice(0, 250)
++    })
++  }
++
+   const readTextFileWithProgress = async (file: File): Promise<string> => {
+     return new Promise((resolve, reject) => {
+       const reader = new FileReader()
+@@ -222,6 +301,7 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
+             setFileName(null)
+             return
+           }
++          await notifyIfPreviouslyReviewed(content, file.name)
+           setUploadProgress(100)
+           toast.success(`File "${file.name}" loaded successfully`)
+         } else {
+@@ -245,6 +325,7 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
+             setFileName(null)
+             return
+           }
++          await notifyIfPreviouslyReviewed(extractedText, file.name)
+           setUploadProgress(100)
+           toast.success(`File "${file.name}" loaded successfully`)
+         } else {
+@@ -268,6 +349,7 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
+             const ocrText = await extractTextFromPdfWithOcr(arrayBuffer)
+ 
+             if (ocrText && ocrText.trim().length > 0 && applyExtractedText(ocrText, "PDF OCR")) {
++              await notifyIfPreviouslyReviewed(ocrText, file.name)
+               setUploadProgress(100)
+               toast.success(`OCR completed for "${file.name}"`)
+             } else {
+@@ -278,6 +360,7 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
+             }
+             return
+           }
++          await notifyIfPreviouslyReviewed(extractedText, file.name)
+           setUploadProgress(100)
+           toast.success(`File "${file.name}" loaded successfully`)
+         } else {
+@@ -286,6 +369,7 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
+           const ocrText = await extractTextFromPdfWithOcr(arrayBuffer)
+ 
+           if (ocrText && ocrText.trim().length > 0 && applyExtractedText(ocrText, "PDF OCR")) {
++            await notifyIfPreviouslyReviewed(ocrText, file.name)
+             setUploadProgress(100)
+             toast.success(`OCR completed for "${file.name}"`)
+           } else {
+@@ -674,19 +758,22 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
+     setResult(null)
+     setReviewMeta(null)
+     setSectionSummaries([])
++    setExternalSourceCheck(null)
+     setHumanizedResult(null)
+ 
+     try {
+-
+-
+-
+-
++      const { matches: fingerprintMatches } = await getFingerprintRegistryMatches(text)
++      const [analysisOutcome, externalOutcome] = await Promise.all([
++        performEnhancedPlagiarismCheck(text, spark),
++        performExternalSourceCheck({ text, fileName, fingerprintMatches }),
++      ])
+ 
+       // Use enhanced plagiarism detection with advanced algorithms
+-      const { result: enrichedResult, advancedMetrics } = await performEnhancedPlagiarismCheck(text, spark)
++      const { result: enrichedResult } = analysisOutcome
++      setExternalSourceCheck(externalOutcome)
+ 
+       // Further enhance with local review analysis
+-  const enriched = computeReviewAnalysis(text, enrichedResult, activeReviewFilters)
++      const enriched = computeReviewAnalysis(text, enrichedResult, activeReviewFilters)
+       setResult(enriched.result)
+       setReviewMeta(enriched.meta)
+       setSectionSummaries(enriched.sections)
+@@ -696,9 +783,11 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
+         fileName: fileName || "Untitled Document",
+         summary: enriched.result.summary,
+         plagiarismResult: enriched.result,
++        externalSourceCheck: externalOutcome,
+         timestamp: Date.now()
+       }
+ 
++      await registerReviewedDocumentFingerprint(text, fileName || "Untitled Document")
+       setCurrentReviewResult(review)
+       setDocumentReviews((current) => [review, ...(current || [])].slice(0, 20))
+ 
+@@ -735,6 +824,7 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
+       fileName: currentReviewResult.fileName,
+       summary: currentReviewResult.summary,
+       plagiarismResult: currentReviewResult.plagiarismResult,
++      externalSourceCheck: currentReviewResult.externalSourceCheck,
+       timestamp: currentReviewResult.timestamp,
+       userId
+     }
+@@ -770,10 +860,34 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
+     toast.success("Review unarchived")
+   }
+ 
++  const handleLoadFingerprintPreview = (entry: DocumentFingerprintRecord) => {
++    setText(entry.preview)
++    setFileName(entry.fileName)
++    setResult(null)
++    setReviewMeta(null)
++    setSectionSummaries([])
++    setExternalSourceCheck(null)
++    setCurrentReviewResult(null)
++    setUploadStatus("Loaded preview from re-upload history. Upload the original document for a full analysis.")
++    toast.info("Preview loaded from re-upload history. This is a short stored excerpt, not the full document.")
++    window.scrollTo({ top: 0, behavior: "smooth" })
++  }
++
++  const handleDeleteFingerprintEntry = (id: string) => {
++    setDocumentFingerprintRegistry((current) => (Array.isArray(current) ? current : []).filter((entry) => entry.id !== id))
++    toast.success("History entry removed")
++  }
++
++  const handleClearFingerprintHistory = () => {
++    setDocumentFingerprintRegistry([])
++    toast.success("Re-upload history cleared")
++  }
++
+   const handleViewReview = (review: SavedReviewDocument) => {
+     setText(review.documentText)
+     setFileName(review.fileName)
+     setResult(review.plagiarismResult)
++    setExternalSourceCheck(review.externalSourceCheck || null)
+     const enriched = computeReviewAnalysis(review.documentText, review.plagiarismResult, activeReviewFilters)
+     setReviewMeta(enriched.meta)
+     setSectionSummaries(enriched.sections)
+@@ -812,7 +926,7 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
+         id: `check-${Date.now()}`,
+         label: plagiarismCheckLabel,
+         documentName: fileName || "Direct Input",
+-        plagiarismScore: result.plagiarismScore,
++        plagiarismScore: result.plagiarismPercentage,
+         aiContentScore: result.aiContentPercentage,
+         timestamp: Date.now(),
+         summary: result.summary.substring(0, 200)
+@@ -1312,6 +1426,54 @@ Return ONLY a valid JSON object:
+                   </Alert>
+                 )}
+ 
++                <Alert>
++                  <AlertDescription>
++                    <div className="space-y-2">
++                      <div className="flex flex-wrap items-center gap-2">
++                        <p className="text-sm font-medium">External Repository Verification</p>
++                        <Badge variant={externalSourceCheck?.status === "completed" ? "default" : "secondary"}>
++                          {externalSourceCheck?.status || "not-run"}
++                        </Badge>
++                        <Badge variant="outline">
++                          Provider: {externalSourceCheck?.provider || externalIntegration.provider}
++                        </Badge>
++                        <Badge variant="outline">
++                          Public web: {externalIntegration.publicWebEnabled ? "enabled" : "disabled"}
++                        </Badge>
++                      </div>
++                      <p className="text-sm text-muted-foreground">
++                        {externalSourceCheck?.summary || "No external verification has been run for this review yet."}
++                      </p>
++                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-muted-foreground">
++                        <p>Live external checks: {externalSourceCheck?.canPerformLiveCheck ? "available" : "not available"}</p>
++                        <p>Retention status verification: {externalSourceCheck?.canVerifyRetention ? "available" : "not available"}</p>
++                      </div>
++                      {(externalSourceCheck?.providerChecks || []).length > 0 && (
++                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 pt-1">
++                          {externalSourceCheck?.providerChecks.map((check) => (
++                            <div key={check.provider} className="rounded-lg border border-border bg-background/70 p-3 space-y-1">
++                              <div className="flex items-center justify-between gap-2">
++                                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{check.provider}</p>
++                                <Badge variant={check.status === "completed" ? "default" : "secondary"}>{check.status}</Badge>
++                              </div>
++                              <p className="text-xs text-foreground">{check.summary}</p>
++                              {check.matches.length > 0 && (
++                                <p className="text-xs text-muted-foreground">Matches: {check.matches.length}</p>
++                              )}
++                            </div>
++                          ))}
++                        </div>
++                      )}
++                      {(externalSourceCheck?.warnings || []).slice(0, 2).map((warning, index) => (
++                        <p key={index} className="text-xs text-amber-700">- {warning}</p>
++                      ))}
++                      {(externalSourceCheck?.nextSteps || []).slice(0, 2).map((step, index) => (
++                        <p key={index} className="text-xs text-muted-foreground">Next: {step}</p>
++                      ))}
++                    </div>
++                  </AlertDescription>
++                </Alert>
++
+                 <Tabs defaultValue="summary" className="w-full">
+                   <div className="overflow-x-auto pb-1">
+                     <TabsList className="grid min-w-[680px] grid-cols-5">
+@@ -1530,6 +1692,28 @@ Return ONLY a valid JSON object:
+                     </div>
+                   </div>
+                 )}
++
++                {externalSourceCheck && externalSourceCheck.matches.length > 0 && (
++                  <div className="pt-4 border-t">
++                    <h4 className="text-sm font-semibold mb-3">External Repository Matches</h4>
++                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
++                      {externalSourceCheck.matches.map((match, index) => (
++                        <div key={`${match.source}-${index}`} className="p-3 border border-border rounded-lg bg-muted/20 space-y-1">
++                          <div className="flex items-center justify-between gap-2">
++                            <p className="text-sm font-medium truncate">{match.source}</p>
++                            <Badge variant="secondary">{match.similarity}%</Badge>
++                          </div>
++                          <p className="text-xs text-muted-foreground">
++                            {match.matchType} match{match.repository ? ` in ${match.repository}` : ""}
++                          </p>
++                          <p className="text-xs text-muted-foreground">
++                            Retention: {match.retentionState || "unknown"}
++                          </p>
++                        </div>
++                      ))}
++                    </div>
++                  </div>
++                )}
+               </CardContent>
+             </Card>
+           </motion.div>
+@@ -1601,6 +1785,77 @@ Return ONLY a valid JSON object:
+         onDiscard={handleDiscardReview}
+       />
+ 
++      <Card className="mt-8 border-border/70">
++        <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
++          <div className="space-y-1">
++            <CardTitle>Re-upload History</CardTitle>
++            <CardDescription>
++              Exact-match registry built from documents you have already reviewed. This is separate from public-web and external-provider checks.
++            </CardDescription>
++          </div>
++          <div className="flex items-center gap-2">
++            <Badge variant="secondary">{reuploadHistory.length} {reuploadHistory.length === 1 ? "document" : "documents"}</Badge>
++            <Badge variant="outline">{totalFingerprintReviews} total reviews</Badge>
++            <Button
++              variant="outline"
++              size="sm"
++              onClick={handleClearFingerprintHistory}
++              disabled={reuploadHistory.length === 0}
++            >
++              Clear History
++            </Button>
++          </div>
++        </CardHeader>
++        <CardContent>
++          {reuploadHistory.length === 0 ? (
++            <div className="rounded-lg border border-dashed border-border p-6 text-center">
++              <p className="text-sm font-medium text-foreground">No re-upload history yet</p>
++              <p className="mt-1 text-sm text-muted-foreground">
++                Reviewed documents will appear here once their fingerprints have been stored.
++              </p>
++            </div>
++          ) : (
++            <div className="space-y-3">
++              {reuploadHistory.map((entry) => (
++                <div key={entry.id} className="rounded-lg border border-border bg-muted/20 p-4">
++                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
++                    <div className="space-y-2 min-w-0 flex-1">
++                      <div className="flex flex-wrap items-center gap-2">
++                        <p className="text-sm font-semibold text-foreground truncate">{entry.fileName}</p>
++                        <Badge variant="secondary">{entry.reviewCount} {entry.reviewCount === 1 ? "review" : "reviews"}</Badge>
++                        <Badge variant="outline">{entry.charCount.toLocaleString()} chars</Badge>
++                      </div>
++                      <p className="text-sm text-muted-foreground leading-relaxed">{entry.preview}</p>
++                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
++                        <span>First reviewed: {new Date(entry.firstReviewedAt).toLocaleString()}</span>
++                        <span>Last reviewed: {new Date(entry.lastReviewedAt).toLocaleString()}</span>
++                        <span>Fingerprint: {entry.fingerprint.slice(0, 12)}...</span>
++                      </div>
++                    </div>
++                    <div className="flex gap-2 shrink-0">
++                      <Button
++                        variant="outline"
++                        size="sm"
++                        onClick={() => handleLoadFingerprintPreview(entry)}
++                      >
++                        Load Preview
++                      </Button>
++                      <Button
++                        variant="ghost"
++                        size="sm"
++                        onClick={() => handleDeleteFingerprintEntry(entry.id)}
++                      >
++                        Remove
++                      </Button>
++                    </div>
++                  </div>
++                </div>
++              ))}
++            </div>
++          )}
++        </CardContent>
++      </Card>
++
+       {(savedReviews && savedReviews.length > 0) && (
+         <div className="space-y-4 mt-8">
+           <div className="flex items-center justify-between">
+diff --git a/src/lib/document-fingerprint.ts b/src/lib/document-fingerprint.ts
+new file mode 100644
+index 0000000..8eff6fa
+--- /dev/null
++++ b/src/lib/document-fingerprint.ts
+@@ -0,0 +1,70 @@
++import { DocumentFingerprintRecord, ExternalSourceMatch } from "@/types"
++
++export function normalizeDocumentText(text: string): string {
++  return text
++    .replaceAll("\u0000", "")
++    .replace(/\r\n/g, "\n")
++    .replace(/[ \t]+/g, " ")
++    .replace(/\n{3,}/g, "\n\n")
++    .trim()
++}
++
++export async function createDocumentFingerprint(text: string): Promise<string> {
++  const normalized = normalizeDocumentText(text).toLowerCase().replace(/\s+/g, " ")
++  const buffer = new TextEncoder().encode(normalized)
++  const digest = await crypto.subtle.digest("SHA-256", buffer)
++
++  return Array.from(new Uint8Array(digest))
++    .map((byte) => byte.toString(16).padStart(2, "0"))
++    .join("")
++}
++
++export function buildDocumentPreview(text: string, maxLength = 160): string {
++  const normalized = normalizeDocumentText(text).replace(/\s+/g, " ")
++  return normalized.length > maxLength ? `${normalized.slice(0, maxLength)}...` : normalized
++}
++
++export function findFingerprintMatches(
++  fingerprint: string,
++  registry: DocumentFingerprintRecord[]
++): ExternalSourceMatch[] {
++  return registry
++    .filter((entry) => entry.fingerprint === fingerprint)
++    .sort((left, right) => right.lastReviewedAt - left.lastReviewedAt)
++    .map((entry) => ({
++      source: entry.fileName,
++      similarity: 100,
++      matchType: "exact",
++      repository: "internal fingerprint registry",
++      provider: "fingerprint-registry",
++      lastSeenAt: entry.lastReviewedAt,
++      retentionState: "active",
++    }))
++}
++
++export function calculateTokenOverlapSimilarity(leftText: string, rightText: string): number {
++  const leftTokens = new Set(tokenize(leftText))
++  const rightTokens = new Set(tokenize(rightText))
++
++  if (leftTokens.size === 0 || rightTokens.size === 0) {
++    return 0
++  }
++
++  let overlap = 0
++  leftTokens.forEach((token) => {
++    if (rightTokens.has(token)) {
++      overlap += 1
++    }
++  })
++
++  const denominator = Math.max(leftTokens.size, rightTokens.size)
++  return Math.round((overlap / denominator) * 100)
++}
++
++function tokenize(text: string): string[] {
++  return text
++    .toLowerCase()
++    .replace(/[^a-z0-9\s]/g, " ")
++    .split(/\s+/)
++    .filter((token) => token.length >= 4)
++}
+\ No newline at end of file
+diff --git a/src/lib/enhanced-plagiarism.ts b/src/lib/enhanced-plagiarism.ts
+index 6761ac5..6eff1ff 100644
+--- a/src/lib/enhanced-plagiarism.ts
++++ b/src/lib/enhanced-plagiarism.ts
+@@ -6,10 +6,282 @@
+ import { performAdvancedDetection } from "./advanced-detection"
+ import { PlagiarismResult } from "@/types"
+ 
++interface SparkClient {
++  llmPrompt: (strings: TemplateStringsArray, ...values: unknown[]) => string
++  llm: (prompt: string, model: string, jsonMode: boolean) => Promise<string>
++}
++
++function clampScore(value: unknown, fallback = 0): number {
++  const numeric = typeof value === "number" ? value : Number(value)
++
++  if (!Number.isFinite(numeric)) {
++    return fallback
++  }
++
++  return Math.min(100, Math.max(0, Math.round(numeric)))
++}
++
++function sanitizeResponseText(raw: string): string {
++  let cleaned = raw.trim().replace(/^\uFEFF/, "")
++
++  if (cleaned.startsWith("```json")) {
++    cleaned = cleaned.replace(/^```json\s*/, "").replace(/```\s*$/, "")
++  } else if (cleaned.startsWith("```")) {
++    cleaned = cleaned.replace(/^```\s*/, "").replace(/```\s*$/, "")
++  }
++
++  return cleaned.trim()
++}
++
++function extractJsonObject(raw: string): string | null {
++  const start = raw.indexOf("{")
++  if (start === -1) {
++    return null
++  }
++
++  let depth = 0
++  let inString = false
++  let escaping = false
++
++  for (let index = start; index < raw.length; index += 1) {
++    const char = raw[index]
++
++    if (escaping) {
++      escaping = false
++      continue
++    }
++
++    if (char === "\\") {
++      escaping = true
++      continue
++    }
++
++    if (char === '"') {
++      inString = !inString
++      continue
++    }
++
++    if (inString) {
++      continue
++    }
++
++    if (char === "{") {
++      depth += 1
++    } else if (char === "}") {
++      depth -= 1
++      if (depth === 0) {
++        return raw.slice(start, index + 1)
++      }
++    }
++  }
++
++  return null
++}
++
++function normalizeJsonCandidate(candidate: string): string {
++  const withoutControlCharacters = Array.from(candidate, (char) => {
++    const code = char.charCodeAt(0)
++    return code >= 32 ? char : " "
++  }).join("")
++
++  return withoutControlCharacters
++    .replace(/[\u201C\u201D]/g, '"')
++    .replace(/[\u2018\u2019]/g, "'")
++    .replace(/,\s*([}\]])/g, "$1")
++    .trim()
++}
++
++function coerceHighlightArray(value: unknown): PlagiarismResult["highlights"] {
++  if (!Array.isArray(value)) {
++    return []
++  }
++
++  return value.reduce<PlagiarismResult["highlights"]>((accumulator, item) => {
++      if (!item || typeof item !== "object") {
++        return accumulator
++      }
++
++      const candidate = item as Record<string, unknown>
++      const text = typeof candidate.text === "string" ? candidate.text.trim() : ""
++      if (!text) {
++        return accumulator
++      }
++
++      const severity = candidate.severity === "high" || candidate.severity === "medium" || candidate.severity === "low"
++        ? candidate.severity
++        : "medium"
++
++      accumulator.push({
++        text,
++        startIndex: Math.max(0, Number(candidate.startIndex) || 0),
++        endIndex: Math.max(0, Number(candidate.endIndex) || Math.max(text.length, 1)),
++        severity,
++        source: typeof candidate.source === "string" ? candidate.source : undefined,
++      })
++
++      return accumulator
++    }, [])
++}
++
++function coerceAIHighlightArray(value: unknown): PlagiarismResult["aiHighlights"] {
++  if (!Array.isArray(value)) {
++    return []
++  }
++
++  return value.reduce<PlagiarismResult["aiHighlights"]>((accumulator, item) => {
++      if (!item || typeof item !== "object") {
++        return accumulator
++      }
++
++      const candidate = item as Record<string, unknown>
++      const text = typeof candidate.text === "string" ? candidate.text.trim() : ""
++      if (!text) {
++        return accumulator
++      }
++
++      accumulator.push({
++        text,
++        startIndex: Math.max(0, Number(candidate.startIndex) || 0),
++        endIndex: Math.max(0, Number(candidate.endIndex) || Math.max(text.length, 1)),
++        confidence: clampScore(candidate.confidence, 50),
++      })
++
++      return accumulator
++    }, [])
++}
++
++function coerceReferences(value: unknown): PlagiarismResult["validReferences"] {
++  if (!Array.isArray(value)) {
++    return []
++  }
++
++  return value.reduce<PlagiarismResult["validReferences"]>((accumulator, item) => {
++      if (!item || typeof item !== "object") {
++        return accumulator
++      }
++
++      const candidate = item as Record<string, unknown>
++      const reference = typeof candidate.reference === "string" ? candidate.reference.trim() : ""
++      if (!reference) {
++        return accumulator
++      }
++
++      accumulator.push({
++        reference,
++        isValid: Boolean(candidate.isValid),
++        reason: typeof candidate.reason === "string" ? candidate.reason : "Reference validity could not be fully verified.",
++      })
++
++      return accumulator
++    }, [])
++}
++
++function coerceSources(value: unknown): PlagiarismResult["detectedSources"] {
++  if (!Array.isArray(value)) {
++    return []
++  }
++
++  return value.reduce<PlagiarismResult["detectedSources"]>((accumulator, item) => {
++      if (!item || typeof item !== "object") {
++        return accumulator
++      }
++
++      const candidate = item as Record<string, unknown>
++      const source = typeof candidate.source === "string" ? candidate.source.trim() : ""
++      if (!source) {
++        return accumulator
++      }
++
++      accumulator.push({
++        source,
++        similarity: clampScore(candidate.similarity, 0),
++      })
++
++      return accumulator
++    }, [])
++}
++
++function normalizePlagiarismResult(candidate: unknown, text: string, advancedMetrics: ReturnType<typeof performAdvancedDetection>): PlagiarismResult {
++  const payload = candidate && typeof candidate === "object" ? (candidate as Record<string, unknown>) : {}
++  const defaultSummary = `Analysis completed using fallback normalization. AI risk ${Math.round(advancedMetrics.aiProbability)}%, similarity risk ${Math.round(advancedMetrics.plagiarismProbability)}%, integrity score ${Math.round(advancedMetrics.integrityScore)}%.`
++  const recommendations = Array.isArray(payload.recommendations)
++    ? payload.recommendations.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
++    : []
++
++  return {
++    overallScore: clampScore(payload.overallScore, Math.round(advancedMetrics.integrityScore)),
++    plagiarismPercentage: clampScore(payload.plagiarismPercentage, Math.round(advancedMetrics.plagiarismProbability)),
++    aiContentPercentage: clampScore(payload.aiContentPercentage, Math.round(advancedMetrics.aiProbability)),
++    highlights: coerceHighlightArray(payload.highlights),
++    aiHighlights: coerceAIHighlightArray(payload.aiHighlights),
++    summary: typeof payload.summary === "string" && payload.summary.trim().length > 0 ? payload.summary : defaultSummary,
++    recommendations: recommendations.length > 0 ? recommendations : advancedMetrics.recommendations.slice(0, 8),
++    turnitinReady: typeof payload.turnitinReady === "boolean"
++      ? payload.turnitinReady
++      : advancedMetrics.integrityScore >= 75 && advancedMetrics.plagiarismProbability <= 22 && advancedMetrics.aiProbability <= 45,
++    validReferences: coerceReferences(payload.validReferences),
++    detectedSources: coerceSources(payload.detectedSources),
++  }
++}
++
++function buildFallbackResult(text: string, advancedMetrics: ReturnType<typeof performAdvancedDetection>): PlagiarismResult {
++  const excerpt = text.replace(/\s+/g, " ").trim().slice(0, 220)
++
++  return {
++    overallScore: clampScore(advancedMetrics.integrityScore, 50),
++    plagiarismPercentage: clampScore(advancedMetrics.plagiarismProbability, 0),
++    aiContentPercentage: clampScore(advancedMetrics.aiProbability, 0),
++    highlights: advancedMetrics.plagiarismSections.slice(0, 5).map((section) => ({
++      text: text.slice(section.start, Math.min(section.end, section.start + 240)).trim() || excerpt,
++      startIndex: section.start,
++      endIndex: section.end,
++      severity: section.riskLevel,
++      source: "Fallback heuristic analysis",
++    })),
++    aiHighlights: advancedMetrics.aiDetectedSections.slice(0, 5).map((section) => ({
++      text: text.slice(section.start, Math.min(section.end, section.start + 240)).trim() || excerpt,
++      startIndex: section.start,
++      endIndex: section.end,
++      confidence: clampScore(section.confidence, 50),
++    })),
++    summary: `Structured model output could not be parsed cleanly, so the review used the local analysis engine. AI risk ${Math.round(advancedMetrics.aiProbability)}%, similarity risk ${Math.round(advancedMetrics.plagiarismProbability)}%, integrity score ${Math.round(advancedMetrics.integrityScore)}%.`,
++    recommendations: [
++      "The AI response format was inconsistent; local integrity scoring was used as a fallback.",
++      ...advancedMetrics.recommendations,
++    ].slice(0, 8),
++    turnitinReady: advancedMetrics.integrityScore >= 75 && advancedMetrics.plagiarismProbability <= 22 && advancedMetrics.aiProbability <= 45,
++    validReferences: [],
++    detectedSources: [],
++  }
++}
++
++function parsePlagiarismResponse(raw: string, text: string, advancedMetrics: ReturnType<typeof performAdvancedDetection>): PlagiarismResult {
++  const cleaned = sanitizeResponseText(raw)
++  const extracted = extractJsonObject(cleaned)
++  const candidates = [cleaned, extracted, normalizeJsonCandidate(cleaned), extracted ? normalizeJsonCandidate(extracted) : null]
++    .filter((candidate, index, array): candidate is string => Boolean(candidate) && array.indexOf(candidate) === index)
++
++  for (const candidate of candidates) {
++    try {
++      const parsed = JSON.parse(candidate) as unknown
++      return normalizePlagiarismResult(parsed, text, advancedMetrics)
++    } catch {
++      continue
++    }
++  }
++
++  console.error("Unable to parse plagiarism analysis response", {
++    responsePreview: cleaned.slice(0, 500),
++    responseLength: cleaned.length,
++  })
++
++  return buildFallbackResult(text, advancedMetrics)
++}
++
+ export async function performEnhancedPlagiarismCheck(
+   text: string,
+-  spark: any
+-): Promise<{ result: PlagiarismResult; advancedMetrics: any }> {
++  spark: SparkClient
++): Promise<{ result: PlagiarismResult; advancedMetrics: ReturnType<typeof performAdvancedDetection> }> {
+   // First, run advanced detection algorithms locally
+   const advancedMetrics = performAdvancedDetection(text)
+   
+@@ -86,24 +358,7 @@ Return ONLY a valid JSON object with NO markdown, NO code blocks, NO text before
+ }`
+ 
+   const response = await spark.llm(prompt, "gpt-4o", true)
+-  
+-  let cleanedResponse = response.trim()
+-  if (cleanedResponse.startsWith("```json")) {
+-    cleanedResponse = cleanedResponse.replace(/^```json\s*/, "").replace(/```\s*$/, "")
+-  } else if (cleanedResponse.startsWith("```")) {
+-    cleanedResponse = cleanedResponse.replace(/^```\s*/, "").replace(/```\s*$/, "")
+-  }
+-  
+-  cleanedResponse = cleanedResponse.trim()
+-  
+-  const firstBrace = cleanedResponse.indexOf('{')
+-  const lastBrace = cleanedResponse.lastIndexOf('}')
+-  
+-  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+-    cleanedResponse = cleanedResponse.substring(firstBrace, lastBrace + 1)
+-  }
+-  
+-  const parsedResult = JSON.parse(cleanedResponse) as PlagiarismResult
++  const parsedResult = parsePlagiarismResponse(response, text, advancedMetrics)
+   
+   // Enhance results with advanced metrics
+   const enhancedResult: PlagiarismResult = {
+diff --git a/src/lib/external-source-check.ts b/src/lib/external-source-check.ts
+new file mode 100644
+index 0000000..237c494
+--- /dev/null
++++ b/src/lib/external-source-check.ts
+@@ -0,0 +1,473 @@
++import {
++  ExternalSourceCheckResult,
++  ExternalSourceMatch,
++  ExternalSourceProvider,
++  ExternalSourceProviderCheck,
++} from "@/types"
++import { calculateTokenOverlapSimilarity, createDocumentFingerprint } from "@/lib/document-fingerprint"
++
++interface ExternalSourceRequest {
++  text: string
++  fileName?: string | null
++  fingerprintMatches?: ExternalSourceMatch[]
++}
++
++interface ExternalProviderConfig {
++  provider: ExternalSourceProvider
++  apiUrl?: string
++  publicWebApiUrl?: string
++  timeoutMs: number
++  sendFullText: boolean
++  enablePublicWeb: boolean
++}
++
++interface ProviderApiResponse {
++  status?: ExternalSourceCheckResult["status"]
++  summary?: string
++  warnings?: string[]
++  nextSteps?: string[]
++  canPerformLiveCheck?: boolean
++  canVerifyRetention?: boolean
++  matches?: ExternalSourceCheckResult["matches"]
++}
++
++function getProviderConfig(): ExternalProviderConfig {
++  const env = (import.meta as ImportMeta & { env?: Record<string, string> }).env || {}
++  const provider = normalizeProvider(env.VITE_EXTERNAL_SOURCE_PROVIDER)
++  const timeoutRaw = Number(env.VITE_EXTERNAL_SOURCE_TIMEOUT_MS)
++
++  return {
++    provider,
++    apiUrl: env.VITE_EXTERNAL_SOURCE_API_URL,
++    publicWebApiUrl: env.VITE_PUBLIC_WEB_SEARCH_API_URL,
++    timeoutMs: Number.isFinite(timeoutRaw) && timeoutRaw > 0 ? timeoutRaw : 15000,
++    sendFullText: env.VITE_EXTERNAL_SOURCE_SEND_FULL_TEXT === "true",
++    enablePublicWeb: env.VITE_ENABLE_PUBLIC_WEB_SIMILARITY === "true",
++  }
++}
++
++function normalizeProvider(value?: string): ExternalSourceProvider {
++  if (value === "turnitin" || value === "ithenticate" || value === "custom") {
++    return value
++  }
++
++  return "none"
++}
++
++function buildProviderCheck(input: ExternalSourceProviderCheck): ExternalSourceProviderCheck {
++  return input.matches.length > 0
++    ? { ...input, matches: input.matches.map((match) => ({ ...match, provider: match.provider || input.provider })) }
++    : input
++}
++
++function buildErrorCheck(provider: ExternalSourceProvider, message: string): ExternalSourceProviderCheck {
++  return {
++    provider,
++    status: "error",
++    canPerformLiveCheck: false,
++    canVerifyRetention: false,
++    summary: "External repository verification could not be completed.",
++    warnings: [message],
++    nextSteps: [
++      "Check the configured API URL and backend availability.",
++      "Confirm the backend returns the normalized external check response shape.",
++    ],
++    matches: [],
++  }
++}
++
++function normalizeApiResponse(
++  provider: ExternalSourceProvider,
++  payload: ProviderApiResponse | undefined
++): ExternalSourceProviderCheck {
++  return {
++    provider,
++    status: payload?.status || "completed",
++    canPerformLiveCheck: payload?.canPerformLiveCheck ?? true,
++    canVerifyRetention: payload?.canVerifyRetention ?? false,
++    summary: payload?.summary || "External repository check completed.",
++    warnings: payload?.warnings || [],
++    nextSteps: payload?.nextSteps || [],
++    matches: (payload?.matches || []).map((match) => ({ ...match, provider: match.provider || provider })),
++  }
++}
++
++function buildFingerprintRegistryCheck(matches: ExternalSourceMatch[]): ExternalSourceProviderCheck {
++  if (matches.length === 0) {
++    return buildProviderCheck({
++      provider: "fingerprint-registry",
++      status: "completed",
++      canPerformLiveCheck: true,
++      canVerifyRetention: true,
++      summary: "No exact re-upload was found in the internal fingerprint registry.",
++      warnings: [],
++      nextSteps: ["Reviewed documents will be added to the registry after a successful check."],
++      matches: [],
++    })
++  }
++
++  return buildProviderCheck({
++    provider: "fingerprint-registry",
++    status: "completed",
++    canPerformLiveCheck: true,
++    canVerifyRetention: true,
++    summary: `Exact re-upload detected against ${matches.length} previously reviewed document${matches.length === 1 ? "" : "s"}.`,
++    warnings: [],
++    nextSteps: ["Review prior submissions before exporting or resubmitting this document."],
++    matches,
++  })
++}
++
++async function performPrivateProviderCheck(
++  request: ExternalSourceRequest,
++  config: ExternalProviderConfig
++): Promise<ExternalSourceProviderCheck | null> {
++  if (config.provider === "none" || !config.apiUrl) {
++    return null
++  }
++
++  const controller = new AbortController()
++  const timeoutId = window.setTimeout(() => controller.abort(), config.timeoutMs)
++
++  try {
++    const fingerprint = await createDocumentFingerprint(request.text)
++    const preview = request.text.slice(0, 1200)
++
++    const response = await fetch(config.apiUrl, {
++      method: "POST",
++      headers: {
++        "Content-Type": "application/json",
++      },
++      signal: controller.signal,
++      body: JSON.stringify({
++        provider: config.provider,
++        fileName: request.fileName || null,
++        fingerprint,
++        preview,
++        characterCount: request.text.length,
++        requestedCapabilities: ["exact-reupload-detection", "private-repository-lookup", "retention-status"],
++        text: config.sendFullText ? request.text : undefined,
++      }),
++    })
++
++    if (!response.ok) {
++      return buildErrorCheck(config.provider, `External API returned HTTP ${response.status}.`)
++    }
++
++    const payload = (await response.json()) as ProviderApiResponse
++    return normalizeApiResponse(config.provider, payload)
++  } catch (error) {
++    const message = error instanceof Error
++      ? error.name === "AbortError"
++        ? "External repository verification timed out."
++        : error.message
++      : "Unknown external repository verification error."
++
++    return buildErrorCheck(config.provider, message)
++  } finally {
++    window.clearTimeout(timeoutId)
++  }
++}
++
++async function performPublicWebCheck(
++  request: ExternalSourceRequest,
++  config: ExternalProviderConfig
++): Promise<ExternalSourceProviderCheck | null> {
++  if (!config.enablePublicWeb) {
++    return null
++  }
++
++  const queries = buildRepresentativeQueries(request.text)
++  if (queries.length === 0) {
++    return buildProviderCheck({
++      provider: "public-web",
++      status: "unsupported",
++      canPerformLiveCheck: true,
++      canVerifyRetention: false,
++      summary: "Public-web similarity search was skipped because the document does not contain enough representative prose.",
++      warnings: ["Very short or highly structured text is not suitable for public-web snippet matching."],
++      nextSteps: ["Try again with a longer excerpt or upload a full prose document."],
++      matches: [],
++    })
++  }
++
++  try {
++    const matches = config.publicWebApiUrl
++      ? await performCustomPublicWebCheck(config.publicWebApiUrl, queries, config.timeoutMs)
++      : await performBuiltinPublicWebCheck(queries, config.timeoutMs)
++
++    return buildProviderCheck({
++      provider: "public-web",
++      status: "completed",
++      canPerformLiveCheck: true,
++      canVerifyRetention: false,
++      summary: matches.length > 0
++        ? `Public-web similarity search found ${matches.length} possible metadata match${matches.length === 1 ? "" : "es"}.`
++        : "Public-web similarity search did not find strong metadata matches.",
++      warnings: ["Public-web search only covers open web and public metadata sources, not private plagiarism repositories."],
++      nextSteps: matches.length > 0
++        ? ["Inspect the public-web matches to see whether the document overlaps with public publications."]
++        : ["If you need private corpus verification, connect a licensed Turnitin or iThenticate backend."],
++      matches,
++    })
++  } catch (error) {
++    const message = error instanceof Error ? error.message : "Public-web similarity search failed."
++    return buildErrorCheck("public-web", message)
++  }
++}
++
++async function performCustomPublicWebCheck(
++  apiUrl: string,
++  queries: string[],
++  timeoutMs: number
++): Promise<ExternalSourceMatch[]> {
++  const controller = new AbortController()
++  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs)
++
++  try {
++    const response = await fetch(apiUrl, {
++      method: "POST",
++      headers: {
++        "Content-Type": "application/json",
++      },
++      signal: controller.signal,
++      body: JSON.stringify({ queries }),
++    })
++
++    if (!response.ok) {
++      throw new Error(`Public-web API returned HTTP ${response.status}.`)
++    }
++
++    const payload = (await response.json()) as ProviderApiResponse
++    return (payload.matches || []).map((match) => ({ ...match, provider: match.provider || "public-web" }))
++  } finally {
++    window.clearTimeout(timeoutId)
++  }
++}
++
++async function performBuiltinPublicWebCheck(queries: string[], timeoutMs: number): Promise<ExternalSourceMatch[]> {
++  const tasks = queries.flatMap((query) => [
++    searchWikipedia(query, timeoutMs),
++    searchCrossref(query, timeoutMs),
++  ])
++
++  const results = await Promise.all(tasks)
++  return dedupeMatches(results.flat()).slice(0, 8)
++}
++
++async function searchWikipedia(query: string, timeoutMs: number): Promise<ExternalSourceMatch[]> {
++  const controller = new AbortController()
++  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs)
++
++  try {
++    const url = new URL("https://en.wikipedia.org/w/api.php")
++    url.searchParams.set("action", "opensearch")
++    url.searchParams.set("search", query)
++    url.searchParams.set("limit", "5")
++    url.searchParams.set("namespace", "0")
++    url.searchParams.set("format", "json")
++    url.searchParams.set("origin", "*")
++
++    const response = await fetch(url.toString(), { signal: controller.signal })
++    if (!response.ok) {
++      return []
++    }
++
++    const payload = (await response.json()) as [string, string[], string[], string[]]
++    const titles = payload[1] || []
++    const descriptions = payload[2] || []
++    const links = payload[3] || []
++
++    return titles
++      .map((title, index) => {
++        const descriptor = `${title} ${descriptions[index] || ""}`
++        const similarity = calculateTokenOverlapSimilarity(query, descriptor)
++        return {
++          source: links[index] || title,
++          similarity,
++          matchType: "metadata" as const,
++          repository: "Wikipedia",
++          provider: "public-web" as const,
++          retentionState: "unknown" as const,
++        }
++      })
++      .filter((match) => match.similarity >= 20)
++  } finally {
++    window.clearTimeout(timeoutId)
++  }
++}
++
++async function searchCrossref(query: string, timeoutMs: number): Promise<ExternalSourceMatch[]> {
++  const controller = new AbortController()
++  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs)
++
++  try {
++    const url = new URL("https://api.crossref.org/works")
++    url.searchParams.set("rows", "5")
++    url.searchParams.set("query.bibliographic", query)
++
++    const response = await fetch(url.toString(), {
++      headers: {
++        Accept: "application/json",
++      },
++      signal: controller.signal,
++    })
++
++    if (!response.ok) {
++      return []
++    }
++
++    const payload = (await response.json()) as {
++      message?: {
++        items?: Array<{
++          title?: string[]
++          DOI?: string
++          URL?: string
++          published?: { "date-parts"?: number[][] }
++          "container-title"?: string[]
++        }>
++      }
++    }
++
++    return (payload.message?.items || [])
++      .map((item) => {
++        const title = item.title?.[0] || item.DOI || item.URL || "Crossref result"
++        const container = item["container-title"]?.[0] || "Crossref"
++        const similarity = calculateTokenOverlapSimilarity(query, `${title} ${container}`)
++        const year = item.published?.["date-parts"]?.[0]?.[0]
++        return {
++          source: item.URL || item.DOI || title,
++          similarity,
++          matchType: "metadata" as const,
++          repository: year ? `${container} (${year})` : container,
++          provider: "public-web" as const,
++          retentionState: "unknown" as const,
++        }
++      })
++      .filter((match) => match.similarity >= 20)
++  } finally {
++    window.clearTimeout(timeoutId)
++  }
++}
++
++function buildRepresentativeQueries(text: string): string[] {
++  return text
++    .split(/(?<=[.!?])\s+/)
++    .map((sentence) => sentence.trim())
++    .filter((sentence) => sentence.length >= 80 && sentence.length <= 240)
++    .sort((left, right) => scoreSentence(right) - scoreSentence(left))
++    .slice(0, 2)
++}
++
++function scoreSentence(sentence: string): number {
++  const words = sentence.split(/\s+/)
++  const uniqueWords = new Set(words.map((word) => word.toLowerCase()))
++  return uniqueWords.size + Math.min(words.length, 30)
++}
++
++function dedupeMatches(matches: ExternalSourceMatch[]): ExternalSourceMatch[] {
++  const seen = new Set<string>()
++
++  return matches
++    .sort((left, right) => right.similarity - left.similarity)
++    .filter((match) => {
++      const key = `${match.provider}:${match.source}`
++      if (seen.has(key)) {
++        return false
++      }
++      seen.add(key)
++      return true
++    })
++}
++
++function combineProviderChecks(checks: ExternalSourceProviderCheck[]): ExternalSourceCheckResult {
++  const activeChecks = checks.filter(Boolean)
++  const matches = dedupeMatches(activeChecks.flatMap((check) => check.matches))
++  const warnings = Array.from(new Set(activeChecks.flatMap((check) => check.warnings)))
++  const nextSteps = Array.from(new Set(activeChecks.flatMap((check) => check.nextSteps)))
++  const status = activeChecks.some((check) => check.status === "completed")
++    ? "completed"
++    : activeChecks.some((check) => check.status === "error")
++      ? "error"
++      : activeChecks.some((check) => check.status === "unsupported")
++        ? "unsupported"
++        : "not-configured"
++
++  return {
++    provider: activeChecks.length > 1 ? "composite" : activeChecks[0]?.provider || "none",
++    status,
++    canPerformLiveCheck: activeChecks.some((check) => check.canPerformLiveCheck),
++    canVerifyRetention: activeChecks.some((check) => check.canVerifyRetention),
++    checkedAt: Date.now(),
++    summary: buildSummary(activeChecks, matches.length),
++    warnings,
++    nextSteps,
++    matches,
++    providerChecks: activeChecks,
++  }
++}
++
++function buildSummary(checks: ExternalSourceProviderCheck[], matchCount: number): string {
++  if (checks.length === 0) {
++    return "No external verification path is configured."
++  }
++
++  if (matchCount > 0) {
++    return `External verification completed across ${checks.length} source ${checks.length === 1 ? "path" : "paths"} and found ${matchCount} match${matchCount === 1 ? "" : "es"}.`
++  }
++
++  return `External verification completed across ${checks.length} source ${checks.length === 1 ? "path" : "paths"} with no strong matches.`
++}
++
++export async function performExternalSourceCheck(
++  request: ExternalSourceRequest
++): Promise<ExternalSourceCheckResult> {
++  const config = getProviderConfig()
++  const checks: ExternalSourceProviderCheck[] = []
++
++  checks.push(buildFingerprintRegistryCheck(request.fingerprintMatches || []))
++
++  const publicWebCheck = await performPublicWebCheck(request, config)
++  if (publicWebCheck) {
++    checks.push(publicWebCheck)
++  }
++
++  const privateProviderCheck = await performPrivateProviderCheck(request, config)
++  if (privateProviderCheck) {
++    checks.push(privateProviderCheck)
++  }
++
++  if (checks.length === 1 && config.provider === "none" && !config.enablePublicWeb) {
++    checks.push(buildProviderCheck({
++      provider: "none",
++      status: "not-configured",
++      canPerformLiveCheck: false,
++      canVerifyRetention: false,
++      summary: "No public-web or private-provider integration is configured. Only the internal fingerprint registry was checked.",
++      warnings: ["Private repositories such as Turnitin and iThenticate require a licensed backend integration."],
++      nextSteps: [
++        "Enable VITE_ENABLE_PUBLIC_WEB_SIMILARITY for public web lookups.",
++        "Configure VITE_EXTERNAL_SOURCE_PROVIDER and VITE_EXTERNAL_SOURCE_API_URL when your private-provider backend is ready.",
++      ],
++      matches: [],
++    }))
++  }
++
++  return combineProviderChecks(checks)
++}
++
++export function getExternalSourceIntegrationSummary(): {
++  configured: boolean
++  provider: ExternalSourceProvider
++  apiUrl?: string
++  publicWebEnabled: boolean
++} {
++  const config = getProviderConfig()
++
++  return {
++    configured: (Boolean(config.apiUrl) && config.provider !== "none") || config.enablePublicWeb,
++    provider: config.provider,
++    apiUrl: config.apiUrl,
++    publicWebEnabled: config.enablePublicWeb,
++  }
++}
+\ No newline at end of file
+diff --git a/src/lib/pdf-export.ts b/src/lib/pdf-export.ts
+index 1f74fc4..9db3987 100644
+--- a/src/lib/pdf-export.ts
++++ b/src/lib/pdf-export.ts
+@@ -469,6 +469,48 @@ export async function exportReviewToPDF(
+     </div>
+   </div>
+ 
++  ${review.externalSourceCheck ? `
++  <div class="section">
++    <h2 class="section-title">External Repository Verification</h2>
++    <div class="section-content">
++      <div><strong>Provider:</strong> ${review.externalSourceCheck.provider}</div>
++      <div><strong>Status:</strong> ${review.externalSourceCheck.status}</div>
++      <div><strong>Live Check Available:</strong> ${review.externalSourceCheck.canPerformLiveCheck ? "Yes" : "No"}</div>
++      <div><strong>Retention Verification:</strong> ${review.externalSourceCheck.canVerifyRetention ? "Yes" : "No"}</div>
++      <div style="margin-top: 10px;">${review.externalSourceCheck.summary}</div>
++      ${review.externalSourceCheck.providerChecks.length > 0 ? `
++      <div style="margin-top: 10px;">
++        <strong>Provider Checks:</strong>
++        ${review.externalSourceCheck.providerChecks.map((check) => `
++          <div style="background: ${brand.colors.panel}; border-left: 3px solid ${brand.colors.accent}; padding: 12px 15px; margin-top: 8px; border-radius: 4px;">
++            <div><strong>${check.provider}</strong> - ${check.status}</div>
++            <div style="font-size: 12px; color: ${brand.colors.muted};">${check.summary}</div>
++            ${check.matches.length > 0 ? `<div style="font-size: 12px; color: ${brand.colors.muted}; margin-top: 4px;">Matches: ${check.matches.length}</div>` : ""}
++          </div>
++        `).join("")}
++      </div>
++      ` : ""}
++      ${review.externalSourceCheck.warnings.length > 0 ? `
++      <div style="margin-top: 10px;">
++        <strong>Warnings:</strong>
++        ${review.externalSourceCheck.warnings.map((warning) => `<div>- ${warning}</div>`).join("")}
++      </div>
++      ` : ""}
++      ${review.externalSourceCheck.matches.length > 0 ? `
++      <div style="margin-top: 10px;">
++        <strong>Repository Matches:</strong>
++        ${review.externalSourceCheck.matches.map((match) => `
++          <div style="background: ${brand.colors.panel}; border-left: 3px solid ${brand.colors.accent}; padding: 12px 15px; margin-top: 8px; border-radius: 4px;">
++            <div><strong>${match.source}</strong> - ${match.similarity}% similarity</div>
++            <div style="font-size: 12px; color: ${brand.colors.muted};">${match.matchType} match${match.repository ? ` in ${match.repository}` : ""}, retention: ${match.retentionState || "unknown"}</div>
++          </div>
++        `).join("")}
++      </div>
++      ` : ""}
++    </div>
++  </div>
++  ` : ""}
++
+   <div class="section">
+     <h2 class="section-title">Executive Summary</h2>
+     <div class="section-content">
+diff --git a/src/types.ts b/src/types.ts
+index 27cb770..1edd1b7 100644
+--- a/src/types.ts
++++ b/src/types.ts
+@@ -100,6 +100,68 @@ export interface AIDetectionHighlight {
+   confidence: number
+ }
+ 
++export type ExternalSourceProvider =
++  | "turnitin"
++  | "ithenticate"
++  | "custom"
++  | "public-web"
++  | "fingerprint-registry"
++  | "composite"
++  | "none"
++
++export type ExternalSourceCheckStatus =
++  | "not-configured"
++  | "ready"
++  | "completed"
++  | "unsupported"
++  | "error"
++
++export interface ExternalSourceMatch {
++  source: string
++  similarity: number
++  matchType: "exact" | "near-exact" | "paraphrase" | "metadata"
++  repository?: string
++  provider?: ExternalSourceProvider
++  lastSeenAt?: number
++  retentionState?: "active" | "deleted" | "unknown"
++}
++
++export interface ExternalSourceProviderCheck {
++  provider: ExternalSourceProvider
++  status: ExternalSourceCheckStatus
++  canPerformLiveCheck: boolean
++  canVerifyRetention: boolean
++  summary: string
++  warnings: string[]
++  nextSteps: string[]
++  matches: ExternalSourceMatch[]
++}
++
++export interface ExternalSourceCheckResult {
++  provider: ExternalSourceProvider
++  status: ExternalSourceCheckStatus
++  canPerformLiveCheck: boolean
++  canVerifyRetention: boolean
++  checkedAt: number
++  summary: string
++  warnings: string[]
++  nextSteps: string[]
++  matches: ExternalSourceMatch[]
++  providerChecks: ExternalSourceProviderCheck[]
++}
++
++export interface DocumentFingerprintRecord {
++  id: string
++  fingerprint: string
++  userId: string
++  fileName: string
++  preview: string
++  charCount: number
++  firstReviewedAt: number
++  lastReviewedAt: number
++  reviewCount: number
++}
++
+ export interface PlagiarismResult {
+   overallScore: number
+   plagiarismPercentage: number
+@@ -118,6 +180,7 @@ export interface DocumentReviewResult {
+   fileName: string
+   summary: string
+   plagiarismResult: PlagiarismResult
++  externalSourceCheck?: ExternalSourceCheckResult
+   timestamp: number
+ }
+ 
+@@ -128,6 +191,7 @@ export interface SavedReviewDocument {
+   fileName: string
+   summary: string
+   plagiarismResult: PlagiarismResult
++  externalSourceCheck?: ExternalSourceCheckResult
+   timestamp: number
+   userId: string
+   archived?: boolean
+-- 
+2.49.0
+
