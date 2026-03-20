@@ -2,12 +2,30 @@ import fs from "fs";
 
 /** @type {import('tailwindcss').Config} */
 
+function resolveThemeConfig(rawTheme) {
+  if (!rawTheme || typeof rawTheme !== "object") {
+    return {};
+  }
+
+  const { activeTheme, themes, ...legacyTheme } = rawTheme;
+
+  if (activeTheme && themes && typeof themes === "object") {
+    const selectedTheme = themes[activeTheme];
+
+    if (selectedTheme && typeof selectedTheme === "object") {
+      return { ...legacyTheme, ...selectedTheme };
+    }
+  }
+
+  return legacyTheme;
+}
+
 let theme = {};
 try {
   const themePath = "./theme.json";
 
   if (fs.existsSync(themePath)) {
-    theme = JSON.parse(fs.readFileSync(themePath, "utf-8"));
+    theme = resolveThemeConfig(JSON.parse(fs.readFileSync(themePath, "utf-8")));
   }
 } catch (err) {
   console.error('failed to parse custom styles', err)

@@ -5,22 +5,30 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { UserProfile } from "@/types"
-import { UserCircle, SignOut, PencilSimple } from "@phosphor-icons/react"
+import { Palette, SignOut, PencilSimple } from "@phosphor-icons/react"
 import { ProfileEdit } from "./ProfileEdit"
 import { authService } from "@/lib/auth"
+import { BRAND_THEME_OPTIONS, isBrandThemeName, type BrandThemeName } from "@/lib/brand-theme"
 
 interface UserMenuProps {
   user: UserProfile
+  brandTheme: BrandThemeName
+  onBrandThemeChange: (theme: BrandThemeName) => void
   onLogout: () => void
   onProfileUpdate: (user: UserProfile) => void
 }
 
-export function UserMenu({ user, onLogout, onProfileUpdate }: UserMenuProps) {
+export function UserMenu({ user, brandTheme, onBrandThemeChange, onLogout, onProfileUpdate }: UserMenuProps) {
   const [showProfileEdit, setShowProfileEdit] = useState(false)
 
   const handleLogout = async () => {
@@ -85,6 +93,32 @@ export function UserMenu({ user, onLogout, onProfileUpdate }: UserMenuProps) {
             <PencilSimple className="mr-2 h-4 w-4" weight="bold" />
             <span>Edit Profile</span>
           </DropdownMenuItem>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              <Palette className="mr-2 h-4 w-4" weight="duotone" />
+              <span>Theme</span>
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="w-72">
+              <DropdownMenuLabel>Brand Theme</DropdownMenuLabel>
+              <DropdownMenuRadioGroup
+                value={brandTheme}
+                onValueChange={(value) => {
+                  if (isBrandThemeName(value)) {
+                    onBrandThemeChange(value)
+                  }
+                }}
+              >
+                {BRAND_THEME_OPTIONS.map((theme) => (
+                  <DropdownMenuRadioItem key={theme.name} value={theme.name} className="items-start">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="font-medium leading-none">{theme.label}</span>
+                      <span className="text-xs leading-snug text-muted-foreground">{theme.description}</span>
+                    </div>
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={handleLogout} className="cursor-pointer text-destructive focus:text-destructive">
             <SignOut className="mr-2 h-4 w-4" weight="bold" />

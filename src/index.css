@@ -16,33 +16,48 @@
 }
 
 :root {
-  --background: oklch(0.98 0.008 85);
-  --foreground: oklch(0.20 0.02 45);
+  --brand-background: #ffffff;
+  --brand-text: #1c1414;
+  --brand-surface: #f2f7f3;
+  --brand-primary: #5cc3eb;
+  --brand-primary-foreground: #1c1414;
+  --brand-secondary: #8cb499;
+  --brand-secondary-foreground: #1c1414;
+  --brand-accent: #bca444;
+  --brand-accent-foreground: #1c1414;
+  --brand-border: #ddd6d2;
+  --brand-highlight: #eef9fd;
+  --brand-shadow: #5cc3eb;
+  --brand-glow-primary: rgb(92 195 235 / 0.16);
+  --brand-glow-secondary: rgb(140 180 153 / 0.18);
+
+  --background: var(--brand-background);
+  --foreground: var(--brand-text);
   
-  --card: oklch(0.99 0.005 85);
-  --card-foreground: oklch(0.20 0.02 45);
+  --card: color-mix(in srgb, var(--brand-background) 88%, var(--brand-highlight));
+  --card-foreground: var(--brand-text);
   
-  --popover: oklch(1.00 0 0);
-  --popover-foreground: oklch(0.20 0.02 45);
+  --popover: var(--brand-background);
+  --popover-foreground: var(--brand-text);
   
-  --primary: oklch(79.5% 0.184 86.047);
-  --primary-foreground: oklch(0.98 0.008 85);
+  --primary: var(--brand-primary);
+  --primary-foreground: var(--brand-primary-foreground);
   
-  --secondary: oklch(0.90 0.05 90);
-  --secondary-foreground: oklch(0.25 0.02 45);
+  --secondary: var(--brand-secondary);
+  --secondary-foreground: var(--brand-secondary-foreground);
   
-  --muted: oklch(0.94 0.01 85);
-  --muted-foreground: oklch(0.48 0.01 45);
+  --muted: color-mix(in srgb, var(--brand-secondary) 14%, white);
+  --muted-foreground: color-mix(in srgb, var(--brand-text) 68%, white);
   
-  --accent: oklch(0.72 0.08 110);
-  --accent-foreground: oklch(0.20 0.02 45);
+  --accent: var(--brand-accent);
+  --accent-foreground: var(--brand-accent-foreground);
   
   --destructive: oklch(0.62 0.15 30);
   --destructive-foreground: oklch(0.98 0.008 85);
   
-  --border: oklch(0.88 0.02 85);
-  --input: oklch(0.88 0.02 85);
-  --ring: oklch(0.48 0.12 75);
+  --border: var(--brand-border);
+  --input: var(--brand-border);
+  --ring: var(--brand-primary);
   
   --radius: 1rem;
   
@@ -52,33 +67,33 @@
   
   --font-mono: Source Code Pro;
   
-  --chart-1: oklch(0.48 0.12 75);
+  --chart-1: var(--brand-primary);
   
-  --chart-2: oklch(0.72 0.08 110);
+  --chart-2: var(--brand-accent);
   
-  --chart-3: oklch(0.58 0.10 50);
+  --chart-3: var(--brand-secondary);
   
-  --chart-4: oklch(0.65 0.06 130);
+  --chart-4: color-mix(in srgb, var(--brand-primary) 55%, var(--brand-secondary));
   
-  --chart-5: oklch(0.38 0.08 40);
+  --chart-5: var(--brand-text);
   
-  --sidebar: oklch(0.96 0.01 85);
+  --sidebar: color-mix(in srgb, var(--brand-secondary) 10%, white);
   
-  --sidebar-foreground: oklch(0.20 0.02 45);
+  --sidebar-foreground: var(--brand-text);
   
-  --sidebar-primary: oklch(0.48 0.12 75);
+  --sidebar-primary: var(--brand-primary);
   
-  --sidebar-primary-foreground: oklch(0.98 0.008 85);
+  --sidebar-primary-foreground: var(--brand-primary-foreground);
   
-  --sidebar-accent: oklch(0.90 0.05 90);
+  --sidebar-accent: var(--brand-accent);
   
-  --sidebar-accent-foreground: oklch(0.25 0.02 45);
+  --sidebar-accent-foreground: var(--brand-accent-foreground);
   
-  --sidebar-border: oklch(0.88 0.02 85);
+  --sidebar-border: var(--brand-border);
   
-  --sidebar-ring: oklch(0.48 0.12 75);
+  --sidebar-ring: var(--brand-primary);
   
-  --shadow-color: oklch(0.48 0.12 75);
+  --shadow-color: var(--brand-shadow);
   
   --shadow-opacity: 0.08;
   
@@ -89,6 +104,23 @@
   --shadow-offset-x: 0px;
   
   --shadow-offset-y: 10px;
+}
+
+:root[data-brand-theme="techpigeon_classic"] {
+  --brand-background: #ffffff;
+  --brand-text: #0b1d3a;
+  --brand-surface: #f5edc8;
+  --brand-primary: #0b1d3a;
+  --brand-primary-foreground: #ffffff;
+  --brand-secondary: #3ba8d4;
+  --brand-secondary-foreground: #0b1d3a;
+  --brand-accent: #bba442;
+  --brand-accent-foreground: #1c1414;
+  --brand-border: #d7deea;
+  --brand-highlight: #e8f6fc;
+  --brand-shadow: #3ba8d4;
+  --brand-glow-primary: rgb(11 29 58 / 0.12);
+  --brand-glow-secondary: rgb(59 168 212 / 0.18);
 }
 
 @theme {

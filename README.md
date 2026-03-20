@@ -39,8 +39,16 @@ npm run build
 
 ## 🎨 Branding
 
-This app is branded with **TechPigeon's** official color palette:
-- **Primary Navy:** #0B1D3A
+This app ships with named TechPigeon presets and a menu-based selector in the user profile.
+
+Default theme: **techpigeon_brand**
+- **Picton Blue:** #5cc3eb
+- **Roti:** #bca444
+- **Cocoa Brown:** #1c1414
+- **Bay Leaf:** #8cb499
+
+Secondary theme: **techpigeon_classic**
+- **Primary Navy:** #0b1d3a
 - **Secondary Blue:** #3ba8d4
 - **Accent Gold:** #bba442
 - **Typography:** Aleo (headings), Inter (body)

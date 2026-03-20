@@ -24,6 +24,7 @@ import { useKV } from "@github/spark/hooks"
 import { motion, AnimatePresence } from "framer-motion"
 import { MarketingResult, SavedStrategy, UserProfile } from "@/types"
 import { authService } from "@/lib/auth"
+import { BRAND_THEME_STORAGE_KEY, DEFAULT_BRAND_THEME, isBrandThemeName, type BrandThemeName } from "@/lib/brand-theme"
 import { logError } from "@/lib/error-logger"
 import {
   DEFAULT_KNOWLEDGEBASE_CONCEPTS,
@@ -80,6 +81,14 @@ function App() {
   const [showSaveDialog, setShowSaveDialog] = useState(false)
   const [conceptMode, setConceptMode] = useState<ConceptMode>("auto")
   const [showPromptSuggestions, setShowPromptSuggestions] = useState(false)
+  const [brandTheme, setBrandTheme] = useState<BrandThemeName>(() => {
+    if (typeof window === "undefined") {
+      return DEFAULT_BRAND_THEME
+    }
+
+    const storedTheme = window.localStorage.getItem(BRAND_THEME_STORAGE_KEY)
+    return isBrandThemeName(storedTheme) ? storedTheme : DEFAULT_BRAND_THEME
+  })
   const resultsRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -94,6 +103,11 @@ function App() {
     }
     checkAuth()
   }, [])
+
+  useEffect(() => {
+    document.documentElement.dataset.brandTheme = brandTheme
+    window.localStorage.setItem(BRAND_THEME_STORAGE_KEY, brandTheme)
+  }, [brandTheme])
 
   useEffect(() => {
     if (showExpandedWelcome) {
@@ -546,7 +560,13 @@ FORMATTING GUIDELINES:
         )}
       </AnimatePresence>
       <div className="min-h-screen bg-gradient-to-br from-background via-secondary/20 to-background relative overflow-hidden font-sans">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,_oklch(0.65_0.22_240_/_0.08)_0%,_transparent_50%),radial-gradient(circle_at_70%_80%,_oklch(0.48_0.18_240_/_0.1)_0%,_transparent_50%)] pointer-events-none" />
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background:
+              "radial-gradient(circle at 30% 20%, var(--brand-glow-primary) 0%, transparent 50%), radial-gradient(circle at 70% 80%, var(--brand-glow-secondary) 0%, transparent 50%)",
+          }}
+        />
         
         <div className="relative max-w-6xl mx-auto px-6 md:px-8 py-12 md:py-16">
           <motion.header
@@ -562,7 +582,13 @@ FORMATTING GUIDELINES:
                   AI-Powered Techpigeon Assistant
                 </h1>
               </div>
-              <UserMenu user={user} onLogout={handleLogout} onProfileUpdate={handleProfileUpdate} />
+              <UserMenu
+                user={user}
+                brandTheme={brandTheme}
+                onBrandThemeChange={setBrandTheme}
+                onLogout={handleLogout}
+                onProfileUpdate={handleProfileUpdate}
+              />
             </div>
             <p className="text-muted-foreground text-lg max-w-2xl leading-relaxed text-center md:text-left">
               Pakistan's leading AI platform for intelligent marketing strategies and business insights

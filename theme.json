@@ -1,11 +1,27 @@
 {
-  "primaryColor": "#0B1D3A",
-  "secondaryColor": "#3ba8d4",
-  "accentColor": "#bba442",
-  "backgroundColor": "#ffffff",
-  "surfaceColor": "#f5edc8",
-  "textColor": "#0B1D3A",
-  "borderColor": "#1E3A5F",
-  "lightBlue": "#e8f6fc",
-  "darkNavy": "#1E3A5F"
+  "activeTheme": "techpigeon_brand",
+  "themes": {
+    "techpigeon_brand": {
+      "primaryColor": "#5cc3eb",
+      "secondaryColor": "#8cb499",
+      "accentColor": "#bca444",
+      "backgroundColor": "#ffffff",
+      "surfaceColor": "#f2f7f3",
+      "textColor": "#1c1414",
+      "borderColor": "#ddd6d2",
+      "lightBlue": "#eef9fd",
+      "darkNavy": "#1c1414"
+    },
+    "techpigeon_classic": {
+      "primaryColor": "#0b1d3a",
+      "secondaryColor": "#3ba8d4",
+      "accentColor": "#bba442",
+      "backgroundColor": "#ffffff",
+      "surfaceColor": "#f5edc8",
+      "textColor": "#0b1d3a",
+      "borderColor": "#d7deea",
+      "lightBlue": "#e8f6fc",
+      "darkNavy": "#0b1d3a"
+    }
+  }
 }
