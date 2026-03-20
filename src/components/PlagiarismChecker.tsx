@@ -34,6 +34,7 @@ import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url"
 import { createWorker } from "tesseract.js"
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl
+const MAX_DOCUMENT_CHARS = 50000
 
 interface PlagiarismCheckerProps {
   user: UserProfile
@@ -84,6 +85,37 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
     if (fileInputRef.current) {
       fileInputRef.current.value = ""
     }
+  }
+
+  const normalizeExtractedText = (rawText: string): string => {
+    return rawText
+      .replace(/\u0000/g, "")
+      .replace(/\r\n/g, "\n")
+      .replace(/[ \t]+/g, " ")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim()
+  }
+
+  const applyExtractedText = (rawText: string, sourceLabel: string): boolean => {
+    const normalized = normalizeExtractedText(rawText)
+
+    if (!normalized || normalized.length === 0) {
+      return false
+    }
+
+    if (normalized.length > MAX_DOCUMENT_CHARS) {
+      const truncated = normalized.slice(0, MAX_DOCUMENT_CHARS)
+      setText(truncated)
+      setUploadStatus(
+        `${sourceLabel} processed: ${normalized.length.toLocaleString()} characters extracted; truncated to ${MAX_DOCUMENT_CHARS.toLocaleString()} for analysis.`
+      )
+      toast.warning(`Document is very large. Trimmed to ${MAX_DOCUMENT_CHARS.toLocaleString()} characters for reliable analysis.`)
+      return true
+    }
+
+    setText(normalized)
+    setUploadStatus(`${sourceLabel} processed: ${normalized.length.toLocaleString()} characters extracted.`)
+    return true
   }
 
   const readTextFileWithProgress = async (file: File): Promise<string> => {
@@ -157,10 +189,15 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
         const content = await readTextFileWithProgress(file)
         setUploadProgress(95)
         if (content && content.trim().length > 0) {
-          setText(content)
+          const wasApplied = applyExtractedText(content, "TXT")
+          if (!wasApplied) {
+            toast.error("File is empty. Please upload a file with content.")
+            setUploadStatus("Upload failed: file is empty.")
+            setFileName(null)
+            return
+          }
           setUploadProgress(100)
-          setUploadStatus(`Uploaded successfully: ${content.length.toLocaleString()} characters extracted.`)
-          toast.success(`File "${file.name}" loaded successfully - ${content.length} characters`)
+          toast.success(`File "${file.name}" loaded successfully`)
         } else {
           toast.error("File is empty. Please upload a file with content.")
           setUploadStatus("Upload failed: file is empty.")
@@ -174,10 +211,16 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
         setUploadProgress(95)
         
         if (extractedText && extractedText.trim().length > 0) {
-          setText(extractedText)
+          const wasApplied = applyExtractedText(extractedText, "DOCX")
+          if (!wasApplied) {
+            toast.error("Could not extract text from DOCX. Please paste your text manually or use a TXT file.")
+            setUploadStatus("Upload failed: no readable text found in DOCX.")
+            setText("")
+            setFileName(null)
+            return
+          }
           setUploadProgress(100)
-          setUploadStatus(`DOCX processed: ${extractedText.length.toLocaleString()} characters extracted.`)
-          toast.success(`File "${file.name}" loaded successfully - ${extractedText.length} characters extracted`)
+          toast.success(`File "${file.name}" loaded successfully`)
         } else {
           toast.error("Could not extract text from DOCX. Please paste your text manually or use a TXT file.")
           setUploadStatus("Upload failed: no readable text found in DOCX.")
@@ -191,20 +234,34 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
         const extractedText = await extractTextFromPdf(arrayBuffer)
 
         if (extractedText && extractedText.trim().length > 0) {
-          setText(extractedText)
+          const wasApplied = applyExtractedText(extractedText, "PDF")
+          if (!wasApplied) {
+            toast.error("Could not extract readable text from PDF. Trying OCR fallback...")
+            setUploadStatus("No readable text extracted from PDF. Running OCR fallback...")
+            setUploadProgress(30)
+            const ocrText = await extractTextFromPdfWithOcr(arrayBuffer)
+
+            if (ocrText && ocrText.trim().length > 0 && applyExtractedText(ocrText, "PDF OCR")) {
+              setUploadProgress(100)
+              toast.success(`OCR completed for "${file.name}"`)
+            } else {
+              toast.error("Could not extract readable text from this PDF, even with OCR. Try a clearer scan (300 DPI+) or paste text manually.")
+              setUploadStatus("Upload failed: OCR could not detect readable text. Try a higher-quality scan.")
+              setText("")
+              setFileName(null)
+            }
+            return
+          }
           setUploadProgress(100)
-          setUploadStatus(`PDF processed: ${extractedText.length.toLocaleString()} characters extracted.`)
-          toast.success(`File "${file.name}" loaded successfully - ${extractedText.length} characters extracted`)
+          toast.success(`File "${file.name}" loaded successfully`)
         } else {
           setUploadStatus("No selectable text found. Running OCR fallback...")
           setUploadProgress(30)
           const ocrText = await extractTextFromPdfWithOcr(arrayBuffer)
 
-          if (ocrText && ocrText.trim().length > 0) {
-            setText(ocrText)
+          if (ocrText && ocrText.trim().length > 0 && applyExtractedText(ocrText, "PDF OCR")) {
             setUploadProgress(100)
-            setUploadStatus(`PDF OCR complete: ${ocrText.length.toLocaleString()} characters extracted.`)
-            toast.success(`OCR completed for "${file.name}" - ${ocrText.length} characters extracted`)
+            toast.success(`OCR completed for "${file.name}"`)
           } else {
             toast.error("Could not extract readable text from this PDF, even with OCR. Try a clearer scan (300 DPI+) or paste text manually.")
             setUploadStatus("Upload failed: OCR could not detect readable text. Try a higher-quality scan.")
@@ -374,6 +431,13 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
   const checkPlagiarism = async () => {
     if (!text.trim() || text.trim().length < 50) {
       toast.error("Please enter at least 50 characters to check")
+      return
+    }
+
+    if (text.length > MAX_DOCUMENT_CHARS) {
+      const trimmed = text.slice(0, MAX_DOCUMENT_CHARS)
+      setText(trimmed)
+      toast.warning(`Text was trimmed to ${MAX_DOCUMENT_CHARS.toLocaleString()} characters for reliable analysis. Please run integrity check again.`)
       return
     }
 
