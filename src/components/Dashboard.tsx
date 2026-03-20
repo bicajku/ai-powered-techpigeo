@@ -55,6 +55,7 @@ const CONCEPT_MODE_COLORS: Record<string, string> = {
 
 export function Dashboard({ strategies, promptMemory, onRefresh }: DashboardProps) {
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [lastRefreshed, setLastRefreshed] = useState<number>(Date.now())
 
   const handleRefresh = async () => {
     setIsRefreshing(true)
@@ -66,8 +67,26 @@ export function Dashboard({ strategies, promptMemory, onRefresh }: DashboardProp
     
     setTimeout(() => {
       setIsRefreshing(false)
+      setLastRefreshed(Date.now())
       toast.success("Dashboard data refreshed")
     }, 500)
+  }
+
+  const formatTimestamp = (timestamp: number) => {
+    const now = Date.now()
+    const diff = now - timestamp
+    const seconds = Math.floor(diff / 1000)
+    const minutes = Math.floor(seconds / 60)
+    const hours = Math.floor(minutes / 60)
+
+    if (seconds < 60) return "Just now"
+    if (minutes < 60) return `${minutes}m ago`
+    if (hours < 24) return `${hours}h ago`
+    
+    return new Date(timestamp).toLocaleTimeString("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+    })
   }
 
   const stats = useMemo(() => {
@@ -164,9 +183,14 @@ export function Dashboard({ strategies, promptMemory, onRefresh }: DashboardProp
         >
           <Card className="border-primary/30 bg-gradient-to-br from-primary/5 to-primary/10">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <Sparkle size={16} weight="duotone" />
-                Total Strategies
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Sparkle size={16} weight="duotone" />
+                  Total Strategies
+                </div>
+                <span className="text-[10px] font-normal opacity-60">
+                  {formatTimestamp(lastRefreshed)}
+                </span>
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -185,9 +209,14 @@ export function Dashboard({ strategies, promptMemory, onRefresh }: DashboardProp
         >
           <Card className="border-accent/30 bg-gradient-to-br from-accent/5 to-accent/10">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <TrendUp size={16} weight="duotone" />
-                Recent Activity
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <TrendUp size={16} weight="duotone" />
+                  Recent Activity
+                </div>
+                <span className="text-[10px] font-normal opacity-60">
+                  {formatTimestamp(lastRefreshed)}
+                </span>
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -206,9 +235,14 @@ export function Dashboard({ strategies, promptMemory, onRefresh }: DashboardProp
         >
           <Card className="border-secondary/30 bg-gradient-to-br from-secondary/5 to-secondary/10">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <CalendarBlank size={16} weight="duotone" />
-                Monthly Total
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <CalendarBlank size={16} weight="duotone" />
+                  Monthly Total
+                </div>
+                <span className="text-[10px] font-normal opacity-60">
+                  {formatTimestamp(lastRefreshed)}
+                </span>
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -227,9 +261,14 @@ export function Dashboard({ strategies, promptMemory, onRefresh }: DashboardProp
         >
           <Card className="border-muted bg-gradient-to-br from-muted/30 to-muted/50">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <ClockCounterClockwise size={16} weight="duotone" />
-                Active Since
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <ClockCounterClockwise size={16} weight="duotone" />
+                  Active Since
+                </div>
+                <span className="text-[10px] font-normal opacity-60">
+                  {formatTimestamp(lastRefreshed)}
+                </span>
               </CardTitle>
             </CardHeader>
             <CardContent>
