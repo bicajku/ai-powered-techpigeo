@@ -187,7 +187,9 @@ export const authService = {
 
       const users = await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
       
-      const role = githubUser.isOwner ? "admin" : "client"
+      const ADMIN_EMAILS = new Set(["admin@techpigeon.org", "umerslone@github.user"])
+      const userEmail = (githubUser.email || `${githubUser.login}@github.user`).toLowerCase()
+      const isAdmin = githubUser.isOwner || ADMIN_EMAILS.has(userEmail)
       
       const existingUser = Object.values(users).find(u => u.id === githubUser.id)
       
@@ -196,9 +198,9 @@ export const authService = {
       if (!existingUser) {
         user = {
           id: githubUser.id,
-          email: githubUser.email || `${githubUser.login}@github.user`,
+          email: userEmail,
           fullName: githubUser.login,
-          role: role,
+          role: isAdmin ? "admin" : "client",
           avatarUrl: githubUser.avatarUrl,
           subscription: getDefaultSubscription(),
           createdAt: Date.now(),
@@ -210,8 +212,12 @@ export const authService = {
       } else {
         user = ensureUserSubscription(existingUser)
         user.lastLoginAt = Date.now()
-        user.role = role
         user.avatarUrl = githubUser.avatarUrl
+        
+        // Only promote to admin, never demote (preserve existing admin roles)
+        if (isAdmin) {
+          user.role = "admin"
+        }
         
         if (githubUser.email) {
           user.email = githubUser.email
