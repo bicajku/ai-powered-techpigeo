@@ -10,10 +10,17 @@ import "./main.css"
 import "./styles/theme.css"
 import "./index.css"
 
+const removeSplash = () => {
+  const splash = document.getElementById("app-splash")
+  if (splash) {
+    splash.classList.add("fade-out")
+    setTimeout(() => splash.remove(), 500)
+  }
+}
+
 const bootstrap = async () => {
   try {
     if (typeof window !== "undefined" && !(window as unknown as { spark?: unknown }).spark) {
-      // Race the SDK import against a 4-second timeout so the app never hangs
       await Promise.race([
         import("@github/spark/spark"),
         new Promise((_, reject) => setTimeout(() => reject(new Error("Spark SDK import timed out")), 4000))
@@ -32,29 +39,10 @@ const bootstrap = async () => {
     </ErrorBoundary>
   )
 
-  // Fade out and remove splash screen
-  const splash = document.getElementById("app-splash")
-  if (splash) {
-    splash.classList.add("fade-out")
-    setTimeout(() => splash.remove(), 500)
-  }
+  removeSplash()
 }
-
-// Safety net: remove splash after 5 seconds no matter what
-setTimeout(() => {
-  const splash = document.getElementById("app-splash")
-  if (splash) {
-    console.warn("Safety timeout: removing splash screen after 5s")
-    splash.classList.add("fade-out")
-    setTimeout(() => splash.remove(), 500)
-  }
-}, 5000)
 
 bootstrap().catch((err) => {
   console.error("Bootstrap failed:", err)
-  const splash = document.getElementById("app-splash")
-  if (splash) {
-    splash.classList.add("fade-out")
-    setTimeout(() => splash.remove(), 500)
-  }
+  removeSplash()
 })

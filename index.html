@@ -83,6 +83,19 @@
         <div class="splash-bar-track"><div class="splash-bar"></div></div>
     </div>
     <div id="root"></div>
+    <script>
+        // Independent splash safety net — runs even if module loading fails completely
+        setTimeout(function() {
+            var s = document.getElementById("app-splash");
+            if (s) {
+                console.warn("[splash] Safety timeout: removing splash after 4s");
+                s.style.transition = "opacity 0.4s ease-out";
+                s.style.opacity = "0";
+                s.style.pointerEvents = "none";
+                setTimeout(function() { if (s.parentNode) s.parentNode.removeChild(s); }, 500);
+            }
+        }, 4000);
+    </script>
     <script type="module" src="/src/main.tsx"></script>
 </body>
 
