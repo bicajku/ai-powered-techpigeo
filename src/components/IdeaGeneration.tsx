@@ -54,7 +54,16 @@ export function IdeaGeneration({ userId }: IdeaGenerationProps) {
 
   const isValidInput = ideaInput.trim().length >= 10
 
-  const cleanJsonResponse = (raw: string): string => {
+  const cleanJsonResponse = (raw: unknown): unknown => {
+    // If spark.llm already parsed the response (parseJson: true), return as-is
+    if (typeof raw === "object" && raw !== null) {
+      return raw
+    }
+
+    if (typeof raw !== "string") {
+      return {}
+    }
+
     let cleanedResponse = raw.trim()
 
     if (cleanedResponse.startsWith("```json")) {
@@ -70,7 +79,11 @@ export function IdeaGeneration({ userId }: IdeaGenerationProps) {
       cleanedResponse = cleanedResponse.substring(firstBrace, lastBrace + 1)
     }
 
-    return cleanedResponse.trim()
+    try {
+      return JSON.parse(cleanedResponse.trim())
+    } catch {
+      return {}
+    }
   }
 
   const asText = (value: unknown, fallback: string): string => {
@@ -206,8 +219,7 @@ Provide a comprehensive analysis in valid JSON format with the following structu
 CRITICAL: Return ONLY valid JSON with no markdown, no code blocks, no explanatory text.`
 
       const response = await spark.llm(prompt, "gpt-4o", true)
-      const cleanedResponse = cleanJsonResponse(response)
-      const parsedResult = JSON.parse(cleanedResponse)
+      const parsedResult = cleanJsonResponse(response)
       const cookedIdeaWithOriginal = normalizeCookedIdea(parsedResult, ideaInput)
 
       setCookedIdea(cookedIdeaWithOriginal)
@@ -275,8 +287,7 @@ Return a valid JSON object with this exact structure:
 CRITICAL: Return ONLY valid JSON with no markdown formatting.`
 
       const response = await spark.llm(prompt, "gpt-4o", true)
-      const cleanedResponse = cleanJsonResponse(response)
-      const parsedResult = JSON.parse(cleanedResponse)
+      const parsedResult = cleanJsonResponse(response)
       const normalizedCanvas = normalizeBusinessCanvas(parsedResult)
 
       setBusinessCanvas(normalizedCanvas)
@@ -387,8 +398,7 @@ Generate a pitch deck with exactly 8 slides. Return valid JSON with this structu
 CRITICAL: Return ONLY valid JSON.`
 
       const response = await spark.llm(prompt, "gpt-4o", true)
-      const cleanedResponse = cleanJsonResponse(response)
-      const parsedResult = JSON.parse(cleanedResponse)
+      const parsedResult = cleanJsonResponse(response)
       const normalizedPitchDeck = normalizePitchDeck(parsedResult)
 
       if (normalizedPitchDeck.slides.length === 0) {

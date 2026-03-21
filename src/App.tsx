@@ -378,6 +378,12 @@ CRITICAL REMINDERS:
       throw error
     }
 
+    // Handle already-parsed object responses (parseJson: true)
+    if (typeof response === "object" && response !== null) {
+      const parsedResult = response as unknown as MarketingResult
+      return { result: parsedResult, modelUsed }
+    }
+
     let cleanedResponse = response.trim()
     
     if (cleanedResponse.startsWith("```json")) {
@@ -491,6 +497,12 @@ Candidate JSON:
 ${JSON.stringify(candidate)}`
 
     const { response } = await runWithModelFallback(qaPrompt as string)
+
+    // Handle already-parsed object responses
+    if (typeof response === "object" && response !== null) {
+      return response as unknown as StrategyQAVerdict
+    }
+
     let cleaned = response.trim()
 
     if (cleaned.startsWith("```json")) {

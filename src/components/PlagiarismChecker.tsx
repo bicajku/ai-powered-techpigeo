@@ -1058,21 +1058,26 @@ Return ONLY a valid JSON object:
 
       const response = await spark.llm(prompt, "gpt-4o", true)
 
-      let cleaned = response.trim()
-      if (cleaned.startsWith("```json")) {
-        cleaned = cleaned.replace(/^```json\s*/, "").replace(/```\s*$/, "")
-      } else if (cleaned.startsWith("```")) {
-        cleaned = cleaned.replace(/^```\s*/, "").replace(/```\s*$/, "")
-      }
+      let parsed: Record<string, unknown>
+      if (typeof response === "object" && response !== null) {
+        parsed = response as Record<string, unknown>
+      } else {
+        let cleaned = response.trim()
+        if (cleaned.startsWith("```json")) {
+          cleaned = cleaned.replace(/^```json\s*/, "").replace(/```\s*$/, "")
+        } else if (cleaned.startsWith("```")) {
+          cleaned = cleaned.replace(/^```\s*/, "").replace(/```\s*$/, "")
+        }
 
-      cleaned = cleaned.trim()
-      const firstBrace = cleaned.indexOf("{")
-      const lastBrace = cleaned.lastIndexOf("}")
-      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-        cleaned = cleaned.substring(firstBrace, lastBrace + 1)
-      }
+        cleaned = cleaned.trim()
+        const firstBrace = cleaned.indexOf("{")
+        const lastBrace = cleaned.lastIndexOf("}")
+        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+          cleaned = cleaned.substring(firstBrace, lastBrace + 1)
+        }
 
-      const parsed = JSON.parse(cleaned)
+        parsed = JSON.parse(cleaned)
+      }
 
       const humanized: HumanizedResult = {
         originalText: text,
