@@ -3,14 +3,14 @@
  * Combines LLM-based detection with advanced algorithmic analysis
  */
 
-import { performAdvancedDetection } from "./advanced-detection"
+import { AdvancedDetectionResult, performAdvancedDetection } from "./advanced-detection"
 import { PlagiarismResult } from "@/types"
 
 export async function performEnhancedPlagiarismCheck(
   text: string,
   spark: any,
   maxRetries: number = 3
-): Promise<{ result: PlagiarismResult; advancedMetrics: any }> {
+): Promise<{ result: PlagiarismResult; advancedMetrics: AdvancedDetectionResult }> {
   // First, run advanced detection algorithms locally
   const advancedMetrics = performAdvancedDetection(text)
   

@@ -30,6 +30,7 @@ import { exportReviewToPDF } from "@/lib/pdf-export"
 import { performEnhancedPlagiarismCheck } from "@/lib/enhanced-plagiarism"
 import { getExternalSourceIntegrationSummary, performExternalSourceCheck } from "@/lib/external-source-check"
 import { computeReviewAnalysis, ReviewComputationMeta, ReviewFilters, SectionSummary } from "@/lib/review-engine"
+import { AdvancedDetectionResult } from "@/lib/advanced-detection"
 import { addProCredits, consumeProCredits, getFeatureEntitlements, upgradeToPro } from "@/lib/subscription"
 import { getCurrentMonthKey, getExportPlanConfig } from "@/lib/strategy-governance"
 import mammoth from "mammoth"
@@ -96,6 +97,7 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
     excludeReferences: true,
     minMatchWords: 8,
   })
+  const [advancedMetrics, setAdvancedMetrics] = useState<AdvancedDetectionResult | null>(null)
   const [subscriptionPlan, setSubscriptionPlan] = useState<"basic" | "pro">(user.subscription?.plan || "basic")
   const [proCredits, setProCredits] = useState(user.subscription?.proCredits || 0)
   const [, setDocumentReviews] = useSafeKV<DocumentReviewResult[]>(
@@ -760,6 +762,7 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
     setSectionSummaries([])
     setExternalSourceCheck(null)
     setHumanizedResult(null)
+    setAdvancedMetrics(null)
 
     try {
       const { matches: fingerprintMatches } = await getFingerprintRegistryMatches(text)
@@ -772,8 +775,9 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
       ])
 
       // Use enhanced plagiarism detection with advanced algorithms
-      const { result: enrichedResult } = analysisOutcome
+      const { result: enrichedResult, advancedMetrics: detectionMetrics } = analysisOutcome
       setExternalSourceCheck(externalOutcome)
+      setAdvancedMetrics(detectionMetrics)
 
       // Further enhance with local review analysis
       const enriched = computeReviewAnalysis(text, enrichedResult, activeReviewFilters)
@@ -1552,6 +1556,32 @@ Return ONLY a valid JSON object:
                   </TabsContent>
 
                   <TabsContent value="plagiarism" className="space-y-3">
+                    {result.detectedSources.length > 0 && (
+                      <div className="p-4 border border-border rounded-lg bg-muted/30 space-y-2">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Detected Source Contributions</p>
+                        <div className="space-y-2">
+                          {result.detectedSources.map((src, i) => (
+                            <div key={i} className="flex items-center gap-3">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium truncate">{src.source}</p>
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <div className="w-24 h-1.5 rounded bg-muted overflow-hidden">
+                                  <div
+                                    className={`h-full ${src.similarity >= 60 ? "bg-red-500" : src.similarity >= 30 ? "bg-yellow-500" : "bg-blue-400"}`}
+                                    style={{ width: `${Math.min(src.similarity, 100)}%` }}
+                                  />
+                                </div>
+                                <span className={`text-xs font-semibold ${src.similarity >= 60 ? "text-red-600" : src.similarity >= 30 ? "text-yellow-600" : "text-muted-foreground"}`}>
+                                  {src.similarity}%
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <p className="text-[10px] text-muted-foreground">Percentages show estimated contribution to overall similarity index. Values are LLM-estimated and should be treated as indicative.</p>
+                      </div>
+                    )}
                     {result.highlights.length > 0 ? (
                       <div className="space-y-3">
                         {result.highlights.map((highlight, index) => (
@@ -1584,6 +1614,43 @@ Return ONLY a valid JSON object:
                   </TabsContent>
 
                   <TabsContent value="ai" className="space-y-3">
+                    {advancedMetrics && (
+                      <div className="p-4 border border-border rounded-lg bg-muted/30 space-y-3">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Algorithmic Signal Breakdown</p>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                          {[
+                            { label: "Entropy", value: advancedMetrics.entropyScore, help: "Text randomness (higher = more human)" },
+                            { label: "Burstiness", value: advancedMetrics.burstinessScore, help: "Word distribution variance (higher = more human)" },
+                            { label: "Stylometric", value: advancedMetrics.stylometricScore, help: "Linguistic style patterns (higher = more human)" },
+                            { label: "Repetition", value: advancedMetrics.repetitionPatternScore, help: "Repetition avoidance (higher = more human)" },
+                          ].map(({ label, value, help }) => (
+                            <div key={label} className="space-y-1">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-muted-foreground">{label}</span>
+                                <span className={`text-xs font-semibold ${value >= 60 ? "text-green-600" : value >= 40 ? "text-yellow-600" : "text-red-600"}`}>{value}%</span>
+                              </div>
+                              <div className="h-1.5 rounded bg-muted overflow-hidden">
+                                <div
+                                  className={`h-full ${value >= 60 ? "bg-green-500" : value >= 40 ? "bg-yellow-500" : "bg-red-500"}`}
+                                  style={{ width: `${value}%` }}
+                                />
+                              </div>
+                              <p className="text-[10px] text-muted-foreground leading-tight">{help}</p>
+                            </div>
+                          ))}
+                        </div>
+                        {advancedMetrics.riskFactors.length > 0 && (
+                          <div className="pt-1 space-y-1">
+                            <p className="text-xs font-semibold text-muted-foreground">Detected Risk Signals</p>
+                            {advancedMetrics.riskFactors.map((factor, i) => (
+                              <p key={i} className="text-xs text-amber-700 flex items-start gap-1">
+                                <span>⚠</span> {factor}
+                              </p>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                     {result.aiHighlights.length > 0 ? (
                       <div className="space-y-3">
                         {result.aiHighlights.map((highlight, index) => (
@@ -1592,13 +1659,23 @@ Return ONLY a valid JSON object:
                               <div className="space-y-2">
                                 <div className="flex items-center gap-2">
                                   <Badge variant="secondary">
-                                    {highlight.confidence}% Confidence
+                                    {highlight.confidence}% AI Confidence
                                   </Badge>
                                   <Robot size={16} weight="duotone" />
                                 </div>
                                 <p className="text-sm font-mono bg-muted p-2 rounded">
                                   "{highlight.text}"
                                 </p>
+                                {highlight.indicators && highlight.indicators.length > 0 && (
+                                  <div className="pt-1 space-y-1">
+                                    <p className="text-xs font-semibold text-muted-foreground">Why it was flagged:</p>
+                                    {highlight.indicators.map((indicator, i) => (
+                                      <p key={i} className="text-xs text-muted-foreground flex items-start gap-1">
+                                        <span className="text-primary">•</span> {indicator}
+                                      </p>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
                             </AlertDescription>
                           </Alert>

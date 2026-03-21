@@ -34,6 +34,11 @@ All notable changes to this project are documented in this file.
   - Auth now initializes/migrates users to default Basic subscription in [src/lib/auth.ts](src/lib/auth.ts)
   - Humanizer now enforces Basic locked / Pro credit-based access in [src/components/PlagiarismChecker.tsx](src/components/PlagiarismChecker.tsx)
   - Added plan/credit visibility in [src/components/UserMenu.tsx](src/components/UserMenu.tsx) and [src/components/AdminDashboard.tsx](src/components/AdminDashboard.tsx)
+- Review Engine v1 for thesis/article documents:
+  - Structured summary generation via `extractSectionSummaries` with section-boundary detection and abstract/intro/methodology/results/discussion/conclusion/references extraction
+  - Plagiarism analysis with source evidence: detected sources panel in Similarity tab showing source name and similarity % contribution bar
+  - AI-writing risk analysis with explainable scoring: algorithmic signal breakdown (entropy, burstiness, stylometric, repetition) + per-highlight `indicators` field and "Why it was flagged" display
+  - Exportable review report for academic review workflows with Turnitin range, confidence context, filter details, and section summaries
 
 ### Improved
 - PDF review export in [src/lib/pdf-export.ts](src/lib/pdf-export.ts):
@@ -50,10 +55,5 @@ All notable changes to this project are documented in this file.
 - Admin dashboard stats synchronization logic to compute card totals from the same loaded datasets used by tables.
 - Error logger module restored and stabilized after syntax corruption.
 - Error fallback component restored after JSX corruption.
-
-### Planned
-- Review Engine v1 for thesis/article documents:
-  - Structured summary generation
-  - Plagiarism analysis with source evidence
-  - AI-writing risk analysis with explainable scoring
-  - Exportable review report for academic review workflows
+- `AIDetectionHighlight` type extended with optional `indicators?: string[]` for explainable AI flagging.
+- `performEnhancedPlagiarismCheck` return type now properly typed as `AdvancedDetectionResult` instead of `any`.

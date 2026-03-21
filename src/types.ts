@@ -98,6 +98,7 @@ export interface AIDetectionHighlight {
   startIndex: number
   endIndex: number
   confidence: number
+  indicators?: string[]
 }
 
 export type ExternalSourceProvider =
