@@ -529,13 +529,12 @@ export function AdminSubscriptionPanel({ users, adminEmail, onDataChanged }: Adm
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {users.filter((u) => u.role !== "admin").length === 0 ? (
+                      {users.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={5} className="text-center text-muted-foreground py-8">No client users</TableCell>
+                          <TableCell colSpan={5} className="text-center text-muted-foreground py-8">No users found</TableCell>
                         </TableRow>
                       ) : (
                         users
-                          .filter((u) => u.role !== "admin")
                           .map((user) => {
                             const sub = user.subscription
                             const trial = sub?.trial
@@ -543,7 +542,12 @@ export function AdminSubscriptionPanel({ users, adminEmail, onDataChanged }: Adm
                               <TableRow key={user.id}>
                                 <TableCell>
                                   <div className="flex flex-col">
-                                    <span className="text-sm font-medium">{user.fullName}</span>
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-sm font-medium">{user.fullName}</span>
+                                      {user.role === "admin" && (
+                                        <Badge variant="outline" className="text-[10px] px-1 py-0 border-primary/40 text-primary">Admin</Badge>
+                                      )}
+                                    </div>
                                     <span className="text-xs text-muted-foreground">{user.email}</span>
                                   </div>
                                 </TableCell>
