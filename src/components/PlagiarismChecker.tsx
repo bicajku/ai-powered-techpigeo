@@ -915,6 +915,50 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
     }
   }
 
+  const handleExportReviewPdf = async () => {
+    if (!currentReviewResult) {
+      toast.error("No review result available to export")
+      return
+    }
+
+    if ((monthlyReviewExportCount || 0) >= exportPlanConfig.monthlyExports) {
+      toast.error(`Monthly export quota reached (${exportPlanConfig.monthlyExports}). Upgrade for higher limits.`)
+      return
+    }
+
+    try {
+      const enriched = computeReviewAnalysis(
+        currentReviewResult.documentText,
+        currentReviewResult.plagiarismResult,
+        activeReviewFilters
+      )
+      
+      const reviewForExport: SavedReviewDocument = {
+        id: Date.now().toString(),
+        name: fileName || "Untitled Review",
+        documentText: currentReviewResult.documentText,
+        fileName: currentReviewResult.fileName,
+        summary: currentReviewResult.summary,
+        plagiarismResult: currentReviewResult.plagiarismResult,
+        externalSourceCheck: currentReviewResult.externalSourceCheck,
+        timestamp: currentReviewResult.timestamp,
+        userId
+      }
+
+      await exportReviewToPDF(reviewForExport, {
+        meta: enriched.meta,
+        sections: enriched.sections,
+        filters: activeReviewFilters,
+      })
+      
+      setMonthlyReviewExportCount((current) => (current || 0) + 1)
+      toast.success("PDF export initiated!")
+    } catch (error) {
+      console.error("Export error:", error)
+      toast.error("Failed to export PDF. Please try again.")
+    }
+  }
+
   const savePlagiarismCheckResult = async () => {
     if (!result || !plagiarismCheckLabel.trim()) {
       toast.error("Please provide a label for this plagiarism check result")
