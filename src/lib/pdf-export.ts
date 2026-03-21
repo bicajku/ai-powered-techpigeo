@@ -469,47 +469,7 @@ export async function exportReviewToPDF(
     </div>
   </div>
 
-  ${review.externalSourceCheck ? `
-  <div class="section">
-    <h2 class="section-title">External Repository Verification</h2>
-    <div class="section-content">
-      <div><strong>Provider:</strong> ${review.externalSourceCheck.provider}</div>
-      <div><strong>Status:</strong> ${review.externalSourceCheck.status}</div>
-      <div><strong>Live Check Available:</strong> ${review.externalSourceCheck.canPerformLiveCheck ? "Yes" : "No"}</div>
-      <div><strong>Retention Verification:</strong> ${review.externalSourceCheck.canVerifyRetention ? "Yes" : "No"}</div>
-      <div style="margin-top: 10px;">${review.externalSourceCheck.summary}</div>
-      ${review.externalSourceCheck.providerChecks.length > 0 ? `
-      <div style="margin-top: 10px;">
-        <strong>Provider Checks:</strong>
-        ${review.externalSourceCheck.providerChecks.map((check) => `
-          <div style="background: ${brand.colors.panel}; border-left: 3px solid ${brand.colors.accent}; padding: 12px 15px; margin-top: 8px; border-radius: 4px;">
-            <div><strong>${check.provider}</strong> - ${check.status}</div>
-            <div style="font-size: 12px; color: ${brand.colors.muted};">${check.summary}</div>
-            ${check.matches.length > 0 ? `<div style="font-size: 12px; color: ${brand.colors.muted}; margin-top: 4px;">Matches: ${check.matches.length}</div>` : ""}
-          </div>
-        `).join("")}
-      </div>
-      ` : ""}
-      ${review.externalSourceCheck.warnings.length > 0 ? `
-      <div style="margin-top: 10px;">
-        <strong>Warnings:</strong>
-        ${review.externalSourceCheck.warnings.map((warning) => `<div>- ${warning}</div>`).join("")}
-      </div>
-      ` : ""}
-      ${review.externalSourceCheck.matches.length > 0 ? `
-      <div style="margin-top: 10px;">
-        <strong>Repository Matches:</strong>
-        ${review.externalSourceCheck.matches.map((match) => `
-          <div style="background: ${brand.colors.panel}; border-left: 3px solid ${brand.colors.accent}; padding: 12px 15px; margin-top: 8px; border-radius: 4px;">
-            <div><strong>${match.source}</strong> - ${match.similarity}% similarity</div>
-            <div style="font-size: 12px; color: ${brand.colors.muted};">${match.matchType} match${match.repository ? ` in ${match.repository}` : ""}, retention: ${match.retentionState || "unknown"}</div>
-          </div>
-        `).join("")}
-      </div>
-      ` : ""}
-    </div>
-  </div>
-  ` : ""}
+
 
   <div class="section">
     <h2 class="section-title">Executive Summary</h2>

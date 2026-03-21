@@ -1473,53 +1473,55 @@ Return ONLY a valid JSON object:
                   </Alert>
                 )}
 
-                <Alert>
-                  <AlertDescription>
-                    <div className="space-y-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-sm font-medium">External Repository Verification</p>
-                        <Badge variant={externalSourceCheck?.status === "completed" ? "default" : "secondary"}>
-                          {externalSourceCheck?.status || "not-run"}
-                        </Badge>
-                        <Badge variant="outline">
-                          Provider: {externalSourceCheck?.provider || externalIntegration.provider}
-                        </Badge>
-                        <Badge variant="outline">
-                          Public web: {externalIntegration.publicWebEnabled ? "enabled" : "disabled"}
-                        </Badge>
-                      </div>
-                      <p className="text-sm text-muted-foreground">
-                        {externalSourceCheck?.summary || "No external verification has been run for this review yet."}
-                      </p>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-muted-foreground">
-                        <p>Live external checks: {externalSourceCheck?.canPerformLiveCheck ? "available" : "not available"}</p>
-                        <p>Retention status verification: {externalSourceCheck?.canVerifyRetention ? "available" : "not available"}</p>
-                      </div>
-                      {(externalSourceCheck?.providerChecks || []).length > 0 && (
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 pt-1">
-                          {externalSourceCheck?.providerChecks.map((check) => (
-                            <div key={check.provider} className="rounded-lg border border-border bg-background/70 p-3 space-y-1">
-                              <div className="flex items-center justify-between gap-2">
-                                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{check.provider}</p>
-                                <Badge variant={check.status === "completed" ? "default" : "secondary"}>{check.status}</Badge>
-                              </div>
-                              <p className="text-xs text-foreground">{check.summary}</p>
-                              {check.matches.length > 0 && (
-                                <p className="text-xs text-muted-foreground">Matches: {check.matches.length}</p>
-                              )}
-                            </div>
-                          ))}
+                {user.role === "admin" && (
+                  <Alert>
+                    <AlertDescription>
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-medium">External Repository Verification (Admin Only)</p>
+                          <Badge variant={externalSourceCheck?.status === "completed" ? "default" : "secondary"}>
+                            {externalSourceCheck?.status || "not-run"}
+                          </Badge>
+                          <Badge variant="outline">
+                            Provider: {externalSourceCheck?.provider || externalIntegration.provider}
+                          </Badge>
+                          <Badge variant="outline">
+                            Public web: {externalIntegration.publicWebEnabled ? "enabled" : "disabled"}
+                          </Badge>
                         </div>
-                      )}
-                      {(externalSourceCheck?.warnings || []).slice(0, 2).map((warning, index) => (
-                        <p key={index} className="text-xs text-amber-700">- {warning}</p>
-                      ))}
-                      {(externalSourceCheck?.nextSteps || []).slice(0, 2).map((step, index) => (
-                        <p key={index} className="text-xs text-muted-foreground">Next: {step}</p>
-                      ))}
-                    </div>
-                  </AlertDescription>
-                </Alert>
+                        <p className="text-sm text-muted-foreground">
+                          {externalSourceCheck?.summary || "No external verification has been run for this review yet."}
+                        </p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-muted-foreground">
+                          <p>Live external checks: {externalSourceCheck?.canPerformLiveCheck ? "available" : "not available"}</p>
+                          <p>Retention status verification: {externalSourceCheck?.canVerifyRetention ? "available" : "not available"}</p>
+                        </div>
+                        {(externalSourceCheck?.providerChecks || []).length > 0 && (
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-2 pt-1">
+                            {externalSourceCheck?.providerChecks.map((check) => (
+                              <div key={check.provider} className="rounded-lg border border-border bg-background/70 p-3 space-y-1">
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{check.provider}</p>
+                                  <Badge variant={check.status === "completed" ? "default" : "secondary"}>{check.status}</Badge>
+                                </div>
+                                <p className="text-xs text-foreground">{check.summary}</p>
+                                {check.matches.length > 0 && (
+                                  <p className="text-xs text-muted-foreground">Matches: {check.matches.length}</p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {(externalSourceCheck?.warnings || []).slice(0, 2).map((warning, index) => (
+                          <p key={index} className="text-xs text-amber-700">- {warning}</p>
+                        ))}
+                        {(externalSourceCheck?.nextSteps || []).slice(0, 2).map((step, index) => (
+                          <p key={index} className="text-xs text-muted-foreground">Next: {step}</p>
+                        ))}
+                      </div>
+                    </AlertDescription>
+                  </Alert>
+                )}
 
                 <Tabs defaultValue="summary" className="w-full">
                   <div className="overflow-x-auto pb-1">
