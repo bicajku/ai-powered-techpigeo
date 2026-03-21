@@ -23,6 +23,13 @@ const bootstrap = async () => {
       <App />
     </ErrorBoundary>
   )
+
+  // Fade out and remove splash screen
+  const splash = document.getElementById("app-splash")
+  if (splash) {
+    splash.classList.add("fade-out")
+    setTimeout(() => splash.remove(), 500)
+  }
 }
 
 bootstrap()

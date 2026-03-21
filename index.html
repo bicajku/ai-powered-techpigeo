@@ -5,13 +5,83 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AI-Powered Techpigeon Assistant</title>
+    <link rel="icon" type="image/png" href="/src/assets/images/techpigeon-logo.png" />
+    <link rel="apple-touch-icon" href="/src/assets/images/techpigeon-logo.png" />
+    <meta name="theme-color" content="#5CC3EB" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter&family=Lora&family=Source+Code+Pro&display=swap">
     <link href="/src/main.css" rel="stylesheet" />
+    <style>
+        #app-splash {
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #0f1a2e 0%, #1a2744 50%, #0f1a2e 100%);
+            transition: opacity 0.4s ease-out;
+        }
+        #app-splash.fade-out {
+            opacity: 0;
+            pointer-events: none;
+        }
+        #app-splash img {
+            width: 80px;
+            height: 80px;
+            object-fit: contain;
+            margin-bottom: 20px;
+            animation: splash-pulse 1.8s ease-in-out infinite;
+        }
+        #app-splash .splash-title {
+            font-family: 'Inter', sans-serif;
+            font-size: 22px;
+            font-weight: 700;
+            color: #5CC3EB;
+            margin-bottom: 6px;
+            letter-spacing: -0.3px;
+        }
+        #app-splash .splash-subtitle {
+            font-family: 'Inter', sans-serif;
+            font-size: 13px;
+            color: #8CB499;
+            margin-bottom: 28px;
+            opacity: 0.85;
+        }
+        #app-splash .splash-bar-track {
+            width: 200px;
+            height: 3px;
+            background: rgba(255,255,255,0.08);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        #app-splash .splash-bar {
+            height: 100%;
+            width: 40%;
+            background: linear-gradient(90deg, #5CC3EB, #BCA444);
+            border-radius: 2px;
+            animation: splash-slide 1.2s ease-in-out infinite;
+        }
+        @keyframes splash-pulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.06); opacity: 0.85; }
+        }
+        @keyframes splash-slide {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(350%); }
+        }
+    </style>
 </head>
 
 <body>
+    <div id="app-splash">
+        <img src="/src/assets/images/techpigeon-logo.png" alt="Techpigeon" />
+        <div class="splash-title">Techpigeon</div>
+        <div class="splash-subtitle">Drive 2 AI Sparks</div>
+        <div class="splash-bar-track"><div class="splash-bar"></div></div>
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
 </body>
