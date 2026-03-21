@@ -15,6 +15,72 @@ export async function performEnhancedPlagiarismCheck(
   const advancedMetrics = performAdvancedDetection(text)
   
   let lastError: Error | null = null
+
+  const parsePlagiarismResponse = (rawResponse: unknown): PlagiarismResult => {
+    if (typeof rawResponse === "object" && rawResponse !== null) {
+      return rawResponse as PlagiarismResult
+    }
+
+    if (typeof rawResponse !== "string") {
+      throw new Error(`Unexpected plagiarism response type: ${typeof rawResponse}`)
+    }
+
+    let cleanedResponse = rawResponse.trim()
+    if (cleanedResponse.startsWith("```json")) {
+      cleanedResponse = cleanedResponse.replace(/^```json\s*/, "").replace(/```\s*$/, "")
+    } else if (cleanedResponse.startsWith("```")) {
+      cleanedResponse = cleanedResponse.replace(/^```\s*/, "").replace(/```\s*$/, "")
+    }
+
+    cleanedResponse = cleanedResponse.trim()
+
+    const firstBrace = cleanedResponse.indexOf("{")
+    const lastBrace = cleanedResponse.lastIndexOf("}")
+
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      cleanedResponse = cleanedResponse.substring(firstBrace, lastBrace + 1)
+    }
+
+    cleanedResponse = cleanedResponse
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/[\u201C\u201D]/g, '"')
+      .replace(/\u2013/g, "-")
+      .replace(/\u2014/g, "--")
+      .replace(/\u2026/g, "...")
+
+    const repairAttempts: string[] = []
+    const basicCleanup = cleanedResponse
+      .replace(/,\s*}/g, "}")
+      .replace(/,\s*]/g, "]")
+      .replace(/[\x00-\x1F\x7F]/g, (ch) => ch === "\n" || ch === "\r" || ch === "\t" ? " " : "")
+    repairAttempts.push(basicCleanup)
+
+    if (!basicCleanup.endsWith("}")) {
+      let truncated = basicCleanup
+      const quoteCount = (truncated.match(/(?<!\\)"/g) || []).length
+      if (quoteCount % 2 !== 0) {
+        truncated += '"'
+      }
+
+      const openBraces = (truncated.match(/{/g) || []).length
+      const closeBraces = (truncated.match(/}/g) || []).length
+      for (let i = 0; i < openBraces - closeBraces; i++) {
+        truncated += "}"
+      }
+
+      repairAttempts.push(truncated)
+    }
+
+    for (const attempt of repairAttempts) {
+      try {
+        return JSON.parse(attempt) as PlagiarismResult
+      } catch {
+        // Try next repair strategy.
+      }
+    }
+
+    throw new Error("Failed to parse plagiarism analysis response after repair attempts")
+  }
   
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
@@ -90,52 +156,43 @@ Return ONLY a valid JSON object with NO markdown, NO code blocks, NO text before
   }
 }`
 
-      const response = await spark.llm(prompt, "gpt-4o", true)
-      
-      let cleanedResponse = response.trim()
-      if (cleanedResponse.startsWith("```json")) {
-        cleanedResponse = cleanedResponse.replace(/^```json\s*/, "").replace(/```\s*$/, "")
-      } else if (cleanedResponse.startsWith("```")) {
-        cleanedResponse = cleanedResponse.replace(/^```\s*/, "").replace(/```\s*$/, "")
-      }
-      
-      cleanedResponse = cleanedResponse.trim()
-      
-      const firstBrace = cleanedResponse.indexOf('{')
-      const lastBrace = cleanedResponse.lastIndexOf('}')
-      
-      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-        cleanedResponse = cleanedResponse.substring(firstBrace, lastBrace + 1)
-      }
-      
-      cleanedResponse = cleanedResponse
-        .replace(/[\u2018\u2019]/g, "'")
-        .replace(/[\u201C\u201D]/g, '"')
-        .replace(/\u2013/g, '-')
-        .replace(/\u2014/g, '--')
-        .replace(/\u2026/g, '...')
-      
+      const response = await spark.llm(prompt, "gpt-4o", false)
+
       let parsedResult: PlagiarismResult
-      
+
       try {
-        parsedResult = JSON.parse(cleanedResponse) as PlagiarismResult
+        parsedResult = parsePlagiarismResponse(response)
       } catch (parseError) {
+        const preview = typeof response === "string" ? response.substring(0, 500) : JSON.stringify(response).substring(0, 500)
         console.error(`Enhanced plagiarism JSON parse error (attempt ${attempt}/${maxRetries}):`, parseError)
-        console.error("Response preview:", cleanedResponse.substring(0, 500))
-        
-        throw new Error(`Failed to parse plagiarism analysis response: ${parseError instanceof Error ? parseError.message : 'Unknown error'}`)
+        console.error("Response preview:", preview)
+
+        throw new Error(`Failed to parse plagiarism analysis response: ${parseError instanceof Error ? parseError.message : "Unknown error"}`)
       }
       
+      const normalizedResult: PlagiarismResult = {
+        overallScore: Number(parsedResult.overallScore || 0),
+        plagiarismPercentage: Number(parsedResult.plagiarismPercentage || 0),
+        aiContentPercentage: Number(parsedResult.aiContentPercentage || 0),
+        highlights: Array.isArray(parsedResult.highlights) ? parsedResult.highlights : [],
+        aiHighlights: Array.isArray(parsedResult.aiHighlights) ? parsedResult.aiHighlights : [],
+        summary: typeof parsedResult.summary === "string" ? parsedResult.summary : "Analysis completed.",
+        recommendations: Array.isArray(parsedResult.recommendations) ? parsedResult.recommendations : [],
+        turnitinReady: Boolean(parsedResult.turnitinReady),
+        validReferences: Array.isArray(parsedResult.validReferences) ? parsedResult.validReferences : [],
+        detectedSources: Array.isArray(parsedResult.detectedSources) ? parsedResult.detectedSources : [],
+      }
+
       // Enhance results with advanced metrics
       const enhancedResult: PlagiarismResult = {
-        ...parsedResult,
+        ...normalizedResult,
         // Boost scores if advanced detection confirms issues
         aiContentPercentage: Math.max(
-          parsedResult.aiContentPercentage,
+          normalizedResult.aiContentPercentage,
           Math.round(advancedMetrics.aiProbability * 0.9)
         ),
         plagiarismPercentage: Math.max(
-          parsedResult.plagiarismPercentage,
+          normalizedResult.plagiarismPercentage,
           Math.round(advancedMetrics.plagiarismProbability * 0.85)
         ),
         // Adjust overall score based on combined analysis
@@ -151,7 +208,7 @@ Return ONLY a valid JSON object with NO markdown, NO code blocks, NO text before
         ),
         // Add advanced recommendations
         recommendations: [
-          ...parsedResult.recommendations,
+          ...normalizedResult.recommendations,
           ...(advancedMetrics.riskFactors.length > 0 ? advancedMetrics.riskFactors.map(f => `Risk: ${f}`) : [])
         ].slice(0, 12)
       }
