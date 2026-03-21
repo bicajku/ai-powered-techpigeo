@@ -11,8 +11,12 @@ import "./styles/theme.css"
 import "./index.css"
 
 const bootstrap = async () => {
-  if (typeof window !== "undefined" && !(window as unknown as { spark?: unknown }).spark) {
-    await import("@github/spark/spark")
+  try {
+    if (typeof window !== "undefined" && !(window as unknown as { spark?: unknown }).spark) {
+      await import("@github/spark/spark")
+    }
+  } catch (e) {
+    console.warn("Spark SDK import failed, continuing with shim:", e)
   }
 
   initializeSparkShim()
@@ -32,4 +36,20 @@ const bootstrap = async () => {
   }
 }
 
-bootstrap()
+// Safety net: remove splash after 8 seconds no matter what
+setTimeout(() => {
+  const splash = document.getElementById("app-splash")
+  if (splash) {
+    splash.classList.add("fade-out")
+    setTimeout(() => splash.remove(), 500)
+  }
+}, 8000)
+
+bootstrap().catch((err) => {
+  console.error("Bootstrap failed:", err)
+  const splash = document.getElementById("app-splash")
+  if (splash) {
+    splash.classList.add("fade-out")
+    setTimeout(() => splash.remove(), 500)
+  }
+})
