@@ -175,24 +175,27 @@ Keep all string values short (1-2 sentences max). Limit highlights to 3 items, a
         detectedSources: Array.isArray(parsedResult.detectedSources) ? parsedResult.detectedSources : [],
       }
 
+      const safeAiProb = Number.isFinite(advancedMetrics.aiProbability) ? advancedMetrics.aiProbability : 0
+      const safePlagProb = Number.isFinite(advancedMetrics.plagiarismProbability) ? advancedMetrics.plagiarismProbability : 0
+
       // Enhance results with advanced metrics
       const enhancedResult: PlagiarismResult = {
         ...normalizedResult,
         // Boost scores if advanced detection confirms issues
         aiContentPercentage: Math.max(
           normalizedResult.aiContentPercentage,
-          Math.round(advancedMetrics.aiProbability * 0.9)
+          Math.round(safeAiProb * 0.9)
         ),
         plagiarismPercentage: Math.max(
           normalizedResult.plagiarismPercentage,
-          Math.round(advancedMetrics.plagiarismProbability * 0.85)
+          Math.round(safePlagProb * 0.85)
         ),
         // Adjust overall score based on combined analysis
         overallScore: Math.min(
           Math.max(
             100 - (
-              Math.round(advancedMetrics.aiProbability * 0.35) +
-              Math.round(advancedMetrics.plagiarismProbability * 0.65)
+              Math.round(safeAiProb * 0.35) +
+              Math.round(safePlagProb * 0.65)
             ),
             0
           ),

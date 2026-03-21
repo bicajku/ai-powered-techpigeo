@@ -162,6 +162,7 @@ export function calculateBurstinessScore(text: string): number {
     
     // Calculate coefficient of variation for gaps (burstiness measure)
     const meanGap = gaps.reduce((a, b) => a + b, 0) / gaps.length
+    if (meanGap === 0) continue
     const variance = gaps.reduce((sum, gap) => sum + Math.pow(gap - meanGap, 2), 0) / gaps.length
     const stdDev = Math.sqrt(variance)
     const burstiness = stdDev / meanGap
@@ -191,20 +192,20 @@ export function calculateStylometricScore(text: string): number {
   // Sentence length variation (human writers vary more)
   const sentences = stats.sentences
   const sentenceLengths = sentences.map(s => s.split(/\s+/).length)
-  const meanLength = sentenceLengths.reduce((a, b) => a + b, 0) / sentenceLengths.length
-  const variance = sentenceLengths.reduce((sum, len) => sum + Math.pow(len - meanLength, 2), 0) / sentenceLengths.length
+  const meanLength = sentenceLengths.length > 0 ? sentenceLengths.reduce((a, b) => a + b, 0) / sentenceLengths.length : 1
+  const variance = meanLength > 0 ? sentenceLengths.reduce((sum, len) => sum + Math.pow(len - meanLength, 2), 0) / sentenceLengths.length : 0
   const stdDev = Math.sqrt(variance)
-  const cvSentenceLength = stdDev / meanLength
+  const cvSentenceLength = meanLength > 0 ? stdDev / meanLength : 0
   
   // Human text has CV typically 0.5-0.8, AI can be more uniform
   const sentenceVariationScore = Math.min(cvSentenceLength * 100, 100)
   
   // Word length variation
   const wordLengths = stats.words.map(w => w.length)
-  const meanWordLength = wordLengths.reduce((a, b) => a + b, 0) / wordLengths.length
-  const wordVariance = wordLengths.reduce((sum, len) => sum + Math.pow(len - meanWordLength, 2), 0) / wordLengths.length
+  const meanWordLength = wordLengths.length > 0 ? wordLengths.reduce((a, b) => a + b, 0) / wordLengths.length : 1
+  const wordVariance = meanWordLength > 0 ? wordLengths.reduce((sum, len) => sum + Math.pow(len - meanWordLength, 2), 0) / wordLengths.length : 0
   const wordStdDev = Math.sqrt(wordVariance)
-  const cvWordLength = wordStdDev / meanWordLength
+  const cvWordLength = meanWordLength > 0 ? wordStdDev / meanWordLength : 0
   
   const wordVariationScore = Math.min(cvWordLength * 100, 100)
   
@@ -296,7 +297,7 @@ export function calculateRepetitionPatternScore(text: string): number {
   }
   
   // Normalize by total phrases
-  const totalPhrases = stats.wordCount - 2
+  const totalPhrases = Math.max(stats.wordCount - 2, 1)
   const repetitionRatio = Math.min(repetitionScore / totalPhrases, 1)
   
   // Return inverse (high repetition = low score)
