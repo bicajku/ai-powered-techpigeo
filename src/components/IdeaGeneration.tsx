@@ -17,7 +17,7 @@ import { BusinessCanvasView } from "@/components/BusinessCanvasView"
 import { PitchDeckView } from "@/components/PitchDeckView"
 import { SaveIdeaDialog } from "@/components/SaveIdeaDialog"
 import { SavedIdeasList } from "@/components/SavedIdeasList"
-import { useKV } from "@github/spark/hooks"
+import { useSafeKV } from "@/hooks/useSafeKV"
 import { toast } from "sonner"
 
 interface IdeaGenerationProps {
@@ -34,11 +34,11 @@ export function IdeaGeneration({ userId }: IdeaGenerationProps) {
   const [pitchDeck, setPitchDeck] = useState<PitchDeck | null>(null)
   const [currentIdeaInput, setCurrentIdeaInput] = useState("")
   const [showSaveDialog, setShowSaveDialog] = useState(false)
-  const [savedIdeas, setSavedIdeas] = useKV<SavedIdea[]>(
+  const [savedIdeas, setSavedIdeas] = useSafeKV<SavedIdea[]>(
     userId ? `saved-ideas-${userId}` : "saved-ideas-temp",
     []
   )
-  const [userMemory, setUserMemory] = useKV<UserMemoryEntry[]>(
+  const [userMemory, setUserMemory] = useSafeKV<UserMemoryEntry[]>(
     userId ? `idea-memory-${userId}` : "idea-memory-temp",
     []
   )

@@ -23,7 +23,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { toast } from "sonner"
-import { useKV } from "@github/spark/hooks"
+import { useSafeKV } from "@/hooks/useSafeKV"
 import { motion, AnimatePresence } from "framer-motion"
 import { MarketingResult, SavedStrategy, UserProfile, ConceptMode, StrategyWorkflowRun } from "@/types"
 import { authService } from "@/lib/auth"
@@ -101,23 +101,23 @@ function App() {
     const stored = window.localStorage.getItem("notch-dismissed-at")
     return stored ? parseInt(stored, 10) : 0
   })
-  const [savedStrategies, setSavedStrategies] = useKV<SavedStrategy[]>(
+  const [savedStrategies, setSavedStrategies] = useSafeKV<SavedStrategy[]>(
     `saved-strategies-${userIdForKV}`,
     []
   )
-  const [promptMemory, setPromptMemory] = useKV<PromptMemoryItem[]>(
+  const [promptMemory, setPromptMemory] = useSafeKV<PromptMemoryItem[]>(
     `user-prompt-memory-${userIdForKV}`,
     []
   )
-  const [workflowRuns, setWorkflowRuns] = useKV<StrategyWorkflowRun[]>(
+  const [workflowRuns, setWorkflowRuns] = useSafeKV<StrategyWorkflowRun[]>(
     `strategy-workflow-runs-${userIdForKV}`,
     []
   )
-  const [monthlyStrategySpendCents, setMonthlyStrategySpendCents] = useKV<number>(
+  const [monthlyStrategySpendCents, setMonthlyStrategySpendCents] = useSafeKV<number>(
     `${getCurrentMonthKey("strategy-spend")}-${userIdForKV}`,
     0
   )
-  const [monthlyExportCount, setMonthlyExportCount] = useKV<number>(
+  const [monthlyExportCount, setMonthlyExportCount] = useSafeKV<number>(
     `${getCurrentMonthKey("strategy-exports")}-${userIdForKV}`,
     0
   )

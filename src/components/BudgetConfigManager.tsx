@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CurrencyDollar, FloppyDisk, ArrowsClockwise } from "@phosphor-icons/react"
 import { toast } from "sonner"
-import { useKV } from "@github/spark/hooks"
+import { useSafeKV } from "@/hooks/useSafeKV"
 
 interface BudgetLimits {
   basicMonthlyBudgetCents: number
@@ -27,7 +27,7 @@ const DEFAULT_BUDGET_LIMITS: BudgetLimits = {
 }
 
 export function BudgetConfigManager() {
-  const [budgetLimits, setBudgetLimits] = useKV<BudgetLimits>("admin-budget-limits", DEFAULT_BUDGET_LIMITS)
+  const [budgetLimits, setBudgetLimits] = useSafeKV<BudgetLimits>("admin-budget-limits", DEFAULT_BUDGET_LIMITS)
   const [localBasicBudget, setLocalBasicBudget] = useState("5.00")
   const [localBasicStrategies, setLocalBasicStrategies] = useState("20")
   const [localBasicExports, setLocalBasicExports] = useState("5")

@@ -22,7 +22,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion"
 import { toast } from "sonner"
 import { DocumentFingerprintRecord, PlagiarismResult, DocumentReviewResult, ExternalSourceCheckResult, HumanizedResult, SavedReviewDocument, UserProfile } from "@/types"
-import { useKV } from "@github/spark/hooks"
+import { useSafeKV } from "@/hooks/useSafeKV"
 import { SaveReviewDialog } from "@/components/SaveReviewDialog"
 import { SavedReviews } from "@/components/SavedReviews"
 import { buildDocumentPreview, createDocumentFingerprint, findFingerprintMatches, normalizeDocumentText } from "@/lib/document-fingerprint"
@@ -79,7 +79,7 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
   const [externalSourceCheck, setExternalSourceCheck] = useState<ExternalSourceCheckResult | null>(null)
   const [showSavePlagiarismCheck, setShowSavePlagiarismCheck] = useState(false)
   const [plagiarismCheckLabel, setPlagiarismCheckLabel] = useState("")
-  const [savedPlagiarismChecks, setSavedPlagiarismChecks] = useKV<Array<{
+  const [savedPlagiarismChecks, setSavedPlagiarismChecks] = useSafeKV<Array<{
     id: string
     label: string
     documentName: string
@@ -98,19 +98,19 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
   })
   const [subscriptionPlan, setSubscriptionPlan] = useState<"basic" | "pro">(user.subscription?.plan || "basic")
   const [proCredits, setProCredits] = useState(user.subscription?.proCredits || 0)
-  const [, setDocumentReviews] = useKV<DocumentReviewResult[]>(
+  const [, setDocumentReviews] = useSafeKV<DocumentReviewResult[]>(
     `document-reviews-${userId}`,
     []
   )
-  const [documentFingerprintRegistry, setDocumentFingerprintRegistry] = useKV<DocumentFingerprintRecord[]>(
+  const [documentFingerprintRegistry, setDocumentFingerprintRegistry] = useSafeKV<DocumentFingerprintRecord[]>(
     `document-fingerprint-registry-${userId}`,
     []
   )
-  const [savedReviews, setSavedReviews] = useKV<SavedReviewDocument[]>(
+  const [savedReviews, setSavedReviews] = useSafeKV<SavedReviewDocument[]>(
     `saved-reviews-${userId}`,
     []
   )
-  const [monthlyReviewExportCount, setMonthlyReviewExportCount] = useKV<number>(
+  const [monthlyReviewExportCount, setMonthlyReviewExportCount] = useSafeKV<number>(
     `${getCurrentMonthKey("review-exports")}-${userId}`,
     0
   )
