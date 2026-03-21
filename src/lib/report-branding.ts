@@ -1,4 +1,4 @@
-import techpigeonLogo from "@/assets/images/techpigeon-logo.png"
+import techpigeonLogo from "@/assets/images/logo.png"
 
 export const REPORT_BRAND = {
   companyName: "Techpigeon",
