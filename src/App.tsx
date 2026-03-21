@@ -386,9 +386,10 @@ CRITICAL REMINDERS:
       if (!parsedResult.marketingCopy && !parsedResult.visualStrategy && !parsedResult.targetAudience) {
         console.warn("Object response missing expected fields, keys:", Object.keys(parsedResult))
         // Try to extract from nested structure if LLM wrapped it
-        const keys = Object.keys(parsedResult)
-        if (keys.length === 1 && typeof (parsedResult as Record<string, unknown>)[keys[0]] === "object") {
-          const nested = (parsedResult as Record<string, unknown>)[keys[0]] as MarketingResult
+        const responseObj = response as Record<string, unknown>
+        const keys = Object.keys(responseObj)
+        if (keys.length === 1 && typeof responseObj[keys[0]] === "object") {
+          const nested = responseObj[keys[0]] as MarketingResult
           if (nested.marketingCopy || nested.visualStrategy) {
             return { result: nested, modelUsed }
           }
