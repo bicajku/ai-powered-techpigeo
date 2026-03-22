@@ -1,4 +1,4 @@
-import { Lightbulb, Sparkle, MagnifyingGlass, ChartBar, FolderOpen, ShieldCheck, ClockCounterClockwise, LockSimple } from "@phosphor-icons/react"
+import { Lightbulb, Sparkle, MagnifyingGlass, ChartBar, FolderOpen, ShieldCheck, ClockCounterClockwise, LockSimple, Brain } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
@@ -26,6 +26,7 @@ export function MobileNav({ activeTab, onTabChange, isAdmin, savedCount, canAcce
   ]
 
   if (isAdmin) {
+    navItems.push({ value: "sentinel-brain", label: "Brain", icon: Brain })
     navItems.push({ value: "admin", label: "Admin", icon: ShieldCheck })
   }
 

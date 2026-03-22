@@ -20,7 +20,7 @@ export function Footer() {
           </a>
           <h3 className="text-lg font-semibold text-foreground mb-1">Techpigeon</h3>
           <p className="text-sm text-muted-foreground max-w-md text-center">
-            AI-Powered Marketing Intelligence Platform
+            Sentinel AI Suite — Enterprise AI Platform
           </p>
         </div>
 
