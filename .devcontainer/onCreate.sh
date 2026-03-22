@@ -24,26 +24,13 @@ sudo rm -rf "$azcopy_dir"
 echo "Installing sdk"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export WORKSPACE_DIR="${WORKSPACE_DIR:-/workspaces/ai-powered-techpigeo}"
+LATEST_RELEASE=$(bash "$SCRIPT_DIR/refreshTools.sh")
+cd /tmp/spark
+LATEST_RELEASE="$LATEST_RELEASE" WORKSPACE_DIR="$WORKSPACE_DIR" bash spark-sdk-dist/install-tools.sh
 
-# Ensure the workspace has a package.json for the SDK install
-if [ ! -f /workspaces/spark-template/package.json ]; then
-  mkdir -p /workspaces/spark-template
-  echo '{"name":"spark-template","private":true,"workspaces":["packages/*"]}' > /workspaces/spark-template/package.json
-fi
-
-(
-  set +e
-  if LATEST_RELEASE=$(bash "$SCRIPT_DIR/refreshTools.sh") && [ -d /tmp/spark/spark-sdk-dist ]; then
-    cd /tmp/spark
-    LATEST_RELEASE="$LATEST_RELEASE" WORKSPACE_DIR="$WORKSPACE_DIR" bash spark-sdk-dist/install-tools.sh
-    cd "$WORKSPACE_DIR"
-    echo "Pre-starting the server and generating the optimized assets"
-    npm run optimize --override
-  else
-    echo "WARNING: SDK installation skipped (release assets unavailable). Continuing setup..."
-  fi
-)
+cd /workspaces/spark-template
+echo "Pre-starting the server and generating the optimized assets"
+npm run optimize --override
 
 echo "Installing supervisor"
 sudo apt-get update && sudo apt-get install -y supervisor

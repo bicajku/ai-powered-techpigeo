@@ -1,0 +1,2 @@
+This file (StrategyPreview.tsx) has been deleted as it was corrupted and not in use.
+The component functionality is handled directly in SavedStrategies.tsx via the onView handler.
