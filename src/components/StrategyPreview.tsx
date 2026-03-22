@@ -1,20 +1,20 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
+import { Separator } from "@/components/ui/sepa
 import { Separator } from "@/components/ui/separator"
 import { ChatsCircle, Palette, Target, Code, Desktop, Database, DeviceMobile, ListChecks } from "@phosphor-icons/react"
-import { SavedStrategy } from "@/types"
-
-interface StrategyPreviewProps {
-  open: boolean
   onOpenChange: (open: boolean) => void
-  strategy: SavedStrategy | null
-  onViewFull?: () => void
+
+
+  if (text.leng
+}
+export function StrategyPreview(
+
 }
 
-function truncateText(text: string, maxLength: number): string {
-  if (text.length <= maxLength) return text
-  return text.substring(0, maxLength) + "..."
-}
+    },
+      title: "Visual Strategy",
+      icon: <Palette size={18} weight="duoton
+ 
 
 export function StrategyPreview({ open, onOpenChange, strategy, onViewFull }: StrategyPreviewProps) {
   if (!strategy) return null
@@ -24,12 +24,12 @@ export function StrategyPreview({ open, onOpenChange, strategy, onViewFull }: St
       title: "Marketing Copy",
       content: strategy.result.marketingCopy,
       icon: <ChatsCircle size={18} weight="duotone" className="text-primary" />
-    },
-    {
+      
+     
       title: "Visual Strategy",
       content: strategy.result.visualStrategy,
       icon: <Palette size={18} weight="duotone" className="text-primary" />
-    },
+      
     {
       title: "Target Audience",
       content: strategy.result.targetAudience,
@@ -46,21 +46,21 @@ export function StrategyPreview({ open, onOpenChange, strategy, onViewFull }: St
       icon: <Desktop size={18} weight="duotone" className="text-primary" />
     },
     {
-      title: "Database Workflow",
+
       content: strategy.result.databaseWorkflow,
-      icon: <Database size={18} weight="duotone" className="text-primary" />
+            <div key={index} className="space-y-2">
     },
-    {
+     
       title: "Mobile Workflow",
       content: strategy.result.mobileWorkflow,
       icon: <DeviceMobile size={18} weight="duotone" className="text-primary" />
-    },
+      
     {
-      title: "Implementation Checklist",
+
       content: strategy.result.implementationChecklist,
       icon: <ListChecks size={18} weight="duotone" className="text-primary" />
     }
-  ]
+   
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -68,7 +68,7 @@ export function StrategyPreview({ open, onOpenChange, strategy, onViewFull }: St
         <DialogHeader>
           <DialogTitle className="text-xl font-bold">
             {strategy.name}
-          </DialogTitle>
+
         </DialogHeader>
 
         <div className="space-y-4 mt-4">
@@ -78,22 +78,22 @@ export function StrategyPreview({ open, onOpenChange, strategy, onViewFull }: St
                 {section.icon}
                 <h3 className="font-semibold text-sm">{section.title}</h3>
               </div>
-              <p className="text-sm text-muted-foreground">
+
                 {truncateText(section.content || "", 200)}
               </p>
               {index < sections.length - 1 && <Separator />}
             </div>
           ))}
-        </div>
 
-        {onViewFull && (
+
+
           <div className="mt-6 flex justify-end">
-            <Button onClick={onViewFull}>
+
               View Full Strategy
             </Button>
           </div>
         )}
       </DialogContent>
-    </Dialog>
+
   )
-}
+
