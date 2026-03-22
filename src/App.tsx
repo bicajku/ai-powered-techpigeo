@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
-import { Sparkle, Lightbulb, ChatsCircle, Palette, Target, ArrowClockwise, FloppyDisk, FolderOpen, Code, Desktop, Database, DeviceMobile, ListChecks, ChartBar, ShieldCheck, MagnifyingGlass, CaretUpDown, Check, BookOpen, ClockCounterClockwise, ArrowsHorizontal, LockSimple, Lightning, SignIn, UserPlus } from "@phosphor-icons/react"
+import { Sparkle, Lightbulb, ChatsCircle, Palette, Target, ArrowClockwise, FloppyDisk, FolderOpen, Code, Desktop, Database, DeviceMobile, ListChecks, ChartBar, ShieldCheck, MagnifyingGlass, CaretUpDown, Check, BookOpen, ClockCounterClockwise, ArrowsHorizontal, LockSimple, Lightning, SignIn, UserPlus, Brain } from "@phosphor-icons/react"
 import { UpgradePaywall } from "@/components/UpgradePaywall"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { ResultCard } from "@/components/ResultCard"
@@ -15,6 +15,7 @@ import { AuthForm } from "@/components/AuthForm"
 import { UserMenu } from "@/components/UserMenu"
 import { Dashboard } from "@/components/Dashboard"
 import { AdminDashboard } from "@/components/AdminDashboard"
+import { SentinelBrain } from "@/components/SentinelBrain"
 import { WelcomeBanner } from "@/components/WelcomeBanner"
 import { TopNotchBanner } from "@/components/TopNotchBanner"
 import { Footer } from "@/components/Footer"
@@ -33,6 +34,9 @@ import { authService } from "@/lib/auth"
 import { BRAND_THEME_STORAGE_KEY, DEFAULT_BRAND_THEME, isBrandThemeName, type BrandThemeName } from "@/lib/brand-theme"
 import { logError } from "@/lib/error-logger"
 import { cn } from "@/lib/utils"
+import { sentinelQuery } from "@/lib/sentinel-query-pipeline"
+import { isNeonConfigured } from "@/lib/neon-client"
+import { isGeminiConfigured } from "@/lib/gemini-client"
 import { getFeatureEntitlements, requestUpgrade } from "@/lib/subscription"
 import { exportStrategyAsPDF } from "@/lib/pdf-export"
 import { exportStrategyAsWord } from "@/lib/document-export"
@@ -325,6 +329,26 @@ function App() {
   }
 
   const runWithModelFallback = async (prompt: string, parseJson = false) => {
+    // Try Sentinel pipeline first (Gemini + Copilot + Brain)
+    const sentinelReady = isNeonConfigured() || isGeminiConfigured()
+    if (sentinelReady) {
+      try {
+        const pipelineResult = await sentinelQuery(prompt, {
+          module: "strategy",
+          sparkFallback: async () => {
+            if (typeof spark !== "undefined" && typeof spark.llm === "function") {
+              const preferredModel = strategyPlan === "pro" ? "gpt-4o" : "gpt-4o-mini"
+              return await spark.llm(prompt, preferredModel, false) as string
+            }
+            throw new Error("Spark fallback unavailable")
+          },
+        })
+        return { response: pipelineResult.response, modelUsed: pipelineResult.model || "sentinel-pipeline" }
+      } catch {
+        // Fall through to Spark-only path
+      }
+    }
+
     if (typeof spark === "undefined" || typeof spark.llm !== "function") {
       throw new Error("Spark LLM is not available. Please refresh the page.")
     }
@@ -1080,8 +1104,8 @@ ${JSON.stringify(candidate)}`
         <header className="relative sticky top-0 z-50 bg-background/80 backdrop-blur-md border-b border-border/50">
           <div className="max-w-6xl mx-auto px-6 py-3 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <img src={faviconImg} alt="Techpigeon" className="w-8 h-8 object-contain" />
-              <span className="font-bold text-lg text-foreground hidden sm:inline">Techpigeon</span>
+              <img src={faviconImg} alt="Sentinel AI Suite" className="w-8 h-8 object-contain" />
+              <span className="font-bold text-lg text-foreground hidden sm:inline">Sentinel AI Suite</span>
             </div>
             <div className="flex items-center gap-2">
               <Button
@@ -1182,8 +1206,8 @@ ${JSON.stringify(candidate)}`
               <div className="flex items-center gap-2 md:gap-3 flex-1 min-w-0">
                 <img src={faviconImg} alt="Techpigeon" className="w-8 h-8 md:w-10 md:h-10 shrink-0 object-contain" />
                 <h1 className="text-xl sm:text-2xl md:text-4xl font-bold tracking-tight text-foreground truncate">
-                  <span className="hidden sm:inline">AI-Powered Techpigeon Assistant</span>
-                  <span className="sm:hidden">Techpigeon AI</span>
+                  <span className="hidden sm:inline">Sentinel AI Suite</span>
+                  <span className="sm:hidden">Sentinel AI</span>
                 </h1>
               </div>
               <div className="flex items-center gap-2">
@@ -1208,7 +1232,7 @@ ${JSON.stringify(candidate)}`
               </div>
             </div>
             <p className="text-muted-foreground text-sm sm:text-base md:text-lg max-w-2xl leading-relaxed text-center md:text-left">
-              Pakistan's leading AI platform for intelligent marketing strategies and business insights
+              Enterprise-grade AI platform for intelligent strategies, knowledge management, and multi-tenant business insights
             </p>
             <p className="text-xs sm:text-sm text-muted-foreground mt-2 text-center md:text-left flex items-center justify-center md:justify-start gap-1.5">
               <img src={faviconImg} alt="" className="w-4 h-4 inline-block" />
@@ -1221,7 +1245,7 @@ ${JSON.stringify(candidate)}`
           </AnimatePresence>
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className={`hidden md:grid w-full max-w-5xl mx-auto mb-8 ${user.role === "admin" ? "grid-cols-7" : "grid-cols-6"}`}>
+            <TabsList className={`hidden md:grid w-full max-w-5xl mx-auto mb-8 ${user.role === "admin" ? "grid-cols-8" : "grid-cols-6"}`}>
               <TabsTrigger value="generate" className="gap-2 text-sm">
                 <Lightbulb size={18} weight="bold" />
                 <span>Strategy</span>
@@ -1250,6 +1274,12 @@ ${JSON.stringify(candidate)}`
                 <ClockCounterClockwise size={18} weight="bold" />
                 <span>Timeline</span>
               </TabsTrigger>
+              {user.role === "admin" && (
+                <TabsTrigger value="sentinel-brain" className="gap-2 text-sm">
+                  <Brain size={18} weight="bold" />
+                  <span>Sentinel Brain</span>
+                </TabsTrigger>
+              )}
               {user.role === "admin" && (
                 <TabsTrigger value="admin" className="gap-2 text-sm">
                   <ShieldCheck size={18} weight="bold" />
@@ -2275,6 +2305,12 @@ ${JSON.stringify(candidate)}`
                 )}
               </div>
             </TabsContent>
+
+            {user.role === "admin" && (
+              <TabsContent value="sentinel-brain" className="space-y-6">
+                <SentinelBrain />
+              </TabsContent>
+            )}
 
             {user.role === "admin" && (
               <TabsContent value="admin" className="space-y-6">

@@ -21,6 +21,9 @@ import { SavedIdeasList } from "@/components/SavedIdeasList"
 import { useSafeKV } from "@/hooks/useSafeKV"
 import { toast } from "sonner"
 import { getFeatureEntitlements } from "@/lib/subscription"
+import { sentinelQuery } from "@/lib/sentinel-query-pipeline"
+import { isNeonConfigured } from "@/lib/neon-client"
+import { isGeminiConfigured } from "@/lib/gemini-client"
 
 interface IdeaGenerationProps {
   userId: string
@@ -269,7 +272,32 @@ Provide a comprehensive analysis in valid JSON format with the following structu
 
 CRITICAL: Return ONLY valid JSON with no markdown, no code blocks, no explanatory text.`
 
-      const response = await spark.llm(prompt, "gpt-4o", true)
+      let response: unknown
+      const strPrompt = prompt as string
+      if (isNeonConfigured() || isGeminiConfigured()) {
+        try {
+          const res = await sentinelQuery(strPrompt, {
+            module: "idea-generation",
+            userId: user?.id ? parseInt(user.id) || undefined : undefined,
+            sparkFallback: async () => {
+              if (typeof spark !== "undefined" && typeof spark.llm === "function") {
+                return (await spark.llm(strPrompt, "gpt-4o", false)) as string
+              }
+              throw new Error("Spark fallback unavailable")
+            }
+          })
+          response = cleanJsonResponse(res.response)
+        } catch {
+          if (typeof spark !== "undefined" && typeof spark.llm === "function") {
+            response = await spark.llm(strPrompt, "gpt-4o", true)
+          } else {
+            throw new Error("AI service unavailable")
+          }
+        }
+      } else {
+        response = await spark.llm(strPrompt, "gpt-4o", true)
+      }
+
       const parsedResult = cleanJsonResponse(response)
       const cookedIdeaWithOriginal = normalizeCookedIdea(parsedResult, ideaInput)
 
@@ -331,10 +359,35 @@ Return a valid JSON object with these keys: keyPartners, keyActivities, keyResou
 CRITICAL: Return ONLY valid JSON with no markdown formatting.`
 
       let response: unknown
-      try {
-        response = await spark.llm(prompt, "gpt-4o", true)
-      } catch {
-        response = await spark.llm(prompt, "gpt-4o-mini", true)
+      const strPrompt = prompt as string
+      if (isNeonConfigured() || isGeminiConfigured()) {
+        try {
+          const res = await sentinelQuery(strPrompt, {
+            module: "idea-generation-canvas",
+            userId: user?.id ? parseInt(user.id) || undefined : undefined,
+            sparkFallback: async () => {
+              if (typeof spark !== "undefined" && typeof spark.llm === "function") {
+                return (await spark.llm(strPrompt, "gpt-4o", false)) as string
+              }
+              throw new Error("Spark fallback unavailable")
+            }
+          })
+          response = cleanJsonResponse(res.response)
+        } catch {
+          if (typeof spark !== "undefined" && typeof spark.llm === "function") {
+            response = await spark.llm(strPrompt, "gpt-4o", true)
+          } else {
+            throw new Error("AI service unavailable")
+          }
+        }
+      } else {
+        try {
+          response = await spark.llm(strPrompt, "gpt-4o", true)
+        } catch {
+          if (typeof spark !== "undefined" && typeof spark.llm === "function") {
+            response = await spark.llm(strPrompt, "gpt-4o-mini", true)
+          }
+        }
       }
 
       const parsedResult = cleanJsonResponse(response)
@@ -405,10 +458,35 @@ Generate a pitch deck with exactly 8 slides. Return valid JSON with keys: execut
 CRITICAL: Return ONLY valid JSON with no markdown.`
 
       let response: unknown
-      try {
-        response = await spark.llm(prompt, "gpt-4o", true)
-      } catch {
-        response = await spark.llm(prompt, "gpt-4o-mini", true)
+      const strPrompt = prompt as string
+      if (isNeonConfigured() || isGeminiConfigured()) {
+        try {
+          const res = await sentinelQuery(strPrompt, {
+            module: "idea-generation-pitchdeck",
+            userId: user?.id ? parseInt(user.id) || undefined : undefined,
+            sparkFallback: async () => {
+              if (typeof spark !== "undefined" && typeof spark.llm === "function") {
+                return (await spark.llm(strPrompt, "gpt-4o", false)) as string
+              }
+              throw new Error("Spark fallback unavailable")
+            }
+          })
+          response = cleanJsonResponse(res.response)
+        } catch {
+          if (typeof spark !== "undefined" && typeof spark.llm === "function") {
+            response = await spark.llm(strPrompt, "gpt-4o", true)
+          } else {
+            throw new Error("AI service unavailable")
+          }
+        }
+      } else {
+        try {
+          response = await spark.llm(strPrompt, "gpt-4o", true)
+        } catch {
+          if (typeof spark !== "undefined" && typeof spark.llm === "function") {
+            response = await spark.llm(strPrompt, "gpt-4o-mini", true)
+          }
+        }
       }
 
       const parsedResult = cleanJsonResponse(response)
