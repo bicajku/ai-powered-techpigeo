@@ -23,8 +23,8 @@ export function StrategyPreview({ open, onOpenChange, strategy }: StrategyPrevie
       title: "Marketing Copy",
       content: strategy.result.marketingCopy,
       icon: <ChatsCircle size={18} weight="duotone" className="text-primary" />
-    },
-    {
+      
+     
       title: "Visual Strategy",
       content: strategy.result.visualStrategy,
       icon: <Palette size={18} weight="duotone" className="text-primary" />
@@ -40,31 +40,31 @@ export function StrategyPreview({ open, onOpenChange, strategy }: StrategyPrevie
       icon: <Code size={18} weight="duotone" className="text-primary" />
     },
     {
-      title: "UI Workflow",
-      content: strategy.result.uiWorkflow,
-      icon: <Desktop size={18} weight="duotone" className="text-primary" />
-    },
     {
-      title: "Database Workflow",
-      content: strategy.result.databaseWorkflow,
-      icon: <Database size={18} weight="duotone" className="text-primary" />
+      content: strategy.result.databaseWor
     },
+      
+     
     {
-      title: "Mobile Workflow",
-      content: strategy.result.mobileWorkflow,
-      icon: <DeviceMobile size={18} weight="duotone" className="text-primary" />
-    },
-    {
-      title: "Implementation Checklist",
-      content: strategy.result.implementationChecklist,
-      icon: <ListChecks size={18} weight="duotone" className="text-primary" />
+      content: strategy.result.implementationChe
     }
-  ]
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+    <
         <DialogHeader>
+            {strategy.name}
+        </DialogHeader>
+      
+     
+                {section.icon}
+              </div>
+                {truncateText(section.content || "", 200)}
+     
+   
+
+  )
+
+
+
           <DialogTitle className="text-xl font-bold">
             {strategy.name}
           </DialogTitle>
