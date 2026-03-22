@@ -23,3 +23,10 @@ This workspace is locked to the **Spark default template** (templateVersion 1, K
 - Searching the codebase
 - Explaining code behavior
 - Suggesting changes **in chat only** (not applied to files)
+
+### AI Bridging Policy (Sentinel AI Suite)
+
+When creating or upgrading AI modules within this workspace, the multi-LLM bridging mechanism must be implemented correctly to prevent misunderstandings or failures in the legacy Spark environment:
+1. **Always use `sentinelQuery`:** All new AI features must use the internal `sentinelQuery` pipeline to access enterprise models (Gemini, Copilot) instead of direct raw API calls.
+2. **Mandatory Spark Fallback:** You must always provide a safe fallback mechanism using `spark.llm` and `spark.llmPrompt`. These are intrinsic to the native sandbox.
+3. **Never Remove Spark Dependencies:** Do not remove checks like `typeof spark !== 'undefined'` or calls to `spark.llmPrompt` and `spark.llm`. They act as a critical bridge. If the enterprise stacks are unreachable or unconfigured, the system must degrade gracefully to `spark.llm` to ensure continuous operation.

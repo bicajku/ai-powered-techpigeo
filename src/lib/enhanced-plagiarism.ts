@@ -3,6 +3,9 @@
  * Combines LLM-based detection with advanced algorithmic analysis
  */
 
+import { sentinelQuery } from "./sentinel-query-pipeline"
+import { isNeonConfigured } from "./neon-client"
+import { isGeminiConfigured } from "./gemini-client"
 import { AdvancedDetectionResult, performAdvancedDetection } from "./advanced-detection"
 import { PlagiarismResult } from "@/types"
 
@@ -148,7 +151,30 @@ Keep all string values short (1-2 sentences max). Limit highlights to 3 items, a
   "detectedSources": [{"source": "<source>", "similarity": 0, "confidence": 0}]
 }`
 
-      const response = await spark.llm(prompt, "gpt-4o", false)
+      let response: unknown
+      const strPrompt = prompt as string
+      if (isNeonConfigured() || isGeminiConfigured()) {
+        try {
+          const res = await sentinelQuery(strPrompt, {
+            module: "plagiarism-check",
+            sparkFallback: async () => {
+              if (typeof spark !== "undefined" && typeof spark.llm === "function") {
+                return (await spark.llm(strPrompt, "gpt-4o", false)) as string
+              }
+              throw new Error("Spark fallback unavailable")
+            }
+          })
+          response = typeof res.response === 'string' ? res.response : JSON.stringify(res.response)
+        } catch {
+          if (typeof spark !== "undefined" && typeof spark.llm === "function") {
+            response = await spark.llm(strPrompt, "gpt-4o", false)
+          } else {
+            throw new Error("AI service unavailable")
+          }
+        }
+      } else {
+        response = await spark.llm(strPrompt, "gpt-4o", false)
+      }
 
       let parsedResult: PlagiarismResult
 

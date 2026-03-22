@@ -21,6 +21,9 @@ import {
 } from "@phosphor-icons/react"
 import { motion, AnimatePresence } from "framer-motion"
 import { toast } from "sonner"
+import { sentinelQuery } from "@/lib/sentinel-query-pipeline"
+import { isNeonConfigured } from "@/lib/neon-client"
+import { isGeminiConfigured } from "@/lib/gemini-client"
 import { DocumentFingerprintRecord, PlagiarismResult, DocumentReviewResult, ExternalSourceCheckResult, HumanizedResult, SavedReviewDocument, UserProfile } from "@/types"
 import { useSafeKV } from "@/hooks/useSafeKV"
 import { SaveReviewDialog } from "@/components/SaveReviewDialog"
@@ -1064,7 +1067,31 @@ Return ONLY a valid JSON object:
   ]
 }`
 
-      const response = await spark.llm(prompt, "gpt-4o", true)
+      let response: unknown
+      const strPrompt = prompt as string
+      if (isNeonConfigured() || isGeminiConfigured()) {
+        try {
+          const res = await sentinelQuery(strPrompt, {
+            module: "humanizer",
+            userId: user?.id ? parseInt(user.id) || undefined : undefined,
+            sparkFallback: async () => {
+              if (typeof spark !== "undefined" && typeof spark.llm === "function") {
+                return (await spark.llm(strPrompt, "gpt-4o", false)) as string
+              }
+              throw new Error("Spark fallback unavailable")
+            }
+          })
+          response = typeof res.response === 'string' ? res.response : JSON.stringify(res.response)
+        } catch {
+          if (typeof spark !== "undefined" && typeof spark.llm === "function") {
+            response = await spark.llm(strPrompt, "gpt-4o", true)
+          } else {
+            throw new Error("AI service unavailable")
+          }
+        }
+      } else {
+        response = await spark.llm(strPrompt, "gpt-4o", true)
+      }
 
       let parsed: Record<string, unknown>
       if (typeof response === "object" && response !== null) {
