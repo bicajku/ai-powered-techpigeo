@@ -50,6 +50,24 @@ export const PLAN_CONFIG = {
       "Admin dashboard for team leads",
     ],
   },
+  enterprise: {
+    name: "Enterprise",
+    price: 99,
+    priceLabel: "$99/month",
+    creditsPerMonth: 500,
+    maxExportsPerMonth: Infinity,
+    features: [
+      "Everything in Team",
+      "NGO-SAAS Module (exclusive)",
+      "Enterprise Project Workspace",
+      "Document & CSV Data Workspace",
+      "AI Reporting Engine",
+      "PDF / Word / Excel export with custom branding",
+      "Organization branding settings",
+      "500 review credits/month",
+      "Dedicated support",
+    ],
+  },
 } as const
 
 export const TRIAL_CREDITS = 10
@@ -58,10 +76,12 @@ export const TRIAL_MAX_SUBMISSIONS = 3
 export interface FeatureEntitlements {
   isPro: boolean
   isTeam: boolean
+  isEnterprise: boolean
   isPaidPlan: boolean
   isSubscriptionActive: boolean
   canAccessReview: boolean
   canUseHumanizer: boolean
+  canAccessNGOSaaS: boolean
   proCreditsRemaining: number
   isTrialActive: boolean
   trialSubmissionsRemaining: number
@@ -94,7 +114,8 @@ export function getFeatureEntitlements(user: UserProfile): FeatureEntitlements {
 
   const isPro = subscription.plan === "pro"
   const isTeam = subscription.plan === "team"
-  const isPaidPlan = isPro || isTeam
+  const isEnterprise = subscription.plan === "enterprise"
+  const isPaidPlan = isPro || isTeam || isEnterprise
   const isSubscriptionActive = isPaidPlan
     ? subscription.status === "active" || subscription.status === "grace"
     : true
@@ -113,13 +134,21 @@ export function getFeatureEntitlements(user: UserProfile): FeatureEntitlements {
   // Humanize: admin always, paid plans with active sub & credits
   const canUseHumanizer = isAdmin || (isPaidPlan && isSubscriptionActive && credits > 0)
 
+  // NGO SaaS: strictly Enterprise tier, explicit module grant, or admin
+  const canAccessNGOSaaS =
+    isAdmin ||
+    (isEnterprise && isSubscriptionActive) ||
+    !!(subscription.hasNgoModuleAccess && isSubscriptionActive)
+
   return {
     isPro,
     isTeam,
+    isEnterprise,
     isPaidPlan,
     isSubscriptionActive,
     canAccessReview,
     canUseHumanizer,
+    canAccessNGOSaaS,
     proCreditsRemaining: credits,
     isTrialActive,
     trialSubmissionsRemaining,
@@ -375,7 +404,7 @@ export async function requestUpgrade(
 }
 
 // Keep for backward compatibility (used internally by admin approval)
-export async function upgradeToPlan(userId: string, plan: "pro" | "team"): Promise<{ success: boolean; credits: number; error?: string }> {
+export async function upgradeToPlan(userId: string, plan: "pro" | "team" | "enterprise"): Promise<{ success: boolean; credits: number; error?: string }> {
   try {
     const users = (await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
     const user = users[userId]
@@ -407,7 +436,8 @@ export async function upgradeToPlan(userId: string, plan: "pro" | "team"): Promi
 }
 
 // Keep for backward compatibility
-export async function upgradeToPro(userId: string, initialCredits = 25): Promise<{ success: boolean; credits: number; error?: string }> {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function upgradeToPro(userId: string, _initialCredits = 25): Promise<{ success: boolean; credits: number; error?: string }> {
   return upgradeToPlan(userId, "pro")
 }
 
@@ -427,9 +457,9 @@ export async function addProCredits(userId: string, creditsToAdd: number): Promi
     const safeUser = ensureUserSubscription(user)
     const subscription = safeUser.subscription || getDefaultSubscription()
 
-    const isPaidPlan = subscription.plan === "pro" || subscription.plan === "team"
+    const isPaidPlan = subscription.plan === "pro" || subscription.plan === "team" || subscription.plan === "enterprise"
     if (!isPaidPlan) {
-      return { success: false, credits: subscription.proCredits || 0, error: "Upgrade to Pro or Team first" }
+      return { success: false, credits: subscription.proCredits || 0, error: "Upgrade to Pro, Team, or Enterprise first" }
     }
 
     const newCredits = Math.max(0, (subscription.proCredits || 0) + creditsToAdd)
@@ -524,7 +554,7 @@ export async function approveUpgradeRequest(requestId: string, adminEmail: strin
     }
 
     const request = requests[idx]
-    const targetPlan = request.targetPlan as "pro" | "team"
+    const targetPlan = request.targetPlan as "pro" | "team" | "enterprise"
 
     const upgradeResult = await upgradeToPlan(request.userId, targetPlan)
     if (!upgradeResult.success) {
@@ -615,7 +645,7 @@ export async function adminSetPlan(userId: string, plan: SubscriptionPlan): Prom
 
     const safeUser = ensureUserSubscription(user)
     const subscription = safeUser.subscription || getDefaultSubscription()
-    const credits = plan === "basic" ? 0 : (plan === "team" ? PLAN_CONFIG.team.creditsPerMonth : PLAN_CONFIG.pro.creditsPerMonth)
+    const credits = plan === "basic" ? 0 : (PLAN_CONFIG[plan]?.creditsPerMonth ?? PLAN_CONFIG.pro.creditsPerMonth)
 
     users[userId] = {
       ...safeUser,

@@ -51,7 +51,7 @@ export interface SavedStrategy {
 
 export type UserRole = "admin" | "client"
 
-export type SubscriptionPlan = "basic" | "pro" | "team"
+export type SubscriptionPlan = "basic" | "pro" | "team" | "enterprise"
 export type SubscriptionStatus = "active" | "inactive" | "grace"
 
 export interface TrialInfo {
@@ -89,6 +89,7 @@ export interface SubscriptionInfo {
   proCredits: number
   updatedAt: number
   trial?: TrialInfo
+  hasNgoModuleAccess?: boolean
 }
 
 export interface UserProfile {

@@ -275,7 +275,7 @@ function App() {
   const charCount = description.length
   const showCharCounter = charCount >= 900
   const entitlements = user ? getFeatureEntitlements(user) : null
-  const canAccessNGOSaaS = user?.role === "admin" || !!entitlements?.isTeam
+  const canAccessNGOSaaS = user?.role === "admin" || !!entitlements?.canAccessNGOSaaS
   const strategyPlan = entitlements?.isPaidPlan ? (entitlements.isTeam ? "team" : "pro") : "basic"
   const strategyPlanConfig = getStrategyPlanConfig(strategyPlan)
   const exportPlanConfig = getExportPlanConfig(strategyPlan)
@@ -1003,7 +1003,7 @@ ${JSON.stringify(candidate)}`
   useEffect(() => {
     if (activeTab === "ngo-saas" && !canAccessNGOSaaS) {
       setActiveTab("generate")
-      toast.error("NGO-SAAS is available for Team plan and Super Admin only.")
+      toast.error("NGO-SAAS is available for Enterprise plan and Super Admin only.")
     }
   }, [activeTab, canAccessNGOSaaS])
 
