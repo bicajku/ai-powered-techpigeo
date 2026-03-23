@@ -1,23 +1,32 @@
 import { neon } from "@neondatabase/serverless"
-import { storeSecret, retrieveSecret, hasSecret } from "@/lib/secret-store"
+import * as secretStore from "@/lib/secret-store"
 
 let sqlClient: ReturnType<typeof neon> | null = null
 
 const NEON_DB_URL_KEY = "sentinel-neon-db-url"
 
 export async function setNeonDbUrl(url: string): Promise<void> {
-  await storeSecret(NEON_DB_URL_KEY, url)
+  if (typeof secretStore.storeSecret === "function") {
+    await secretStore.storeSecret(NEON_DB_URL_KEY, url)
+  } else {
+    localStorage.setItem(NEON_DB_URL_KEY, url)
+  }
   sqlClient = neon(url)
 }
 
 export function isNeonConfigured(): boolean {
-  return hasSecret(NEON_DB_URL_KEY)
+  if (typeof secretStore.hasSecret === "function") {
+    return secretStore.hasSecret(NEON_DB_URL_KEY)
+  }
+  return !!localStorage.getItem(NEON_DB_URL_KEY)
 }
 
 export async function getNeonClient(): Promise<ReturnType<typeof neon>> {
   if (sqlClient) return sqlClient
 
-  const url = await retrieveSecret(NEON_DB_URL_KEY)
+  const url = typeof secretStore.retrieveSecret === "function"
+    ? await secretStore.retrieveSecret(NEON_DB_URL_KEY)
+    : localStorage.getItem(NEON_DB_URL_KEY)
   if (!url) {
     throw new Error("Neon database URL not configured. Go to Admin → Settings to add it.")
   }

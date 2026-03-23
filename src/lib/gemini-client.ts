@@ -1,23 +1,32 @@
 import { GoogleGenerativeAI } from "@google/generative-ai"
-import { storeSecret, retrieveSecret, hasSecret } from "@/lib/secret-store"
+import * as secretStore from "@/lib/secret-store"
 
 let geminiInstance: GoogleGenerativeAI | null = null
 
 const GEMINI_KEY_STORAGE = "sentinel-gemini-api-key"
 
 export async function setGeminiApiKey(key: string): Promise<void> {
-  await storeSecret(GEMINI_KEY_STORAGE, key)
+  if (typeof secretStore.storeSecret === "function") {
+    await secretStore.storeSecret(GEMINI_KEY_STORAGE, key)
+  } else {
+    localStorage.setItem(GEMINI_KEY_STORAGE, key)
+  }
   geminiInstance = new GoogleGenerativeAI(key)
 }
 
 export function isGeminiConfigured(): boolean {
-  return hasSecret(GEMINI_KEY_STORAGE)
+  if (typeof secretStore.hasSecret === "function") {
+    return secretStore.hasSecret(GEMINI_KEY_STORAGE)
+  }
+  return !!localStorage.getItem(GEMINI_KEY_STORAGE)
 }
 
 async function getGemini(): Promise<GoogleGenerativeAI> {
   if (geminiInstance) return geminiInstance
 
-  const key = await retrieveSecret(GEMINI_KEY_STORAGE)
+  const key = typeof secretStore.retrieveSecret === "function"
+    ? await secretStore.retrieveSecret(GEMINI_KEY_STORAGE)
+    : localStorage.getItem(GEMINI_KEY_STORAGE)
   if (!key) {
     throw new Error("Gemini API key not configured. Go to Admin → Settings to add it.")
   }
