@@ -35,6 +35,7 @@ import { MarketingResult, SavedStrategy, UserProfile, ConceptMode, StrategyWorkf
 import { authService } from "@/lib/auth"
 import { BRAND_THEME_STORAGE_KEY, DEFAULT_BRAND_THEME, isBrandThemeName, type BrandThemeName } from "@/lib/brand-theme"
 import { logError } from "@/lib/error-logger"
+import { hydrateSecretsFromKV } from "@/lib/secret-store"
 import { cn } from "@/lib/utils"
 import { sentinelQuery } from "@/lib/sentinel-query-pipeline"
 import { isNeonConfigured } from "@/lib/neon-client"
@@ -200,6 +201,9 @@ function App() {
 
     const checkAuth = async () => {
       try {
+        // Restore secrets from KV first (survives Codespaces URL rotation)
+        await hydrateSecretsFromKV()
+
         await withTimeout(authService.initializeMasterAdmin(), "Auth bootstrap")
         const currentUser = await withTimeout(authService.getCurrentUser(), "Current user lookup")
 
