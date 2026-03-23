@@ -7,10 +7,12 @@ import { Sparkle, Target, Lightbulb, ShieldCheck, Quotes, Brain, ChartBar, Prese
 import { cn } from "@/lib/utils"
 import faviconImg from "@/assets/images/favicon.png"
 
+import { UserProfile } from "@/types"
+
 interface LandingPageProps {
   onLogin: () => void
   onSignup: () => void
-  onAuthSuccess?: (user: unknown) => void
+  onAuthSuccess?: (user: UserProfile) => void
   user?: { fullName: string; email: string; role: string; avatarUrl?: string } | null
   onBackToDashboard?: () => void
   onNavigate?: (tab: string) => void
@@ -90,14 +92,12 @@ export function LandingPage({ onLogin, onSignup, onAuthSuccess, user, onBackToDa
 
   return (
     <div className="min-h-screen bg-[#0a0f18] text-white overflow-x-hidden relative font-sans selection:bg-[#5cc3eb]/30">
-
       {/* === Ambient Background — Techpigeon brand tones === */}
       <div className="fixed inset-0 z-0 pointer-events-none">
         <div className="absolute top-[15%] left-[5%] w-72 md:w-96 h-72 md:h-96 bg-[#5cc3eb]/8 rounded-full blur-[120px]" />
         <div className="absolute top-[50%] right-[5%] w-64 md:w-80 h-64 md:h-80 bg-[#8cb499]/8 rounded-full blur-[100px]" />
         <div className="absolute bottom-[10%] left-[40%] w-80 h-80 bg-[#bca444]/6 rounded-full blur-[140px]" />
       </div>
-
       {/* === Header === */}
       <header className="relative z-50 flex items-center justify-between px-4 sm:px-6 md:px-12 py-4 md:py-6">
         <div className="flex items-center gap-2.5">
@@ -138,7 +138,6 @@ export function LandingPage({ onLogin, onSignup, onAuthSuccess, user, onBackToDa
           )}
         </div>
       </header>
-
       {/* === Hero Section with Globe + Orbiting Pills === */}
       <section className="relative z-10 flex flex-col items-center pt-4 md:pt-8 px-4 sm:px-6">
 
@@ -400,7 +399,6 @@ export function LandingPage({ onLogin, onSignup, onAuthSuccess, user, onBackToDa
           )}
         </motion.div>
       </section>
-
       {/* === Social Proof / Stats Bar === */}
       <motion.section
         className="relative z-10 border-y border-white/[0.06] bg-white/[0.02] backdrop-blur-sm"
@@ -427,7 +425,6 @@ export function LandingPage({ onLogin, onSignup, onAuthSuccess, user, onBackToDa
           </div>
         </div>
       </motion.section>
-
       {/* === Why Sentinel — Compelling Features === */}
       <section className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 py-16 md:py-24">
         <motion.div
@@ -498,7 +495,6 @@ export function LandingPage({ onLogin, onSignup, onAuthSuccess, user, onBackToDa
           })}
         </div>
       </section>
-
       {/* === How It Works === */}
       <section className="relative z-10 border-t border-white/[0.06] bg-white/[0.01]">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 py-16 md:py-24">
@@ -508,7 +504,7 @@ export function LandingPage({ onLogin, onSignup, onAuthSuccess, user, onBackToDa
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
           >
-            <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-4 text-white">How Sentinel Works</h2>
+            <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-4 text-sky-400">How Sentinel Works</h2>
             <p className="text-sm sm:text-base text-gray-500">Three steps to decisions you can trust.</p>
           </motion.div>
 
@@ -526,7 +522,7 @@ export function LandingPage({ onLogin, onSignup, onAuthSuccess, user, onBackToDa
                 viewport={{ once: true }}
                 transition={{ delay: i * 0.15 }}
               >
-                <div className="text-3xl sm:text-4xl font-black text-[#5cc3eb]/20 mb-3">{item.step}</div>
+                <div className="text-3xl sm:text-4xl font-black mb-3 text-gray-50">{item.step}</div>
                 <h3 className="text-white text-sm sm:text-base font-semibold mb-2">{item.title}</h3>
                 <p className="text-gray-500 text-xs sm:text-sm leading-relaxed">{item.desc}</p>
               </motion.div>
@@ -534,7 +530,6 @@ export function LandingPage({ onLogin, onSignup, onAuthSuccess, user, onBackToDa
           </div>
         </div>
       </section>
-
       {/* === Final CTA === */}
       <section className="relative z-10 border-t border-white/[0.06]">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 py-16 md:py-24 text-center">
@@ -547,9 +542,7 @@ export function LandingPage({ onLogin, onSignup, onAuthSuccess, user, onBackToDa
             <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-4 text-white">
               Ready to Make Smarter Decisions?
             </h2>
-            <p className="text-sm sm:text-base text-gray-500 mb-8 max-w-lg mx-auto">
-              Join forward-thinking teams using multi-engine AI consensus to validate ideas, build strategies, and ship with confidence.
-            </p>
+            <p className="text-sm sm:text-base mb-8 max-w-lg mx-auto text-cyan-500">Join forward-thinking teams using multi-engine AI consensus to validate ideas, build strategies, and ship with confidence.</p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
               <Button
                 size="lg"
@@ -560,24 +553,23 @@ export function LandingPage({ onLogin, onSignup, onAuthSuccess, user, onBackToDa
               </Button>
             </div>
             <div className="flex flex-wrap items-center justify-center gap-x-4 sm:gap-x-6 gap-y-2 mt-6 text-[10px] sm:text-xs text-gray-600">
-              <span className="flex items-center gap-1"><CheckCircle weight="fill" className="text-[#8cb499] w-3.5 h-3.5" /> No credit card required</span>
-              <span className="flex items-center gap-1"><CheckCircle weight="fill" className="text-[#8cb499] w-3.5 h-3.5" /> Free tier included</span>
+              <span className="flex items-center gap-1 text-yellow-600"><CheckCircle weight="fill" className="text-[#8cb499] w-3.5 h-3.5" /> No credit card required</span>
+              <span className="flex items-center gap-1 text-amber-600"><CheckCircle weight="fill" className="text-[#8cb499] w-3.5 h-3.5" /> Free tier included</span>
               <span className="flex items-center gap-1"><CheckCircle weight="fill" className="text-[#8cb499] w-3.5 h-3.5" /> Enterprise-ready</span>
             </div>
           </motion.div>
         </div>
       </section>
-
       {/* === Footer === */}
       <footer className="relative z-10 border-t border-white/[0.06] py-6 px-4 sm:px-6">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-[10px] sm:text-xs text-gray-600">
           <div className="flex items-center gap-2">
             <img src={faviconImg} alt="" className="w-4 h-4 opacity-40" />
-            <span>&copy; {new Date().getFullYear()} Techpigeon — Sentinel AI Suite. All rights reserved.</span>
+            <span className="text-slate-50">&copy; {new Date().getFullYear()} Techpigeon — Sentinel AI Suite. All rights reserved.</span>
           </div>
           <div className="flex items-center gap-4">
             {user ? (
-              <button onClick={onBackToDashboard} className="hover:text-gray-400 transition-colors">Dashboard</button>
+              <button onClick={onBackToDashboard} className="hover:text-gray-400 transition-colors text-slate-50">Dashboard</button>
             ) : (
               <>
                 <button onClick={() => openAuth("login")} className="hover:text-gray-400 transition-colors">Login</button>
@@ -587,7 +579,6 @@ export function LandingPage({ onLogin, onSignup, onAuthSuccess, user, onBackToDa
           </div>
         </div>
       </footer>
-
       {/* === Auth Modal — Properly wrapped === */}
       <Dialog open={authModal !== null} onOpenChange={(open) => { if (!open) setAuthModal(null) }}>
         <DialogContent className="max-w-md p-0 border-0 bg-transparent shadow-none [&>button]:hidden">
@@ -601,5 +592,5 @@ export function LandingPage({ onLogin, onSignup, onAuthSuccess, user, onBackToDa
         </DialogContent>
       </Dialog>
     </div>
-  )
+  );
 }

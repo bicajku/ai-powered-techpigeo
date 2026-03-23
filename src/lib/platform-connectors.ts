@@ -67,7 +67,8 @@ export async function addConnector(connector: {
     )
     RETURNING *
   `
-  return parseConnectorRow(rows[0] as Record<string, unknown>)
+  const rowsArray = Array.isArray(rows) ? rows : []
+  return parseConnectorRow(rowsArray[0] as Record<string, unknown>)
 }
 
 export async function listConnectors(): Promise<PlatformConnector[]> {

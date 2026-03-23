@@ -15,6 +15,7 @@ import {
   CheckCircle,
   Sparkle,
   Users,
+  type IconProps
 } from "@phosphor-icons/react"
 import { motion, AnimatePresence } from "framer-motion"
 import { toast } from "sonner"
@@ -39,7 +40,7 @@ interface NGOResult {
 interface NGOAction {
   id: string
   label: string
-  icon: React.ComponentType<{ size?: number; weight?: string; className?: string }>
+  icon: React.ComponentType<IconProps>
   description: string
   placeholder: string
   inputLabel: string

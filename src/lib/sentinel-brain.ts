@@ -121,7 +121,8 @@ export async function addBrainDocument(doc: {
     VALUES (${doc.title}, ${doc.source_url ?? null}, ${doc.source_type}, ${doc.created_by ?? null})
     RETURNING *
   `
-  return rows[0] as BrainDocument
+  const rowsArray = Array.isArray(rows) ? rows : []
+  return rowsArray[0] as BrainDocument
 }
 
 export async function listBrainDocuments(): Promise<BrainDocument[]> {
@@ -179,7 +180,8 @@ export async function addBrainChunk(chunk: {
     )
     RETURNING *
   `
-  return rows[0] as BrainEntry
+  const rowsArray = Array.isArray(rows) ? rows : []
+  return rowsArray[0] as BrainEntry
 }
 
 export async function searchBrain(
