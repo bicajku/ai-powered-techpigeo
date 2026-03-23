@@ -83,6 +83,23 @@ export interface SubscriptionRequest {
   resolvedBy?: string
 }
 
+export type NGOAccessLevel = "owner" | "contributor" | "user"
+
+export interface NGOTeamMember {
+  id: string
+  email: string
+  fullName: string
+  accessLevel: NGOAccessLevel
+  addedBy: string
+  addedAt: number
+}
+
+export interface WelcomeBonus {
+  granted: boolean
+  credits: number
+  expiresAt: number
+}
+
 export interface SubscriptionInfo {
   plan: SubscriptionPlan
   status: SubscriptionStatus
@@ -90,6 +107,9 @@ export interface SubscriptionInfo {
   updatedAt: number
   trial?: TrialInfo
   hasNgoModuleAccess?: boolean
+  ngoAccessLevel?: NGOAccessLevel
+  ngoTeamAdminId?: string
+  welcomeBonus?: WelcomeBonus
 }
 
 export interface UserProfile {
