@@ -22,6 +22,7 @@ import { TopNotchBanner } from "@/components/TopNotchBanner"
 import { Footer } from "@/components/Footer"
 import { PlagiarismChecker } from "@/components/PlagiarismChecker"
 import { IdeaGeneration } from "@/components/IdeaGeneration"
+import { NGOModule } from "@/components/NGOModule"
 import { MobileNav } from "@/components/MobileNav"
 import faviconImg from "@/assets/images/favicon.png"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -1253,7 +1254,7 @@ ${JSON.stringify(candidate)}`
           </AnimatePresence>
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className={`hidden md:grid w-full max-w-5xl mx-auto mb-8 ${user.role === "admin" ? "grid-cols-8" : "grid-cols-6"}`}>
+            <TabsList className={`hidden md:grid w-full max-w-5xl mx-auto mb-8 ${user.role === "admin" ? "grid-cols-9" : "grid-cols-7"}`}>
               <TabsTrigger value="generate" className="gap-2 text-sm">
                 <Lightbulb size={18} weight="bold" />
                 <span>Strategy</span>
@@ -1288,6 +1289,10 @@ ${JSON.stringify(candidate)}`
                   <span>Sentinel Brain</span>
                 </TabsTrigger>
               )}
+              <TabsTrigger value="ngo-saas" className="gap-2 text-sm">
+                <Target size={18} weight="bold" />
+                <span>NGO-SAAS</span>
+              </TabsTrigger>
               {user.role === "admin" && (
                 <TabsTrigger value="admin" className="gap-2 text-sm">
                   <ShieldCheck size={18} weight="bold" />
@@ -2154,6 +2159,10 @@ ${JSON.stringify(candidate)}`
 
             <TabsContent value="ideas" className="space-y-6">
               <IdeaGeneration userId={user.id} user={user} />
+            </TabsContent>
+
+            <TabsContent value="ngo-saas" className="space-y-6">
+              <NGOModule userId={user.id} user={user} />
             </TabsContent>
 
             <TabsContent value="plagiarism" className="space-y-6">
