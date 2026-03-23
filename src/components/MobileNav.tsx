@@ -1,4 +1,4 @@
-import { Lightbulb, Sparkle, MagnifyingGlass, ChartBar, FolderOpen, ShieldCheck, ClockCounterClockwise, LockSimple, Brain } from "@phosphor-icons/react"
+import { Lightbulb, Sparkle, MagnifyingGlass, ChartBar, FolderOpen, ShieldCheck, ClockCounterClockwise, LockSimple, Brain, PenNib } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
@@ -8,9 +8,10 @@ interface MobileNavProps {
   isAdmin: boolean
   savedCount: number
   canAccessReview?: boolean
+  canUseHumanizer?: boolean
 }
 
-export function MobileNav({ activeTab, onTabChange, isAdmin, savedCount, canAccessReview = true }: MobileNavProps) {
+export function MobileNav({ activeTab, onTabChange, isAdmin, savedCount, canAccessReview = true, canUseHumanizer = false }: MobileNavProps) {
   const handleTabSelect = (tab: string) => {
     onTabChange(tab)
     window.scrollTo({ top: 0, behavior: "smooth" })
@@ -20,6 +21,7 @@ export function MobileNav({ activeTab, onTabChange, isAdmin, savedCount, canAcce
     { value: "generate", label: "Strategy", icon: Lightbulb },
     { value: "ideas", label: "Ideas", icon: Sparkle },
     { value: "plagiarism", label: "Review", icon: canAccessReview ? MagnifyingGlass : LockSimple },
+    { value: "humanizer", label: "Humanize", icon: canUseHumanizer ? PenNib : LockSimple },
     { value: "dashboard", label: "Stats", icon: ChartBar },
     { value: "saved", label: `Saved`, shortLabel: `${savedCount}`, icon: FolderOpen },
     { value: "timeline", label: "Timeline", icon: ClockCounterClockwise },

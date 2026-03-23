@@ -76,14 +76,21 @@ export function IdeaGeneration({ userId, user }: IdeaGenerationProps) {
       return { valid: false, reason: "Your input seems repetitive. Please describe a real business idea." }
     }
 
-    // Check for gibberish: too many non-dictionary-like patterns
+    // Check for gibberish: vowel absence, long consonant streaks, low vowel ratio
     const alphaWords = words.filter(w => /^[a-z]+$/.test(w))
-    if (alphaWords.length >= 4) {
-      const avgWordLen = alphaWords.reduce((sum, w) => sum + w.length, 0) / alphaWords.length
-      const longGibberish = alphaWords.filter(w => w.length > 15).length
-      if (avgWordLen > 12 || longGibberish > alphaWords.length * 0.5) {
-        return { valid: false, reason: "Your input doesn't appear to describe a meaningful business idea. Please try again." }
+    const vowelPattern = /[aeiouy]/i
+    const consonantStreak = /[^aeiouy\s\d]{5,}/i
+    let suspectWords = 0
+    for (const word of alphaWords) {
+      const hasVowel = vowelPattern.test(word)
+      const hasLongConsonants = consonantStreak.test(word)
+      const vowelRatio = (word.match(/[aeiouy]/gi) || []).length / word.length
+      if (!hasVowel || hasLongConsonants || vowelRatio < 0.1 || word.length > 18) {
+        suspectWords++
       }
+    }
+    if (alphaWords.length >= 3 && (suspectWords / alphaWords.length) > 0.5) {
+      return { valid: false, reason: "No meaningful context — please describe a real business idea, product, or service." }
     }
 
     // Check that input has at least 3 real words (length >= 2)

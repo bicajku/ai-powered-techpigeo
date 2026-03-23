@@ -47,10 +47,15 @@ export function UpgradePaywall({ user, feature }: UpgradePaywallProps) {
   const hasUsedTrial = !!trial?.requested
   const isTrialExhausted = !!trial?.exhausted
 
+  const welcomeBonus = user.subscription?.welcomeBonus
+  const isWelcomeBonusExpired = !!welcomeBonus?.granted && (
+    Date.now() > (welcomeBonus.expiresAt || 0) || (user.subscription?.proCredits || 0) <= 0
+  )
+
   const featureLabel = feature === "review" ? "Document Review" : "AI Humanizer"
   const featureDescription = feature === "review"
     ? "Plagiarism detection, AI content analysis, and document review require a Pro or Team subscription."
-    : "The AI Humanizer module requires a Pro or Team subscription with active credits."
+    : "The AI Humanizer module requires a Pro or Team subscription with active credits, or an active welcome bonus."
 
   const handleRequestTrial = async () => {
     setIsRequesting(true)
@@ -197,6 +202,14 @@ export function UpgradePaywall({ user, feature }: UpgradePaywallProps) {
               <Alert className="border-destructive/40 bg-destructive/5">
                 <AlertDescription className="text-sm">
                   Your free trial has been used. Upgrade to Pro or Team to continue using {featureLabel}.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {isWelcomeBonusExpired && (
+              <Alert className="border-destructive/40 bg-destructive/5">
+                <AlertDescription className="text-sm">
+                  Your welcome bonus has expired. Upgrade to Pro or Team to continue using {featureLabel}.
                 </AlertDescription>
               </Alert>
             )}

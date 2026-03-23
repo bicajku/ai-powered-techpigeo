@@ -51,7 +51,7 @@ export interface SavedStrategy {
 
 export type UserRole = "admin" | "client"
 
-export type SubscriptionPlan = "basic" | "pro" | "team"
+export type SubscriptionPlan = "basic" | "pro" | "team" | "enterprise"
 export type SubscriptionStatus = "active" | "inactive" | "grace"
 
 export interface TrialInfo {
@@ -61,6 +61,25 @@ export interface TrialInfo {
   submissionsUsed: number
   maxSubmissions: number
   exhausted: boolean
+}
+
+export interface WelcomeBonusInfo {
+  granted: boolean
+  grantedAt: number
+  creditsGranted: number
+  expiresAt: number
+}
+
+export type NGOAccessLevel = "user" | "contributor" | "owner"
+
+export interface NGOTeamMember {
+  id: string
+  email: string
+  fullName: string
+  accessLevel: NGOAccessLevel
+  addedBy: string
+  addedAt: number
+  lastActiveAt?: number
 }
 
 export type SubscriptionRequestType = "trial" | "upgrade"
@@ -89,6 +108,10 @@ export interface SubscriptionInfo {
   proCredits: number
   updatedAt: number
   trial?: TrialInfo
+  hasNgoModuleAccess?: boolean
+  ngoAccessLevel?: NGOAccessLevel
+  ngoTeamAdminId?: string
+  welcomeBonus?: WelcomeBonusInfo
 }
 
 export interface UserProfile {

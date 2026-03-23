@@ -1,4 +1,4 @@
-import { SubscriptionInfo, SubscriptionPlan, SubscriptionRequest, TrialInfo, UserProfile } from "@/types"
+import { NGOAccessLevel, SubscriptionInfo, SubscriptionPlan, SubscriptionRequest, TrialInfo, UserProfile, WelcomeBonusInfo } from "@/types"
 
 const USERS_STORAGE_KEY = "platform-users"
 const SUBSCRIPTION_REQUESTS_KEY = "subscription-requests"
@@ -50,21 +50,46 @@ export const PLAN_CONFIG = {
       "Admin dashboard for team leads",
     ],
   },
+  enterprise: {
+    name: "Enterprise",
+    price: 99,
+    priceLabel: "$99/month",
+    creditsPerMonth: 500,
+    maxExportsPerMonth: Infinity,
+    features: [
+      "Everything in Team",
+      "NGO-SAAS Module (exclusive)",
+      "Enterprise Project Workspace",
+      "Document & CSV Data Workspace",
+      "AI Reporting Engine",
+      "PDF / Word / Excel export with custom branding",
+      "Organization branding settings",
+      "500 review credits/month",
+      "Dedicated support",
+    ],
+  },
 } as const
 
 export const TRIAL_CREDITS = 10
 export const TRIAL_MAX_SUBMISSIONS = 3
+export const WELCOME_BONUS_CREDITS = 10
+export const WELCOME_BONUS_DURATION_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
 
 export interface FeatureEntitlements {
   isPro: boolean
   isTeam: boolean
+  isEnterprise: boolean
   isPaidPlan: boolean
   isSubscriptionActive: boolean
   canAccessReview: boolean
   canUseHumanizer: boolean
+  canAccessNGOSaaS: boolean
   proCreditsRemaining: number
   isTrialActive: boolean
   trialSubmissionsRemaining: number
+  isWelcomeBonusActive: boolean
+  welcomeBonusExpiresAt?: number
+  ngoAccessLevel: NGOAccessLevel | "admin" | null
 }
 
 export function getDefaultSubscription(): SubscriptionInfo {
@@ -87,6 +112,14 @@ export function ensureUserSubscription(user: UserProfile): UserProfile {
   }
 }
 
+export function checkWelcomeBonusActive(subscription: SubscriptionInfo): boolean {
+  const bonus = subscription.welcomeBonus
+  if (!bonus || !bonus.granted) return false
+  if (Date.now() > bonus.expiresAt) return false
+  if ((subscription.proCredits || 0) <= 0) return false
+  return true
+}
+
 export function getFeatureEntitlements(user: UserProfile): FeatureEntitlements {
   const safeUser = ensureUserSubscription(user)
   const subscription = safeUser.subscription || getDefaultSubscription()
@@ -94,7 +127,8 @@ export function getFeatureEntitlements(user: UserProfile): FeatureEntitlements {
 
   const isPro = subscription.plan === "pro"
   const isTeam = subscription.plan === "team"
-  const isPaidPlan = isPro || isTeam
+  const isEnterprise = subscription.plan === "enterprise"
+  const isPaidPlan = isPro || isTeam || isEnterprise
   const isSubscriptionActive = isPaidPlan
     ? subscription.status === "active" || subscription.status === "grace"
     : true
@@ -107,22 +141,44 @@ export function getFeatureEntitlements(user: UserProfile): FeatureEntitlements {
     ? Math.max(0, (trial?.maxSubmissions || 0) - (trial?.submissionsUsed || 0))
     : 0
 
-  // Review access: admin always, paid plans with active sub & credits, or active trial with remaining submissions
-  const canAccessReview = isAdmin || (isPaidPlan && isSubscriptionActive && credits > 0) || isTrialActive
+  const welcomeBonusActive = !isPaidPlan && subscription.plan === "basic"
+    ? checkWelcomeBonusActive(subscription)
+    : false
 
-  // Humanize: admin always, paid plans with active sub & credits
-  const canUseHumanizer = isAdmin || (isPaidPlan && isSubscriptionActive && credits > 0)
+  // Review access: admin always, paid plans with active sub & credits, active trial, or active welcome bonus
+  const canAccessReview = isAdmin || (isPaidPlan && isSubscriptionActive && credits > 0) || isTrialActive || welcomeBonusActive
+
+  // Humanize: admin always, paid plans with active sub & credits, or active welcome bonus
+  const canUseHumanizer = isAdmin || (isPaidPlan && isSubscriptionActive && credits > 0) || welcomeBonusActive
+
+  // NGO SaaS: strictly Enterprise tier, explicit module grant, or admin
+  const canAccessNGOSaaS =
+    isAdmin ||
+    (isEnterprise && isSubscriptionActive) ||
+    !!(subscription.hasNgoModuleAccess && isSubscriptionActive)
+
+  // NGO access level
+  const ngoAccessLevel: NGOAccessLevel | "admin" | null = isAdmin
+    ? "admin"
+    : subscription.hasNgoModuleAccess
+      ? (subscription.ngoAccessLevel || "user")
+      : null
 
   return {
     isPro,
     isTeam,
+    isEnterprise,
     isPaidPlan,
     isSubscriptionActive,
     canAccessReview,
     canUseHumanizer,
+    canAccessNGOSaaS,
     proCreditsRemaining: credits,
     isTrialActive,
     trialSubmissionsRemaining,
+    isWelcomeBonusActive: welcomeBonusActive,
+    welcomeBonusExpiresAt: subscription.welcomeBonus?.expiresAt,
+    ngoAccessLevel,
   }
 }
 
@@ -143,7 +199,7 @@ export async function consumeReviewCredit(userId: string): Promise<{ success: bo
       return { success: true, remainingCredits: subscription.proCredits || 0 }
     }
 
-    const isPaidPlan = subscription.plan === "pro" || subscription.plan === "team"
+    const isPaidPlan = subscription.plan === "pro" || subscription.plan === "team" || subscription.plan === "enterprise"
     const trial = subscription.trial
 
     // If on trial (basic plan with active trial)
@@ -220,6 +276,74 @@ export async function consumeReviewCredit(userId: string): Promise<{ success: bo
   }
 }
 
+// NGO Module credit consumption — delegates to team admin's credit pool
+export async function consumeNGOCredit(userId: string): Promise<{
+  success: boolean; remainingCredits: number; creditOwnerId: string; error?: string
+}> {
+  try {
+    const users = (await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
+    const user = users[userId]
+
+    if (!user) {
+      return { success: false, remainingCredits: 0, creditOwnerId: userId, error: "User not found" }
+    }
+
+    const safeUser = ensureUserSubscription(user)
+    const subscription = safeUser.subscription || getDefaultSubscription()
+
+    // Platform super-admin: always allowed, no credit consumed
+    if (safeUser.role === "admin") {
+      return { success: true, remainingCredits: subscription.proCredits || 0, creditOwnerId: userId }
+    }
+
+    // Determine credit owner: team members delegate to ngoTeamAdminId; owners use own pool
+    const creditOwnerId = subscription.ngoTeamAdminId || userId
+    const creditOwner = users[creditOwnerId]
+
+    if (!creditOwner) {
+      return { success: false, remainingCredits: 0, creditOwnerId, error: "NGO admin account not found. Contact your team owner." }
+    }
+
+    const ownerSafe = ensureUserSubscription(creditOwner)
+    const ownerSub = ownerSafe.subscription || getDefaultSubscription()
+
+    // Credit owner must be platform admin or on a paid plan
+    if (ownerSafe.role === "admin") {
+      return { success: true, remainingCredits: ownerSub.proCredits || 0, creditOwnerId }
+    }
+
+    const ownerIsPaidPlan = ownerSub.plan === "enterprise" || ownerSub.plan === "team" || ownerSub.plan === "pro"
+    if (!ownerIsPaidPlan) {
+      return { success: false, remainingCredits: 0, creditOwnerId, error: "NGO admin does not have a paid plan" }
+    }
+
+    if (!(ownerSub.status === "active" || ownerSub.status === "grace")) {
+      return { success: false, remainingCredits: ownerSub.proCredits || 0, creditOwnerId, error: "NGO admin subscription is not active" }
+    }
+
+    const currentCredits = Math.max(0, ownerSub.proCredits || 0)
+    if (currentCredits < 1) {
+      return { success: false, remainingCredits: 0, creditOwnerId, error: "NGO credit pool exhausted. Ask your NGO admin to add more credits." }
+    }
+
+    // Deduct 1 credit from the credit owner's pool
+    const remainingCredits = currentCredits - 1
+    users[creditOwnerId] = {
+      ...ownerSafe,
+      subscription: {
+        ...ownerSub,
+        proCredits: remainingCredits,
+        updatedAt: Date.now(),
+      },
+    }
+    await spark.kv.set(USERS_STORAGE_KEY, users)
+    return { success: true, remainingCredits, creditOwnerId }
+  } catch (error) {
+    console.error("Failed to consume NGO credit:", error)
+    return { success: false, remainingCredits: 0, creditOwnerId: userId, error: "Failed to consume NGO credit" }
+  }
+}
+
 // Keep for backward compatibility (Humanizer uses this)
 export async function consumeProCredits(userId: string, creditsToConsume: number): Promise<{ success: boolean; remainingCredits: number; error?: string }> {
   if (creditsToConsume <= 0) {
@@ -241,12 +365,13 @@ export async function consumeProCredits(userId: string, creditsToConsume: number
       return { success: true, remainingCredits: subscription.proCredits || 0 }
     }
 
-    const isPaidPlan = subscription.plan === "pro" || subscription.plan === "team"
-    if (!isPaidPlan) {
+    const isPaidPlan = subscription.plan === "pro" || subscription.plan === "team" || subscription.plan === "enterprise"
+    const welcomeBonusActive = checkWelcomeBonusActive(subscription)
+    if (!isPaidPlan && !welcomeBonusActive) {
       return { success: false, remainingCredits: subscription.proCredits || 0, error: "Pro or Team subscription required" }
     }
 
-    if (!(subscription.status === "active" || subscription.status === "grace")) {
+    if (isPaidPlan && !(subscription.status === "active" || subscription.status === "grace")) {
       return { success: false, remainingCredits: subscription.proCredits || 0, error: "Subscription is not active" }
     }
 
@@ -269,6 +394,43 @@ export async function consumeProCredits(userId: string, creditsToConsume: number
   } catch (error) {
     console.error("Failed to consume Pro credits:", error)
     return { success: false, remainingCredits: 0, error: "Failed to consume credits" }
+  }
+}
+
+export async function grantWelcomeBonus(userId: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const users = (await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
+    const user = users[userId]
+    if (!user) return { success: false, error: "User not found" }
+
+    const safeUser = ensureUserSubscription(user)
+    const subscription = safeUser.subscription || getDefaultSubscription()
+
+    if (subscription.welcomeBonus?.granted) {
+      return { success: false, error: "Welcome bonus already granted" }
+    }
+
+    const now = Date.now()
+    users[userId] = {
+      ...safeUser,
+      subscription: {
+        ...subscription,
+        proCredits: (subscription.proCredits || 0) + WELCOME_BONUS_CREDITS,
+        welcomeBonus: {
+          granted: true,
+          grantedAt: now,
+          creditsGranted: WELCOME_BONUS_CREDITS,
+          expiresAt: now + WELCOME_BONUS_DURATION_MS,
+        },
+        updatedAt: now,
+      },
+    }
+
+    await spark.kv.set(USERS_STORAGE_KEY, users)
+    return { success: true }
+  } catch (error) {
+    console.error("Failed to grant welcome bonus:", error)
+    return { success: false, error: "Failed to grant welcome bonus" }
   }
 }
 
@@ -375,7 +537,7 @@ export async function requestUpgrade(
 }
 
 // Keep for backward compatibility (used internally by admin approval)
-export async function upgradeToPlan(userId: string, plan: "pro" | "team"): Promise<{ success: boolean; credits: number; error?: string }> {
+export async function upgradeToPlan(userId: string, plan: "pro" | "team" | "enterprise"): Promise<{ success: boolean; credits: number; error?: string }> {
   try {
     const users = (await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
     const user = users[userId]
@@ -390,11 +552,11 @@ export async function upgradeToPlan(userId: string, plan: "pro" | "team"): Promi
     users[userId] = {
       ...safeUser,
       subscription: {
+        ...safeUser.subscription,
         plan,
         status: "active",
         proCredits: Math.max(0, initialCredits),
         updatedAt: Date.now(),
-        trial: safeUser.subscription?.trial,
       },
     }
 
@@ -407,7 +569,8 @@ export async function upgradeToPlan(userId: string, plan: "pro" | "team"): Promi
 }
 
 // Keep for backward compatibility
-export async function upgradeToPro(userId: string, initialCredits = 25): Promise<{ success: boolean; credits: number; error?: string }> {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function upgradeToPro(userId: string, _initialCredits = 25): Promise<{ success: boolean; credits: number; error?: string }> {
   return upgradeToPlan(userId, "pro")
 }
 
@@ -427,9 +590,9 @@ export async function addProCredits(userId: string, creditsToAdd: number): Promi
     const safeUser = ensureUserSubscription(user)
     const subscription = safeUser.subscription || getDefaultSubscription()
 
-    const isPaidPlan = subscription.plan === "pro" || subscription.plan === "team"
+    const isPaidPlan = subscription.plan === "pro" || subscription.plan === "team" || subscription.plan === "enterprise"
     if (!isPaidPlan) {
-      return { success: false, credits: subscription.proCredits || 0, error: "Upgrade to Pro or Team first" }
+      return { success: false, credits: subscription.proCredits || 0, error: "Upgrade to Pro, Team, or Enterprise first" }
     }
 
     const newCredits = Math.max(0, (subscription.proCredits || 0) + creditsToAdd)
@@ -524,7 +687,7 @@ export async function approveUpgradeRequest(requestId: string, adminEmail: strin
     }
 
     const request = requests[idx]
-    const targetPlan = request.targetPlan as "pro" | "team"
+    const targetPlan = request.targetPlan as "pro" | "team" | "enterprise"
 
     const upgradeResult = await upgradeToPlan(request.userId, targetPlan)
     if (!upgradeResult.success) {
@@ -615,7 +778,7 @@ export async function adminSetPlan(userId: string, plan: SubscriptionPlan): Prom
 
     const safeUser = ensureUserSubscription(user)
     const subscription = safeUser.subscription || getDefaultSubscription()
-    const credits = plan === "basic" ? 0 : (plan === "team" ? PLAN_CONFIG.team.creditsPerMonth : PLAN_CONFIG.pro.creditsPerMonth)
+    const credits = plan === "basic" ? 0 : (PLAN_CONFIG[plan]?.creditsPerMonth ?? PLAN_CONFIG.pro.creditsPerMonth)
 
     users[userId] = {
       ...safeUser,

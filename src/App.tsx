@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
-import { Sparkle, Lightbulb, ChatsCircle, Palette, Target, ArrowClockwise, FloppyDisk, FolderOpen, Code, Desktop, Database, DeviceMobile, ListChecks, ChartBar, ShieldCheck, MagnifyingGlass, CaretUpDown, Check, BookOpen, ClockCounterClockwise, ArrowsHorizontal, LockSimple, Lightning, SignIn, UserPlus, Brain } from "@phosphor-icons/react"
+import { Sparkle, Lightbulb, ChatsCircle, Palette, Target, ArrowClockwise, FloppyDisk, FolderOpen, Code, Desktop, Database, DeviceMobile, ListChecks, ChartBar, ShieldCheck, MagnifyingGlass, CaretUpDown, Check, BookOpen, ClockCounterClockwise, ArrowsHorizontal, LockSimple, Lightning, SignIn, UserPlus, Brain, HandHeart, PenNib } from "@phosphor-icons/react"
 import { UpgradePaywall } from "@/components/UpgradePaywall"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { ResultCard } from "@/components/ResultCard"
@@ -23,6 +23,7 @@ import { Footer } from "@/components/Footer"
 import { PlagiarismChecker } from "@/components/PlagiarismChecker"
 import { IdeaGeneration } from "@/components/IdeaGeneration"
 import { NGOModule } from "@/components/NGOModule"
+import { Humanizer } from "@/components/Humanizer"
 import { MobileNav } from "@/components/MobileNav"
 import faviconImg from "@/assets/images/favicon.png"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -157,7 +158,7 @@ function App() {
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [authMode, setAuthMode] = useState<"login" | "signup">("login")
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
-  const [showLandingPage, setShowLandingPage] = useState(false)
+  const [showLandingPage, setShowLandingPage] = useState(true)
   const [adminAllStrategies, setAdminAllStrategies] = useState<SavedStrategy[]>([])
   const resultsRef = useRef<HTMLDivElement>(null)
 
@@ -274,11 +275,65 @@ function App() {
     }
   }, [])
 
+  // Persist and restore activeTab across page reloads
+  useEffect(() => {
+    if (userIdForKV) {
+      const saved = window.localStorage.getItem(`app-active-tab-${userIdForKV}`)
+      if (saved) {
+        setActiveTab(saved)
+      }
+    }
+  }, [userIdForKV])
+
+  useEffect(() => {
+    if (userIdForKV) {
+      window.localStorage.setItem(`app-active-tab-${userIdForKV}`, activeTab)
+    }
+  }, [activeTab, userIdForKV])
+
+  // Persist and restore showLandingPage across page reloads
+  useEffect(() => {
+    if (userIdForKV) {
+      const saved = window.localStorage.getItem(`app-show-landing-page-${userIdForKV}`)
+      if (saved !== null) {
+        setShowLandingPage(saved === "true")
+      }
+    }
+  }, [userIdForKV])
+
+  useEffect(() => {
+    if (userIdForKV) {
+      window.localStorage.setItem(`app-show-landing-page-${userIdForKV}`, JSON.stringify(showLandingPage))
+    }
+  }, [showLandingPage, userIdForKV])
+
+  /** Detect gibberish / nonsensical input */
+  const isGibberish = (text: string): boolean => {
+    const words = text.trim().split(/\s+/).filter(w => w.length > 1)
+    if (words.length === 0) return true
+    const vowels = /[aeiouy]/i
+    const consonantStreak = /[^aeiouy\s\d]{5,}/i
+    let suspectWords = 0
+    for (const word of words) {
+      const clean = word.replace(/[^a-zA-Z]/g, "")
+      if (clean.length < 2) continue
+      const hasVowel = vowels.test(clean)
+      const hasLongConsonants = consonantStreak.test(clean)
+      const vowelRatio = (clean.match(/[aeiouy]/gi) || []).length / clean.length
+      if (!hasVowel || hasLongConsonants || vowelRatio < 0.1 || clean.length > 18) {
+        suspectWords++
+      }
+    }
+    const meaningfulWords = words.filter(w => w.replace(/[^a-zA-Z]/g, "").length >= 2)
+    if (meaningfulWords.length === 0) return true
+    return (suspectWords / meaningfulWords.length) > 0.5
+  }
+
   const isValidInput = description.trim().length >= 10
   const charCount = description.length
   const showCharCounter = charCount >= 900
   const entitlements = user ? getFeatureEntitlements(user) : null
-  const canAccessNGOSaaS = user?.role === "admin" || !!entitlements?.isTeam
+  const canAccessNGOSaaS = user?.role === "admin" || !!entitlements?.canAccessNGOSaaS
   const strategyPlan = entitlements?.isPaidPlan ? (entitlements.isTeam ? "team" : "pro") : "basic"
   const strategyPlanConfig = getStrategyPlanConfig(strategyPlan)
   const exportPlanConfig = getExportPlanConfig(strategyPlan)
@@ -699,6 +754,10 @@ ${JSON.stringify(candidate)}`
       toast.error("Please enter at least 10 characters")
       return
     }
+    if (isGibberish(description)) {
+      toast.error("No meaningful context — please describe a clear strategy topic, product, or business goal.")
+      return
+    }
 
     setIsLoading(true)
     setLoadingProgress(0)
@@ -742,7 +801,7 @@ ${JSON.stringify(candidate)}`
         workflowSteps.push({
           stage: attempt === 1 ? "draft" : "repair",
           status: "info",
-          message: `Generation attempt ${attempt} completed with ${modelUsed}.`,
+          message: `Generation attempt ${attempt} completed with Sentinel AI.`,
           timestamp: Date.now(),
         })
 
@@ -1005,7 +1064,7 @@ ${JSON.stringify(candidate)}`
   useEffect(() => {
     if (activeTab === "ngo-saas" && !canAccessNGOSaaS) {
       setActiveTab("generate")
-      toast.error("NGO-SAAS is available for Team plan and Super Admin only.")
+      toast.error("NGO-SAAS is available for Enterprise plan and Super Admin only.")
     }
   }, [activeTab, canAccessNGOSaaS])
 
@@ -1265,8 +1324,15 @@ ${JSON.stringify(candidate)}`
             {showExpandedWelcome && <WelcomeBanner user={user} />}
           </AnimatePresence>
 
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className={`hidden md:grid w-full max-w-5xl mx-auto mb-8 ${user.role === "admin" ? "grid-cols-8" : "grid-cols-6"}`}>
+          <Tabs
+            value={activeTab}
+            onValueChange={(tab) => {
+              setActiveTab(tab)
+              setShowLandingPage(false)
+            }}
+            className="w-full"
+          >
+            <TabsList className={`hidden md:grid w-full max-w-5xl mx-auto mb-8 ${user.role === "admin" ? "grid-cols-10" : canAccessNGOSaaS ? "grid-cols-8" : "grid-cols-7"}`}>
               <TabsTrigger value="generate" className="gap-2 text-sm">
                 <Lightbulb size={18} weight="bold" />
                 <span>Strategy</span>
@@ -1283,6 +1349,14 @@ ${JSON.stringify(candidate)}`
                 )}
                 <span>Review</span>
               </TabsTrigger>
+              <TabsTrigger value="humanizer" className="gap-2 text-sm">
+                {entitlements?.canUseHumanizer || user.role === "admin" ? (
+                  <PenNib size={18} weight="bold" />
+                ) : (
+                  <LockSimple size={18} weight="bold" className="text-muted-foreground" />
+                )}
+                <span>Humanizer</span>
+              </TabsTrigger>
               <TabsTrigger value="dashboard" className="gap-2 text-sm">
                 <ChartBar size={18} weight="bold" />
                 <span>Dashboard</span>
@@ -1295,6 +1369,12 @@ ${JSON.stringify(candidate)}`
                 <ClockCounterClockwise size={18} weight="bold" />
                 <span>Timeline</span>
               </TabsTrigger>
+              {canAccessNGOSaaS && (
+                <TabsTrigger value="ngo-saas" className="gap-2 text-sm">
+                  <HandHeart size={18} weight="bold" />
+                  <span>NGO-SAAS</span>
+                </TabsTrigger>
+              )}
               {user.role === "admin" && (
                 <TabsTrigger value="sentinel-brain" className="gap-2 text-sm">
                   <Brain size={18} weight="bold" />
@@ -1316,23 +1396,6 @@ ${JSON.stringify(candidate)}`
                 transition={{ duration: 0.5, delay: 0.1 }}
                 className="bg-card/80 backdrop-blur-sm rounded-2xl shadow-lg border border-border/50 p-6 md:p-8"
               >
-                {canAccessNGOSaaS && (
-                  <div className="mb-4 flex items-center justify-between rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <Target size={16} weight="bold" className="text-emerald-600" />
-                      <span className="text-sm font-medium text-foreground">NGO-SAAS Module</span>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="gap-2 border-emerald-400/40"
-                      onClick={() => setActiveTab("ngo-saas")}
-                    >
-                      <span>Open</span>
-                    </Button>
-                  </div>
-                )}
                 <label htmlFor="product-description" className="block text-sm font-semibold text-foreground mb-3 flex items-center justify-between">
                   <span>Describe your topic, product, or service</span>
                   <Button
@@ -2194,6 +2257,10 @@ ${JSON.stringify(candidate)}`
               <PlagiarismChecker user={user} />
             </TabsContent>
 
+            <TabsContent value="humanizer" className="space-y-6">
+              <Humanizer user={user} />
+            </TabsContent>
+
             <TabsContent value="dashboard" className="space-y-6">
               <Dashboard 
                 strategies={user.role === "admin" && adminAllStrategies.length > 0 ? adminAllStrategies : (savedStrategies || [])} 
@@ -2308,7 +2375,7 @@ ${JSON.stringify(candidate)}`
                         <div className="min-w-0">
                           <p className="text-sm font-medium text-foreground truncate">{run.description}</p>
                           <p className="text-xs text-muted-foreground">
-                            {new Date(run.timestamp).toLocaleString()} • {run.plan.toUpperCase()} • {run.conceptMode} • {run.modelUsed} • ${(
+                            {new Date(run.timestamp).toLocaleString()} • {run.plan.toUpperCase()} • {run.conceptMode} • Sentinel AI • ${(
                               run.estimatedCostCents / 100
                             ).toFixed(2)}
                           </p>
@@ -2337,7 +2404,7 @@ ${JSON.stringify(candidate)}`
                         <div key={run.id} className="rounded border border-border/50 p-3 space-y-2">
                           <p className="text-sm font-semibold text-foreground truncate">{run.description}</p>
                           <p className="text-xs text-muted-foreground">{new Date(run.timestamp).toLocaleString()}</p>
-                          <p className="text-xs text-muted-foreground">Plan: {run.plan.toUpperCase()} • Model: {run.modelUsed}</p>
+                          <p className="text-xs text-muted-foreground">Plan: {run.plan.toUpperCase()} • Engine: Sentinel AI</p>
                           <p className="text-xs text-muted-foreground">Workflow steps: {run.steps.length}</p>
                           <p className="text-xs text-muted-foreground">Marketing copy length: {run.resultSnapshot?.marketingCopy?.length || 0}</p>
                           <p className="text-xs text-muted-foreground">Checklist length: {run.resultSnapshot?.implementationChecklist?.length || 0}</p>
@@ -2369,6 +2436,7 @@ ${JSON.stringify(candidate)}`
           isAdmin={user.role === "admin"}
           savedCount={savedStrategies?.length || 0}
           canAccessReview={entitlements?.canAccessReview || user.role === "admin"}
+          canUseHumanizer={entitlements?.canUseHumanizer || user.role === "admin"}
         />
         
         <Footer />

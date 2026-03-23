@@ -1,5 +1,5 @@
 import { UserProfile } from "@/types"
-import { ensureUserSubscription, getDefaultSubscription } from "@/lib/subscription"
+import { ensureUserSubscription, getDefaultSubscription, grantWelcomeBonus } from "@/lib/subscription"
 
 const USERS_STORAGE_KEY = "platform-users"
 const CURRENT_USER_KEY = "current-user-id"
@@ -111,7 +111,7 @@ export const authService = {
       const userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
       const passwordHash = await simpleHash(password)
 
-      const newUser: UserProfile = {
+      let newUser: UserProfile = {
         id: userId,
         email: email.toLowerCase(),
         fullName: fullName,
@@ -132,6 +132,13 @@ export const authService = {
       await spark.kv.set(USER_CREDENTIALS_KEY, credentials)
       await spark.kv.set(USERS_STORAGE_KEY, users)
       await spark.kv.set(CURRENT_USER_KEY, userId)
+
+      // Auto-grant welcome bonus for new users
+      const bonusResult = await grantWelcomeBonus(userId)
+      if (bonusResult.success) {
+        const updatedUsers = await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
+        if (updatedUsers[userId]) newUser = updatedUsers[userId]
+      }
 
       return { success: true, user: newUser }
     } catch (error) {
@@ -244,6 +251,13 @@ export const authService = {
         
         users[githubUser.id] = user
         await spark.kv.set(USERS_STORAGE_KEY, users)
+
+        // Auto-grant welcome bonus for new GitHub users
+        const bonusResult = await grantWelcomeBonus(githubUser.id)
+        if (bonusResult.success) {
+          const updatedUsers = await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
+          if (updatedUsers[githubUser.id]) user = updatedUsers[githubUser.id]
+        }
       } else {
         user = ensureUserSubscription(existingUser)
         user.lastLoginAt = Date.now()

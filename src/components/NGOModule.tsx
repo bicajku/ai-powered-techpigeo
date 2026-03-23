@@ -1,8 +1,13 @@
-import { useState } from "react"
+import { useState, useRef, useEffect } from "react"
+import { v4 as uuidv4 } from "uuid"
+import type { Icon } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Separator } from "@/components/ui/separator"
 import {
   HandHeart,
   Target,
@@ -15,18 +20,38 @@ import {
   CheckCircle,
   Sparkle,
   Users,
+  FolderOpen,
+  FilePlus,
+  UploadSimple,
+  FileText,
+  FileCsv,
+  Download,
+  Buildings,
+  Palette,
+  Phone,
+  At,
+  MapPin,
+  FloppyDisk,
+  Trash,
+  UserPlus,
+  PencilSimple,
+  ShieldCheck,
+  Clock,
+  Seal,
 } from "@phosphor-icons/react"
 import { motion, AnimatePresence } from "framer-motion"
 import { toast } from "sonner"
 import { sentinelQuery } from "@/lib/sentinel-query-pipeline"
-import { consumeProCredits, consumeReviewCredit, getFeatureEntitlements } from "@/lib/subscription"
+import { consumeNGOCredit, getFeatureEntitlements } from "@/lib/subscription"
 import { isNeonConfigured } from "@/lib/neon-client"
 import { isGeminiConfigured } from "@/lib/gemini-client"
 import { isCopilotConfigured } from "@/lib/copilot-client"
 import { logQuery } from "@/lib/sentinel-brain"
-import { UserProfile } from "@/types"
+import { REPORT_BRAND } from "@/lib/report-branding"
+import { UserProfile, NGOTeamMember, NGOAccessLevel } from "@/types"
+import { getTeamMembers, addTeamMember, updateMemberAccess, removeMember, getNGOAccessLevel, canWrite, canDelete, canManageTeam } from "@/lib/ngo-team"
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// --- Types ---
 
 interface NGOResult {
   header: string
@@ -40,13 +65,40 @@ interface NGOResult {
 interface NGOAction {
   id: string
   label: string
-  icon: React.ComponentType<any>
+  icon: Icon
   description: string
   placeholder: string
   inputLabel: string
 }
 
-// ─── Action Definitions ───────────────────────────────────────────────────────
+interface EnterpriseProject {
+  id: string
+  name: string
+  description: string
+  createdAt: number
+}
+
+interface ProjectFile {
+  id: string
+  projectId: string
+  name: string
+  type: "document" | "csv" | "other"
+  size: number
+  content: string
+  uploadedAt: number
+}
+
+interface OrgSettings {
+  orgName: string
+  logoUrl: string
+  primaryColor: string
+  secondaryColor: string
+  phone: string
+  email: string
+  address: string
+}
+
+// --- Action Definitions ---
 
 const NGO_ACTIONS: NGOAction[] = [
   {
@@ -54,8 +106,7 @@ const NGO_ACTIONS: NGOAction[] = [
     label: "Grant Alignment",
     icon: Scroll,
     description: "Map your project to UN SDGs and generate a structured 5-section donor proposal.",
-    placeholder:
-      "Enter your project title, rough description, and target donor.\n\nExample:\nProject: Girls Digital Literacy in AJK\nDescription: Teaching coding and digital skills to 500 girls in rural AJK communities, ages 12-18.\nDonor: USAID / UN Women",
+    placeholder: "Enter your project title, rough description, and target donor.\n\nExample:\nProject: Girls Digital Literacy in AJK\nDescription: Teaching coding and digital skills to 500 girls in rural AJK communities, ages 12-18.\nDonor: USAID / UN Women",
     inputLabel: "Project Title + Description + Target Donor",
   },
   {
@@ -63,8 +114,7 @@ const NGO_ACTIONS: NGOAction[] = [
     label: "Impact Scan",
     icon: ChartBar,
     description: "Extract measurable Outputs vs Outcomes from past project reports and generate a LogFrame.",
-    placeholder:
-      "Paste your past project report or summary here.\n\nExample:\nOver 6 months we trained 200 women in tailoring. 150 completed the course. 80 are now self-employed. 30% reported income increase...",
+    placeholder: "Paste your past project report or summary here.\n\nExample:\nOver 6 months we trained 200 women in tailoring. 150 completed the course. 80 are now self-employed. 30% reported income increase...",
     inputLabel: "Past Project Report / Summary",
   },
   {
@@ -72,8 +122,7 @@ const NGO_ACTIONS: NGOAction[] = [
     label: "Ethical Narrative",
     icon: HandHeart,
     description: "Convert raw field notes into a donor-ready story with automatic PII anonymization.",
-    placeholder:
-      "Paste your raw field notes or beneficiary interviews here.\n\nExample:\nMet with Amina, 32, from village of Chakothi. She told us her husband lost his job in 2023. Her daughter Zara, 14, had to leave school...",
+    placeholder: "Paste your raw field notes or beneficiary interviews here.\n\nExample:\nMet with Amina, 32, from village of Chakothi...",
     inputLabel: "Raw Field Notes / Interview Transcripts",
   },
   {
@@ -81,8 +130,7 @@ const NGO_ACTIONS: NGOAction[] = [
     label: "Plain Language",
     icon: Translate,
     description: "Simplify complex policy or technical text to a 6th-grade reading level for communities.",
-    placeholder:
-      "Paste the technical policy, legal, or donor text you want simplified.\n\nExample:\nThe multi-dimensional poverty index (MPI) encompasses deprivations across health, education, and living standards dimensions using micro-data from household surveys...",
+    placeholder: "Paste the technical policy, legal, or donor text you want simplified.",
     inputLabel: "Technical / Policy Text to Simplify",
   },
   {
@@ -90,165 +138,158 @@ const NGO_ACTIONS: NGOAction[] = [
     label: "Donor Email",
     icon: EnvelopeSimple,
     description: "Generate 3 professionally crafted email variations: Cold Outreach, Follow-up, and Thank You.",
-    placeholder:
-      "Describe your organization, project, and donor context.\n\nExample:\nOrg: Glimpse Foundation (education NGO in AJK, Pakistan)\nProject: Solar-powered learning centers for 1,000 students\nDonor: Bill & Melinda Gates Foundation — we met at the Education Summit in Islamabad last month",
+    placeholder: "Describe your organization, project, and donor context.",
     inputLabel: "Organization + Project + Donor Context",
   },
 ]
 
-// ─── Prompt Builders ──────────────────────────────────────────────────────────
+// --- Storage keys ---
+
+const PROJECTS_KEY = "ngo-enterprise-projects"
+const FILES_KEY = "ngo-project-files"
+const ORG_SETTINGS_KEY = "ngo-org-settings"
+
+// --- KV helpers (spark.kv with localStorage fallback) ---
+
+async function kvGet<T>(key: string): Promise<T | undefined> {
+  try {
+    if (typeof spark !== "undefined" && spark.kv?.get) {
+      return await spark.kv.get<T>(key)
+    }
+  } catch (e) { console.warn("[NGOModule] spark.kv.get failed:", e) }
+  try {
+    const raw = localStorage.getItem(key)
+    return raw ? (JSON.parse(raw) as T) : undefined
+  } catch (e) {
+    console.warn("[NGOModule] localStorage.getItem failed:", e)
+    return undefined
+  }
+}
+
+async function kvSet<T>(key: string, value: T): Promise<void> {
+  try {
+    if (typeof spark !== "undefined" && spark.kv?.set) {
+      await spark.kv.set(key, value)
+    }
+  } catch (e) { console.warn("[NGOModule] spark.kv.set failed:", e) }
+  try {
+    localStorage.setItem(key, JSON.stringify(value))
+  } catch (e) { console.warn("[NGOModule] localStorage.setItem failed:", e) }
+}
+
+// --- Prompt Builders ---
 
 const PAKISTAN_AJK_CONTEXT = `
-Regional Context (MANDATORY — inject into every response):
+Regional Context (MANDATORY):
 - Region: Pakistan & Azad Jammu and Kashmir (AJK)
-- Local NGO compliance standards: SECP NPO registration, FBR exemption, PCP code of ethics
-- Socio-economic context: Post-flood recovery, high youth unemployment, girls' education barriers, digital divide in rural areas
-- Local terminology: Use "beneficiaries" not "users", "field officers" not "staff", "community" not "target population"
-- Currency: Pakistani Rupee (PKR) alongside USD for international donors
-- UN SDGs most relevant to Pakistan/AJK: SDG 1 (No Poverty), SDG 2 (Zero Hunger), SDG 3 (Health), SDG 4 (Quality Education), SDG 5 (Gender Equality), SDG 6 (Clean Water), SDG 13 (Climate Action)
+- Standards: SECP NPO registration, FBR exemption, PCP code of ethics
+- Context: Post-flood recovery, youth unemployment, girls education barriers
+- Terminology: "beneficiaries" not "users", "field officers" not "staff"
+- Currency: PKR alongside USD for international donors
+- Key SDGs: 1, 2, 3, 4, 5, 6, 13
 `
 
 function buildGrantPrompt(input: string): string {
   return `${PAKISTAN_AJK_CONTEXT}
 
-You are a senior grant writer for an international NGO. Generate a structured donor proposal based on the following information.
+You are a senior grant writer. Generate a structured donor proposal.
 
 INPUT:
 ${input}
 
-INSTRUCTIONS:
-1. Map to 2-4 relevant UN SDGs with specific targets
-2. Write a 5-section proposal:
-   - Executive Summary (150 words max)
-   - Problem Statement (with localized Pakistan/AJK statistics)
-   - Proposed Solution (with activities and timeline)
-   - Sustainability Plan (post-funding continuation)
-   - Budget Narrative (high-level cost categories in PKR and USD)
-3. Suggest 3-5 measurable KPIs
-4. Flag any ethical considerations
+Write a 5-section proposal (Executive Summary, Problem Statement, Proposed Solution, Sustainability Plan, Budget Narrative). Map to 2-4 UN SDGs. Suggest 3-5 KPIs. Flag ethical considerations.
 
-Respond ONLY with valid JSON matching this schema exactly:
+Respond ONLY with valid JSON:
 {
   "header": "Proposal title",
-  "mainContent": "Full 5-section proposal in Markdown with ## section headers",
-  "sdgTags": ["SDG X: Name — Target X.X"],
-  "ethicalWarnings": ["Any ethical flags or empty array"],
-  "suggestedKPIs": ["KPI 1", "KPI 2", "KPI 3"]
+  "mainContent": "Full proposal in Markdown",
+  "sdgTags": ["SDG X: Name"],
+  "ethicalWarnings": [],
+  "suggestedKPIs": ["KPI 1"]
 }`
 }
 
 function buildImpactPrompt(input: string): string {
   return `${PAKISTAN_AJK_CONTEXT}
 
-You are an M&E (Monitoring & Evaluation) specialist. Analyze the project report and create a structured LogFrame (Logical Framework Matrix).
+You are an M&E specialist. Analyze the project report and create a LogFrame Matrix.
 
 INPUT:
 ${input}
 
-INSTRUCTIONS:
-1. Extract clear Outputs (what was produced/delivered) vs Outcomes (changes in beneficiaries' lives)
-2. Create a LogFrame table in Markdown with columns: Level | Description | Indicator | Means of Verification | Assumptions
-3. Levels: Goal > Purpose > Outputs > Activities
-4. Identify data gaps or missing metrics
-5. Suggest 3-5 impact KPIs for future measurement
+Extract Outputs vs Outcomes. Create a LogFrame table: Level | Description | Indicator | Means of Verification | Assumptions.
 
-Respond ONLY with valid JSON matching this schema exactly:
+Respond ONLY with valid JSON:
 {
-  "header": "Impact Scan Report — [Project Name]",
-  "mainContent": "LogFrame analysis in Markdown including the table and commentary",
-  "sdgTags": ["Relevant SDG tags based on the project"],
-  "ethicalWarnings": ["Data gaps or missing attribution issues"],
-  "suggestedKPIs": ["KPI 1", "KPI 2", "KPI 3"]
+  "header": "Impact Scan Report",
+  "mainContent": "LogFrame in Markdown",
+  "sdgTags": [],
+  "ethicalWarnings": [],
+  "suggestedKPIs": []
 }`
 }
 
 function buildNarrativePrompt(input: string): string {
   return `${PAKISTAN_AJK_CONTEXT}
 
-You are a humanitarian storytelling specialist and ethical communications officer. Convert raw field notes into a compelling, human-centered story while protecting beneficiary privacy.
+You are a humanitarian storytelling specialist. Convert field notes to a donor story with PII anonymization.
 
 INPUT:
 ${input}
 
-INSTRUCTIONS:
-1. Write a compelling 3-paragraph story for a donor newsletter (400-500 words)
-2. MANDATORY PII SCAN: Identify and replace:
-   - Full names → [BENEFICIARY_1], [BENEFICIARY_2], etc.
-   - Village/location names → [COMMUNITY_LOCATION]
-   - Ages combined with identifying details → generalize
-   - Any other identifying information
-3. List every PII replacement in ethicalWarnings
-4. Preserve emotional authenticity while protecting privacy
-5. End with a forward-looking statement about impact
+Write a 3-paragraph story (400-500 words). Replace PII: names -> [BENEFICIARY_X], locations -> [COMMUNITY_LOCATION].
 
-Respond ONLY with valid JSON matching this schema exactly:
+Respond ONLY with valid JSON:
 {
-  "header": "Beneficiary Story — [Thematic Title]",
-  "mainContent": "The full anonymized story in Markdown",
-  "sdgTags": ["Relevant SDG tags"],
-  "ethicalWarnings": ["PII Detected: 'Original text' replaced with [PLACEHOLDER]"],
-  "suggestedKPIs": ["Story impact KPIs like 'Beneficiaries reached by publication'"]
+  "header": "Beneficiary Story",
+  "mainContent": "Anonymized story in Markdown",
+  "sdgTags": [],
+  "ethicalWarnings": ["PII replacements made"],
+  "suggestedKPIs": []
 }`
 }
 
 function buildOutreachPrompt(input: string): string {
   return `${PAKISTAN_AJK_CONTEXT}
 
-You are a plain language specialist. Simplify the following technical, legal, or policy text so it can be understood by a community member with a 6th-grade reading level in Pakistan/AJK.
+You are a plain language specialist. Simplify this text to 6th-grade reading level.
 
 INPUT:
 ${input}
 
-INSTRUCTIONS:
-1. Rewrite in simple, clear Pakistani English (or include Urdu equivalents for key terms in brackets)
-2. Break complex sentences into short ones (max 15 words each)
-3. Replace jargon with everyday words
-4. Use bullet points where possible
-5. Add a "What This Means For You" section at the end
-6. Preserve ALL key information — never remove important content, only simplify it
+Rewrite in simple Pakistani English. Max 15 words per sentence. Add "What This Means For You" section.
 
-Respond ONLY with valid JSON matching this schema exactly:
+Respond ONLY with valid JSON:
 {
-  "header": "Plain Language Version — [Topic]",
-  "mainContent": "The simplified content in Markdown",
-  "sdgTags": ["SDG 4: Quality Education", "SDG 16: Peace Justice and Strong Institutions"],
-  "ethicalWarnings": ["Any concerns about the original text's accuracy or completeness"],
-  "suggestedKPIs": ["Readability score improvement", "Community comprehension rate"]
+  "header": "Plain Language Version",
+  "mainContent": "Simplified content in Markdown",
+  "sdgTags": ["SDG 4: Quality Education"],
+  "ethicalWarnings": [],
+  "suggestedKPIs": []
 }`
 }
 
 function buildEmailPrompt(input: string): string {
   return `${PAKISTAN_AJK_CONTEXT}
 
-You are a fundraising communications expert. Generate 3 professional donor email variations.
+You are a fundraising expert. Generate 3 donor email variations.
 
 INPUT:
 ${input}
 
-INSTRUCTIONS:
-Generate exactly 3 email variations:
-1. Cold Outreach - First contact, build awareness and interest
-2. Follow-up - After initial contact or meeting, advance the relationship
-3. Thank You - Acknowledge a donation or meeting, strengthen the relationship
+Create: 1) Cold Outreach, 2) Follow-up, 3) Thank You. Each 150-250 words with subject line and CTA.
 
-Each email should:
-- Have a compelling subject line
-- Be 150-250 words
-- Have a clear call to action
-- Reference Pakistan/AJK regional context authentically
-- Be culturally appropriate for international donors
-
-Respond ONLY with valid JSON matching this schema exactly:
+Respond ONLY with valid JSON:
 {
-  "header": "Donor Email Suite — [Organization/Project Name]",
-  "mainContent": "Summary of the 3 email variations and communication strategy in Markdown",
-  "sdgTags": ["Relevant SDG tags for fundraising context"],
+  "header": "Donor Email Suite",
+  "mainContent": "Strategy summary in Markdown",
+  "sdgTags": [],
   "ethicalWarnings": [],
-  "suggestedKPIs": ["Email open rate target: 25%+", "Response rate target: 5%+", "Meeting conversion rate: 2%+"],
+  "suggestedKPIs": ["Open rate 25%+"],
   "emailVariants": [
-    {"type": "Cold Outreach", "subject": "Subject line here", "body": "Full email body"},
-    {"type": "Follow-up", "subject": "Subject line here", "body": "Full email body"},
-    {"type": "Thank You", "subject": "Subject line here", "body": "Full email body"}
+    {"type": "Cold Outreach", "subject": "...", "body": "..."},
+    {"type": "Follow-up", "subject": "...", "body": "..."},
+    {"type": "Thank You", "subject": "...", "body": "..."}
   ]
 }`
 }
@@ -264,22 +305,141 @@ function getPromptForAction(actionId: string, input: string): string {
   }
 }
 
-// ─── Response Parser ──────────────────────────────────────────────────────────
+// --- Response Parser ---
 
 function parseNGOResult(raw: unknown): NGOResult {
-  if (typeof raw === "object" && raw !== null) {
-    return raw as NGOResult
-  }
-  if (typeof raw !== "string") {
-    throw new Error("Unexpected response format")
-  }
+  if (typeof raw === "object" && raw !== null) return raw as NGOResult
+  if (typeof raw !== "string") throw new Error("Unexpected response format")
   let cleaned = raw.trim()
   if (cleaned.startsWith("```json")) cleaned = cleaned.replace(/^```json\s*/, "").replace(/```\s*$/, "")
   else if (cleaned.startsWith("```")) cleaned = cleaned.replace(/^```\s*/, "").replace(/```\s*$/, "")
   return JSON.parse(cleaned.trim()) as NGOResult
 }
 
-// ─── Main Component ───────────────────────────────────────────────────────────
+// --- Export helpers ---
+
+function getBrandForExport(org: OrgSettings | null) {
+  if (org?.orgName) {
+    return {
+      name: org.orgName,
+      primary: org.primaryColor || REPORT_BRAND.colors.primary,
+      secondary: org.secondaryColor || REPORT_BRAND.colors.secondary,
+      logo: org.logoUrl || "",
+      contact: [org.phone, org.email, org.address].filter(Boolean).join(" | "),
+    }
+  }
+  return {
+    name: REPORT_BRAND.companyName,
+    primary: REPORT_BRAND.colors.primary,
+    secondary: REPORT_BRAND.colors.secondary,
+    logo: "",
+    contact: REPORT_BRAND.contactLine,
+  }
+}
+
+function buildReportHtml(title: string, body: string, brand: ReturnType<typeof getBrandForExport>, options?: { status?: string; submittedBy?: string; category?: string }): string {
+  const logoHtml = brand.logo
+    ? `<img src="${brand.logo}" alt="${brand.name} logo" style="height:44px;object-fit:contain;" />`
+    : `<span style="font-size:20px;font-weight:700;color:${brand.primary};">${brand.name}</span>`
+  const dateStr = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })
+  const isSigned = options?.status === "signed"
+  const isApproved = options?.status === "approved" || isSigned
+  const categoryLabel = options?.category ? `<span style="display:inline-block;background:${brand.primary}15;color:${brand.primary};padding:2px 10px;border-radius:12px;font-size:11px;font-weight:600;letter-spacing:0.5px;border:1px solid ${brand.primary}30;">${options.category}</span>` : ""
+  const signatureBlock = isSigned
+    ? `<div style="margin-top:48px;padding-top:24px;border-top:1px solid #ddd;">
+        <div style="display:flex;justify-content:space-between;gap:48px;">
+          <div style="flex:1;">
+            <p style="font-size:11px;color:#6A5B5B;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Prepared By</p>
+            <p style="font-size:13px;font-weight:600;">${options?.submittedBy || "—"}</p>
+            <p style="font-size:11px;color:#999;">${dateStr}</p>
+          </div>
+          <div style="flex:1;">
+            <p style="font-size:11px;color:#6A5B5B;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Approved & Signed By</p>
+            <div style="border-bottom:2px solid ${brand.primary};width:200px;margin-bottom:6px;padding-bottom:24px;"></div>
+            <p style="font-size:11px;color:#999;">CEO / Manager · ${brand.name}</p>
+            <p style="font-size:11px;color:#999;">${dateStr}</p>
+          </div>
+        </div>
+      </div>`
+    : isApproved
+    ? `<div style="margin-top:48px;padding-top:24px;border-top:1px solid #ddd;">
+        <p style="font-size:11px;color:#6A5B5B;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Status: Approved</p>
+        <p style="font-size:13px;font-weight:600;">${options?.submittedBy || "—"} · ${dateStr}</p>
+      </div>`
+    : ""
+  return `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>${title}</title>
+<style>
+  @page { margin: 48px; }
+  body{font-family:Inter,Calibri,sans-serif;padding:48px;max-width:960px;margin:0 auto;color:#1C1414;line-height:1.8;}
+  .header{border-bottom:3px solid ${brand.primary};padding-bottom:16px;margin-bottom:28px;display:flex;justify-content:space-between;align-items:center;}
+  .header-right{text-align:right;font-size:11px;color:#6A5B5B;line-height:1.6;}
+  h1{color:${brand.primary};margin-top:0;font-size:22px;line-height:1.3;}
+  h2{color:${brand.secondary};border-left:4px solid ${brand.primary};padding-left:10px;margin-top:28px;font-size:16px;}
+  h3{color:${brand.primary};font-size:14px;margin-top:20px;}
+  .meta{display:flex;align-items:center;gap:12px;margin-bottom:24px;flex-wrap:wrap;}
+  .meta-date{font-size:12px;color:#6A5B5B;}
+  .content{white-space:pre-wrap;line-height:1.8;font-size:13px;}
+  .footer{margin-top:56px;border-top:2px solid ${brand.primary};padding-top:16px;text-align:center;font-size:11px;color:#6A5B5B;}
+  .footer p{margin:2px 0;}
+  .confidential{font-size:10px;color:#999;text-transform:uppercase;letter-spacing:1px;margin-top:8px;}
+</style>
+</head><body>
+  <div class="header">
+    <div>${logoHtml}</div>
+    <div class="header-right">
+      ${brand.contact ? `<p>${brand.contact}</p>` : ""}
+      <p>${dateStr}</p>
+      ${isSigned ? '<p style="color:#059669;font-weight:600;">✓ SIGNED</p>' : isApproved ? '<p style="color:#2563eb;font-weight:600;">✓ APPROVED</p>' : ""}
+    </div>
+  </div>
+  <h1>${title}</h1>
+  <div class="meta">${categoryLabel}<span class="meta-date">${dateStr}</span></div>
+  <div class="content">${body}</div>
+  ${signatureBlock}
+  <div class="footer">
+    <p><strong>${brand.name}</strong></p>
+    <p>Generated by Sentinel AI · ${dateStr}</p>
+    <p class="confidential">Confidential — For authorized use only</p>
+  </div>
+</body></html>`
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement("a")
+  a.href = url; a.download = filename
+  document.body.appendChild(a); a.click()
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url) }, 500)
+}
+
+async function exportAsPDF(title: string, body: string, org: OrgSettings | null, options?: { status?: string; submittedBy?: string; category?: string }) {
+  const brand = getBrandForExport(org)
+  const html = buildReportHtml(title, body, brand, options)
+  const { default: jsPDF } = await import("jspdf")
+  const doc = new jsPDF({ unit: "pt", format: "a4" })
+  await doc.html(html, { x: 0, y: 0, width: 595, windowWidth: 960 })
+  doc.save(`${title.replace(/\s+/g, "-")}.pdf`)
+}
+
+function exportAsWord(title: string, body: string, org: OrgSettings | null, options?: { status?: string; submittedBy?: string; category?: string }) {
+  const brand = getBrandForExport(org)
+  const html = buildReportHtml(title, body, brand, options)
+  const blob = new Blob(["\ufeff", html], { type: "application/msword" })
+  downloadBlob(blob, `${title.replace(/\s+/g, "-")}.doc`)
+}
+
+function exportAsExcel(title: string, rows: string[][], org: OrgSettings | null) {
+  const brand = getBrandForExport(org)
+  const colSpan = rows[0]?.length || 1
+  const headerRow = `<tr><th colspan="${colSpan}" style="background:${brand.primary};color:#fff;padding:8px;">${title} — ${brand.name}</th></tr>`
+  const dataRows = rows.map(row => `<tr>${row.map(cell => `<td style="border:1px solid #ddd;padding:6px;">${cell}</td>`).join("")}</tr>`).join("")
+  const html = `<html><head><meta charset="UTF-8"></head><body><table style="border-collapse:collapse;width:100%;">${headerRow}${dataRows}</table></body></html>`
+  const blob = new Blob(["\ufeff", html], { type: "application/vnd.ms-excel" })
+  downloadBlob(blob, `${title.replace(/\s+/g, "-")}.xls`)
+}
+
+// --- Main Component ---
 
 interface NGOModuleProps {
   userId: string
@@ -287,6 +447,7 @@ interface NGOModuleProps {
 }
 
 export function NGOModule({ userId, user }: NGOModuleProps) {
+  // AI Actions state
   const [activeAction, setActiveAction] = useState<string>("grant")
   const [input, setInput] = useState("")
   const [isLoading, setIsLoading] = useState(false)
@@ -294,8 +455,60 @@ export function NGOModule({ userId, user }: NGOModuleProps) {
   const [error, setError] = useState<string | null>(null)
   const [copiedEmail, setCopiedEmail] = useState<number | null>(null)
 
+  // Projects state
+  const [projects, setProjects] = useState<EnterpriseProject[]>([])
+  const [projectsLoaded, setProjectsLoaded] = useState(false)
+  const [newProjectName, setNewProjectName] = useState("")
+  const [newProjectDesc, setNewProjectDesc] = useState("")
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
+
+  // Files state
+  const [projectFiles, setProjectFiles] = useState<ProjectFile[]>([])
+  const [filesLoaded, setFilesLoaded] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Reports state
+  const [reportTitle, setReportTitle] = useState("")
+  const [reportBody, setReportBody] = useState("")
+  const [reportGenerating, setReportGenerating] = useState(false)
+  const [savedReports, setSavedReports] = useState<{
+    id: string; title: string; body: string; createdAt: number;
+    category?: string;
+    status?: "draft" | "pending_approval" | "approved" | "signed";
+    submittedBy?: string;
+  }[]>([])
+  const [reportsLoaded, setReportsLoaded] = useState(false)
+
+  // Org settings state
+  const [orgSettings, setOrgSettings] = useState<OrgSettings>({
+    orgName: "", logoUrl: "", primaryColor: "#5CC3EB", secondaryColor: "#8CB499",
+    phone: "", email: "", address: "",
+  })
+  const [orgLoaded, setOrgLoaded] = useState(false)
+  const [orgSaving, setOrgSaving] = useState(false)
+
+  // Knowledge Base files for AI context
+  const [uploadedKBFiles, setUploadedKBFiles] = useState<ProjectFile[]>([])
+  const [uploadingKBFile, setUploadingKBFile] = useState(false)
+  const [stateRestored, setStateRestored] = useState(false)
+  const kbFileInputRef = useRef<HTMLInputElement>(null)
+
+  // Team management
+  const [teamMembers, setTeamMembers] = useState<NGOTeamMember[]>([])
+  const [teamLoaded, setTeamLoaded] = useState(false)
+  const [newMemberEmail, setNewMemberEmail] = useState("")
+  const [newMemberPassword, setNewMemberPassword] = useState("")
+  const [newMemberName, setNewMemberName] = useState("")
+  const [newMemberLevel, setNewMemberLevel] = useState<NGOAccessLevel>("user")
+  const [addingMember, setAddingMember] = useState(false)
+  const [editingMemberId, setEditingMemberId] = useState<string | null>(null)
+
   const entitlements = user ? getFeatureEntitlements(user) : null
-  const canAccessNGOModule = user?.role === "admin" || !!entitlements?.isTeam
+  const canAccessNGOModule = user?.role === "admin" || !!entitlements?.canAccessNGOSaaS
+  const accessLevel = getNGOAccessLevel(user)
+  const hasWriteAccess = canWrite(accessLevel)
+  const hasDeleteAccess = canDelete(accessLevel)
+  const hasTeamAccess = canManageTeam(accessLevel)
 
   const currentAction = NGO_ACTIONS.find((a) => a.id === activeAction) ?? NGO_ACTIONS[0]
   const neonReady = isNeonConfigured()
@@ -303,42 +516,119 @@ export function NGOModule({ userId, user }: NGOModuleProps) {
   const copilotReady = isCopilotConfigured()
   const sparkReady = typeof spark !== "undefined" && typeof spark.llm === "function"
 
+  // Load helpers
+
+  const loadProjects = async () => {
+    if (projectsLoaded) return
+    const data = await kvGet<EnterpriseProject[]>(`${PROJECTS_KEY}-${userId}`)
+    setProjects(data || [])
+    setProjectsLoaded(true)
+  }
+
+  const loadFiles = async () => {
+    if (filesLoaded) return
+    const data = await kvGet<ProjectFile[]>(`${FILES_KEY}-${userId}`)
+    setProjectFiles(data || [])
+    setFilesLoaded(true)
+  }
+
+  const loadOrgSettings = async () => {
+    if (orgLoaded) return
+    const data = await kvGet<OrgSettings>(`${ORG_SETTINGS_KEY}-${userId}`)
+    if (data) setOrgSettings(data)
+    setOrgLoaded(true)
+  }
+
+  const loadTeam = async () => {
+    if (teamLoaded) return
+    try {
+      const members = await getTeamMembers(userId)
+      setTeamMembers(members)
+    } catch { /* ignore */ }
+    setTeamLoaded(true)
+  }
+
+  const loadReports = async () => {
+    if (reportsLoaded) return
+    const data = await kvGet<typeof savedReports>(`ngo-reports-${userId}`)
+    setSavedReports(data || [])
+    setReportsLoaded(true)
+  }
+
+  // Persist NGO Module State
+  useEffect(() => {
+    const loadNGOState = async () => {
+      const saved = await kvGet<{ activeAction: string; input: string; uploadedKBFiles: ProjectFile[] }>(
+        `ngo-module-state-${userId}`
+      )
+      if (saved) {
+        if (saved.activeAction) setActiveAction(saved.activeAction)
+        if (saved.input) setInput(saved.input)
+        if (saved.uploadedKBFiles?.length) setUploadedKBFiles(saved.uploadedKBFiles)
+      }
+      setStateRestored(true)
+    }
+    loadNGOState()
+  }, [userId])
+
+  useEffect(() => {
+    if (!stateRestored) return
+    const saveNGOState = async () => {
+      await kvSet(`ngo-module-state-${userId}`, {
+        activeAction,
+        input,
+        uploadedKBFiles,
+      })
+    }
+    saveNGOState()
+  }, [activeAction, input, uploadedKBFiles, userId, stateRestored])
+
   const handleActionChange = (actionId: string) => {
-    setActiveAction(actionId)
-    setInput("")
-    setResult(null)
-    setError(null)
+    setActiveAction(actionId); setInput(""); setResult(null); setError(null)
+  }
+
+  /** Detect gibberish / nonsensical input */
+  const isGibberish = (text: string): boolean => {
+    const words = text.trim().split(/\s+/).filter(w => w.length > 1)
+    if (words.length === 0) return true
+    const vowels = /[aeiouy]/i
+    const consonantStreak = /[^aeiouy\s\d]{5,}/i
+    let suspectWords = 0
+    for (const word of words) {
+      const clean = word.replace(/[^a-zA-Z]/g, "")
+      if (clean.length < 2) continue
+      const hasVowel = vowels.test(clean)
+      const hasLongConsonants = consonantStreak.test(clean)
+      const vowelRatio = (clean.match(/[aeiouy]/gi) || []).length / clean.length
+      if (!hasVowel || hasLongConsonants || vowelRatio < 0.1 || clean.length > 18) {
+        suspectWords++
+      }
+    }
+    const meaningfulWords = words.filter(w => w.replace(/[^a-zA-Z]/g, "").length >= 2)
+    if (meaningfulWords.length === 0) return true
+    return (suspectWords / meaningfulWords.length) > 0.5
   }
 
   const handleGenerate = async () => {
-    if (!user) {
-      toast.error("Please sign in to use the NGO module.")
-      return
-    }
-    if (!canAccessNGOModule) {
-      toast.error("NGO-SAAS is available for Team plan and Super Admin only.")
-      return
-    }
-    if (input.trim().length < 30) {
-      toast.error("Please provide more detail (at least 30 characters).")
-      return
-    }
+    if (!user) { toast.error("Please sign in to use the NGO module."); return }
+    if (!canAccessNGOModule) { toast.error("NGO-SAAS is available for Enterprise plan and Super Admin only."); return }
+    if (input.trim().length < 20) { toast.error("Please provide more detail (at least 20 characters)."); return }
+    if (isGibberish(input)) { toast.error("No meaningful context — please specify according to core actions."); return }
 
-    setIsLoading(true)
-    setError(null)
-    setResult(null)
-
+    setIsLoading(true); setError(null); setResult(null)
     try {
-      // Deduct 1 credit
-      const creditResult = await consumeReviewCredit(user.id)
-      if (!creditResult.success) {
-        toast.error(creditResult.error ?? "You've used all your credits. Please upgrade your plan.")
-        setIsLoading(false)
-        return
+      // Credit check — skip gracefully if spark.kv user lookup fails
+      try {
+        const creditResult = await consumeNGOCredit(user.id)
+        if (!creditResult.success && creditResult.error !== "User not found") {
+          toast.error(creditResult.error ?? "You've used all your credits. Please upgrade your plan.")
+          setIsLoading(false); return
+        }
+      } catch {
+        // spark.kv unavailable — allow generation to proceed
       }
-
-      const prompt = getPromptForAction(activeAction, input)
-
+      let prompt = getPromptForAction(activeAction, input)
+      prompt += getKBContext()
       const res = await sentinelQuery(prompt, {
         module: "ngo_module",
         userId: typeof user.id === "number" ? user.id : undefined,
@@ -351,11 +641,8 @@ export function NGOModule({ userId, user }: NGOModuleProps) {
           throw new Error("Spark fallback unavailable")
         },
       })
-
       const parsed = parseNGOResult(res.response)
       setResult(parsed)
-
-      // Log to Neon if available
       if (neonReady) {
         await logQuery({
           module: "ngo_module",
@@ -364,34 +651,340 @@ export function NGOModule({ userId, user }: NGOModuleProps) {
           response_json: parsed as unknown as Record<string, unknown>,
           providers_used: res.providers,
           brain_hits: res.brainHits,
-        }).catch(() => {/* silent */})
+        }).catch(() => { /* silent */ })
       }
-
       toast.success(`${currentAction.label} generated successfully!`)
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Generation failed. Please try again."
-      setError(msg)
-      toast.error(msg)
+      setError(msg); toast.error(msg)
     } finally {
       setIsLoading(false)
     }
   }
 
-  const copyToClipboard = async (text: string, idx?: number) => {
-    await navigator.clipboard.writeText(text)
-    if (idx !== undefined) {
-      setCopiedEmail(idx)
-      setTimeout(() => setCopiedEmail(null), 2000)
-    } else {
-      toast.success("Copied to clipboard!")
+  // Projects handlers
+
+  const handleCreateProject = async () => {
+    if (!newProjectName.trim()) { toast.error("Project name is required."); return }
+    const project: EnterpriseProject = {
+      id: uuidv4(), name: newProjectName.trim(),
+      description: newProjectDesc.trim(), createdAt: Date.now(),
+    }
+    const updated = [...projects, project]
+    setProjects(updated)
+    await kvSet(`${PROJECTS_KEY}-${userId}`, updated)
+    setNewProjectName(""); setNewProjectDesc("")
+    toast.success(`Project "${project.name}" created.`)
+  }
+
+  const handleDeleteProject = async (id: string) => {
+    const updated = projects.filter((p) => p.id !== id)
+    setProjects(updated)
+    await kvSet(`${PROJECTS_KEY}-${userId}`, updated)
+    if (selectedProjectId === id) setSelectedProjectId(null)
+    toast.success("Project deleted.")
+  }
+
+  // Files handlers
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files || files.length === 0) return
+    if (!selectedProjectId) { toast.error("Select a project first."); return }
+    const newFiles: ProjectFile[] = []
+    for (const file of Array.from(files)) {
+      const content = await file.text().catch(() => "")
+      const ext = file.name.split(".").pop()?.toLowerCase() || ""
+      const type: ProjectFile["type"] =
+        ["doc", "docx", "pdf", "txt", "md"].includes(ext) ? "document" :
+        ["csv", "xls", "xlsx"].includes(ext) ? "csv" : "other"
+      newFiles.push({ id: uuidv4(), projectId: selectedProjectId, name: file.name, type, size: file.size, content, uploadedAt: Date.now() })
+    }
+    const updated = [...projectFiles, ...newFiles]
+    setProjectFiles(updated)
+    await kvSet(`${FILES_KEY}-${userId}`, updated)
+    toast.success(`${newFiles.length} file(s) uploaded.`)
+    if (fileInputRef.current) fileInputRef.current.value = ""
+  }
+
+  const handleDeleteFile = async (id: string) => {
+    const updated = projectFiles.filter((f) => f.id !== id)
+    setProjectFiles(updated)
+    await kvSet(`${FILES_KEY}-${userId}`, updated)
+    toast.success("File removed.")
+  }
+
+  // Reports handlers
+
+  const handleGenerateReport = async () => {
+    if (!reportTitle.trim()) { toast.error("Report title is required."); return }
+    if (!user) { toast.error("Please sign in."); return }
+    const files = selectedProjectId ? projectFiles.filter((f) => f.projectId === selectedProjectId) : []
+    const context = files.length > 0
+      ? `\n\nContext from uploaded files:\n${files.map((f) => `[${f.name}]:\n${f.content.substring(0, 800)}`).join("\n\n")}`
+      : ""
+    const prompt = `${PAKISTAN_AJK_CONTEXT}
+Write a concise project summary report titled "${reportTitle}".${context}
+
+Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommendations, Next Steps. 2-4 paragraphs each.`
+    setReportGenerating(true)
+    try {
+      const creditResult = await consumeNGOCredit(user.id)
+      if (!creditResult.success) { toast.error(creditResult.error ?? "No credits remaining."); return }
+      const res = await sentinelQuery(prompt, {
+        module: "ngo_module",
+        userId: typeof user.id === "number" ? user.id : undefined,
+        skipCache: false,
+        sparkFallback: async () => {
+          if (typeof spark !== "undefined" && typeof spark.llm === "function") {
+            return await spark.llm(prompt, "gpt-4o", false) as string
+          }
+          throw new Error("Spark fallback unavailable")
+        },
+      })
+      const body = typeof res.response === "string" ? res.response : JSON.stringify(res.response, null, 2)
+      setReportBody(body)
+      const isOwnerOrAdmin = hasDeleteAccess
+      const newReport = {
+        id: uuidv4(), title: reportTitle, body, createdAt: Date.now(),
+        category: "Project Report",
+        status: isOwnerOrAdmin ? "draft" as const : "pending_approval" as const,
+        submittedBy: user?.fullName || user?.email || userId,
+      }
+      const updated = [newReport, ...savedReports]
+      setSavedReports(updated)
+      await kvSet(`ngo-reports-${userId}`, updated)
+      if (isOwnerOrAdmin) {
+        toast.success("Report generated and saved.")
+      } else {
+        toast.success("Report generated and sent to CEO / Manager for approval & sign")
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Report generation failed.")
+    } finally {
+      setReportGenerating(false)
     }
   }
 
-  const clearAll = () => {
-    setInput("")
-    setResult(null)
-    setError(null)
+  // Org Settings handlers
+
+  const handleSaveOrgSettings = async () => {
+    setOrgSaving(true)
+    try {
+      await kvSet(`${ORG_SETTINGS_KEY}-${userId}`, orgSettings)
+      toast.success("Organization settings saved.")
+    } catch {
+      toast.error("Failed to save settings.")
+    } finally {
+      setOrgSaving(false)
+    }
   }
+
+  // --- Team Management Handlers ---
+  const handleAddMember = async () => {
+    if (!newMemberEmail || !newMemberPassword || !newMemberName) {
+      toast.error("Please fill all fields: name, email, and password.")
+      return
+    }
+    setAddingMember(true)
+    try {
+      const result = await addTeamMember(userId, newMemberEmail, newMemberPassword, newMemberName, newMemberLevel)
+      if (result.success && result.member) {
+        setTeamMembers(prev => [...prev, result.member!])
+        setNewMemberEmail("")
+        setNewMemberPassword("")
+        setNewMemberName("")
+        setNewMemberLevel("user")
+        toast.success(`${result.member.fullName} added as ${result.member.accessLevel}`)
+      } else {
+        toast.error(result.error || "Failed to add member")
+      }
+    } catch {
+      toast.error("Failed to add team member")
+    } finally {
+      setAddingMember(false)
+    }
+  }
+
+  const handleUpdateMemberLevel = async (memberId: string, level: NGOAccessLevel) => {
+    const result = await updateMemberAccess(userId, memberId, level)
+    if (result.success) {
+      setTeamMembers(prev => prev.map(m => m.id === memberId ? { ...m, accessLevel: level } : m))
+      setEditingMemberId(null)
+      toast.success("Access level updated")
+    } else {
+      toast.error(result.error || "Failed to update access level")
+    }
+  }
+
+  const handleRemoveMember = async (memberId: string, memberName: string) => {
+    const result = await removeMember(userId, memberId)
+    if (result.success) {
+      setTeamMembers(prev => prev.filter(m => m.id !== memberId))
+      toast.success(`${memberName} removed from team`)
+    } else {
+      toast.error(result.error || "Failed to remove member")
+    }
+  }
+
+  const handleDeleteReport = async (reportId: string) => {
+    const updated = savedReports.filter(r => r.id !== reportId)
+    setSavedReports(updated)
+    await kvSet(`ngo-reports-${userId}`, updated)
+    toast.success("Report deleted")
+  }
+
+  const [editingReportId, setEditingReportId] = useState<string | null>(null)
+  const [editReportBody, setEditReportBody] = useState("")
+
+  const handleEditReport = (report: { id: string; title: string; body: string }) => {
+    setEditingReportId(report.id)
+    setEditReportBody(report.body)
+  }
+
+  const handleSaveEditedReport = async () => {
+    if (!editingReportId) return
+    const updated = savedReports.map(r => r.id === editingReportId ? { ...r, body: editReportBody } : r)
+    setSavedReports(updated)
+    await kvSet(`ngo-reports-${userId}`, updated)
+    setEditingReportId(null)
+    setEditReportBody("")
+    toast.success("Report updated")
+  }
+
+  const handleApproveReport = async (reportId: string) => {
+    const updated = savedReports.map(r => r.id === reportId ? { ...r, status: "approved" as const } : r)
+    setSavedReports(updated)
+    await kvSet(`ngo-reports-${userId}`, updated)
+    toast.success("Report approved")
+  }
+
+  const handleSignReport = async (reportId: string) => {
+    const report = savedReports.find(r => r.id === reportId)
+    if (!report) return
+    const signerName = user?.fullName || user?.email || "CEO / Manager"
+    const dateStr = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })
+    const orgName = orgLoaded && orgSettings.orgName ? orgSettings.orgName : "Sentinel AI"
+    const signatureBlock = `\n\n────────────────────────────────\nSIGNED & APPROVED\n\nSignatory: ${signerName}\nOrganization: ${orgName}\nDate: ${dateStr}\nStatus: Officially Signed\n────────────────────────────────`
+    const signedBody = report.body + signatureBlock
+    const updated = savedReports.map(r => r.id === reportId ? { ...r, body: signedBody, status: "signed" as const } : r)
+    setSavedReports(updated)
+    await kvSet(`ngo-reports-${userId}`, updated)
+    toast.success("Report signed — signature added and available for all users")
+  }
+
+  const copyToClipboard = async (text: string, idx?: number) => {
+    await navigator.clipboard.writeText(text)
+    if (idx !== undefined) { setCopiedEmail(idx); setTimeout(() => setCopiedEmail(null), 2000) }
+    else { toast.success("Copied to clipboard!") }
+  }
+
+  const clearAll = () => { setInput(""); setResult(null); setError(null) }
+
+  const handleSaveResult = async () => {
+    if (!result) return
+    const title = `[${currentAction.label}] ${result.header}`
+    const body = result.mainContent + (result.suggestedKPIs?.length ? `\n\nKPIs:\n${result.suggestedKPIs.join("\n")}` : "")
+    const isOwnerOrAdmin = hasDeleteAccess
+    const newReport = {
+      id: uuidv4(), title, body, createdAt: Date.now(),
+      category: currentAction.label,
+      status: isOwnerOrAdmin ? "draft" as const : "pending_approval" as const,
+      submittedBy: user?.fullName || user?.email || userId,
+    }
+    const updated = [newReport, ...savedReports]
+    setSavedReports(updated)
+    await kvSet(`ngo-reports-${userId}`, updated)
+    if (isOwnerOrAdmin) {
+      toast.success(`"${result.header}" saved to Reports under ${currentAction.label}`)
+    } else {
+      toast.success(`"${result.header}" saved and sent to CEO / Manager for approval & sign`)
+    }
+  }
+
+  // Knowledge Base file handlers
+
+  const handleKBFileSelect = async (files: FileList | null) => {
+    if (!files || files.length === 0) return
+    setUploadingKBFile(true)
+    try {
+      const file = files[0]
+      const MAX_SIZE_MB = 10
+      if (file.size > MAX_SIZE_MB * 1024 * 1024) {
+        toast.error(`File size must be less than ${MAX_SIZE_MB}MB`)
+        return
+      }
+
+      const allowedExtensions = [".txt", ".csv", ".md", ".json", ".pdf", ".doc", ".docx", ".xls", ".xlsx"]
+      const ext = file.name.toLowerCase().substring(file.name.lastIndexOf("."))
+      if (!allowedExtensions.includes(ext)) {
+        toast.error("Supported: TXT, CSV, MD, JSON, PDF, DOC, DOCX, XLS, XLSX")
+        return
+      }
+
+      // Text-readable formats: extract content directly
+      const textExtensions = [".txt", ".csv", ".md", ".json"]
+      let content: string
+      let fileType: ProjectFile["type"] = "other"
+
+      if (textExtensions.includes(ext)) {
+        content = await file.text()
+        fileType = ext === ".csv" ? "csv" : "document"
+      } else {
+        // Binary formats (PDF, DOCX, XLSX): store metadata as context
+        content = `[Binary file: ${file.name} · ${(file.size / 1024).toFixed(1)} KB · Uploaded ${new Date().toLocaleDateString()}]\nNote: Binary file content cannot be extracted in-browser. Use this file as a reference in your prompt description.`
+        fileType = "document"
+        toast.info(`"${file.name}" added as reference — describe its contents in the text box for best AI results.`)
+      }
+
+      const truncatedContent = content.length > 5000 ? content.substring(0, 5000) + "\n[... content truncated ...]" : content
+
+      const newFile: ProjectFile = {
+        id: uuidv4(),
+        projectId: "kb",
+        name: file.name,
+        type: fileType,
+        size: file.size,
+        content: truncatedContent,
+        uploadedAt: Date.now(),
+      }
+
+      const updated = [...uploadedKBFiles, newFile]
+      setUploadedKBFiles(updated)
+      await kvSet(`ngo-kb-files-${userId}`, updated)
+      if (textExtensions.includes(ext)) {
+        toast.success(`"${file.name}" added to knowledge base`)
+      }
+    } catch (err) {
+      toast.error("Failed to upload file. Please try again.")
+      console.error("KB file upload error:", err)
+    } finally {
+      setUploadingKBFile(false)
+      if (kbFileInputRef.current) kbFileInputRef.current.value = ""
+    }
+  }
+
+  const handleRemoveKBFile = async (fileId: string) => {
+    const updated = uploadedKBFiles.filter(f => f.id !== fileId)
+    setUploadedKBFiles(updated)
+    await kvSet(`ngo-kb-files-${userId}`, updated)
+    toast.success("File removed from knowledge base")
+  }
+
+  const getKBContext = (): string => {
+    if (uploadedKBFiles.length === 0) return ""
+    const escapedContent = uploadedKBFiles.map(f => {
+      const escaped = f.content
+        .replace(/\\/g, "\\\\")
+        .replace(/"/g, '\\"')
+        .replace(/\n/g, "\\n")
+        .replace(/\r/g, "\\r")
+      return `File: ${f.name}\n${escaped}`
+    }).join("\n\n")
+    return `\n\nREFERENCE MATERIALS FROM KNOWLEDGE BASE:\n${escapedContent}`
+  }
+
+  // Access guard
 
   if (!canAccessNGOModule) {
     return (
@@ -401,12 +994,18 @@ export function NGOModule({ userId, user }: NGOModuleProps) {
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">
-            This module is reserved for social sector and NGO organizations and is available only on the Team plan and Super Admin access.
+            This module is reserved for social sector and NGO organizations and is available only on the{" "}
+            <strong>Enterprise plan</strong> or with explicit module access granted by a Super Admin.
           </p>
         </CardContent>
       </Card>
     )
   }
+
+  const selectedProject = projects.find((p) => p.id === selectedProjectId)
+  const projectFilesForSelected = selectedProjectId
+    ? projectFiles.filter((f) => f.projectId === selectedProjectId)
+    : []
 
   return (
     <div className="flex flex-col gap-6">
@@ -416,341 +1015,813 @@ export function NGOModule({ userId, user }: NGOModuleProps) {
           <Users size={24} weight="bold" className="text-emerald-500" />
         </div>
         <div>
-          <h2 className="text-xl font-bold text-foreground">NGO-SAAS Module</h2>
+          <h2 className="text-xl font-bold text-foreground">NGO-SAAS Enterprise Module</h2>
           <p className="text-sm text-muted-foreground">
-            Sentinel Social — AI-powered tools for NGOs, nonprofits & social sector organizations in Pakistan & AJK
+            Sentinel Social — AI workspace for NGOs & nonprofits in Pakistan & AJK
           </p>
         </div>
         {(geminiReady || copilotReady || sparkReady || neonReady) && (
           <div className="ml-auto flex flex-wrap gap-2">
-            {geminiReady && (
-              <Badge variant="outline" className="text-xs text-emerald-600 border-emerald-400/40 bg-emerald-500/5">
-                Gemini 2.5 Flash
-              </Badge>
-            )}
-            {copilotReady && (
-              <Badge variant="outline" className="text-xs text-violet-600 border-violet-400/40 bg-violet-500/5">
-                Copilot Bridge
-              </Badge>
-            )}
-            {sparkReady && (
-              <Badge variant="outline" className="text-xs text-amber-600 border-amber-400/40 bg-amber-500/5">
-                Spark Fallback
-              </Badge>
-            )}
-            {neonReady && (
-              <Badge variant="outline" className="text-xs text-blue-600 border-blue-400/40 bg-blue-500/5">
-                Neon Logging
-              </Badge>
-            )}
+            <Badge variant="outline" className="text-xs text-emerald-600 border-emerald-400/40 bg-emerald-500/5">
+              Sentinel AI {[geminiReady, copilotReady, sparkReady].filter(Boolean).length > 1 ? "Multi-Engine" : "Active"}
+            </Badge>
+            {neonReady && <Badge variant="outline" className="text-xs text-blue-600 border-blue-400/40 bg-blue-500/5">Analytics</Badge>}
           </div>
         )}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-6">
-        {/* ── Sidebar: Action Selector ── */}
-        <div className="flex flex-col gap-2">
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1 mb-1">
-            5 Core Actions
-          </p>
-          {NGO_ACTIONS.map((action) => {
-            const Icon = action.icon
-            const isActive = action.id === activeAction
-            return (
-              <button
-                key={action.id}
-                onClick={() => handleActionChange(action.id)}
-                className={`w-full text-left rounded-xl border p-3.5 transition-all duration-200 group ${
-                  isActive
-                    ? "bg-emerald-500/10 border-emerald-500/30 shadow-sm"
-                    : "bg-card border-border hover:border-emerald-400/30 hover:bg-emerald-500/5"
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`p-1.5 rounded-lg transition-colors ${
-                      isActive ? "bg-emerald-500/20" : "bg-muted group-hover:bg-emerald-500/10"
-                    }`}
-                  >
-                    <Icon
-                      size={18}
-                      weight="bold"
-                      className={isActive ? "text-emerald-500" : "text-muted-foreground group-hover:text-emerald-500"}
-                    />
-                  </div>
-                  <div className="min-w-0">
-                    <p className={`text-sm font-semibold ${isActive ? "text-emerald-700 dark:text-emerald-400" : "text-foreground"}`}>
-                      {action.label}
-                    </p>
-                    <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{action.description}</p>
-                  </div>
-                </div>
-              </button>
-            )
-          })}
+      {/* Enterprise Tabs */}
+      <Tabs defaultValue="ai-actions" className="w-full">
+        <TabsList className="flex flex-wrap h-auto gap-1 bg-muted/50 p-1 rounded-xl">
+          <TabsTrigger value="ai-actions" className="gap-1.5 text-xs"><Sparkle size={14} weight="fill" /> AI Actions</TabsTrigger>
+          <TabsTrigger value="projects" className="gap-1.5 text-xs" onClick={loadProjects}><FolderOpen size={14} weight="bold" /> Projects</TabsTrigger>
+          <TabsTrigger value="data-workspace" className="gap-1.5 text-xs" onClick={() => { loadProjects(); loadFiles() }}><UploadSimple size={14} weight="bold" /> Data Workspace</TabsTrigger>
+          <TabsTrigger value="reports" className="gap-1.5 text-xs" onClick={() => { loadProjects(); loadFiles(); loadReports() }}><FileText size={14} weight="bold" /> Reports</TabsTrigger>
+          <TabsTrigger value="export" className="gap-1.5 text-xs" onClick={() => { loadReports(); loadOrgSettings() }}><Download size={14} weight="bold" /> Export</TabsTrigger>
+          <TabsTrigger value="org-settings" className="gap-1.5 text-xs" onClick={loadOrgSettings}><Buildings size={14} weight="bold" /> Org Settings</TabsTrigger>
+          {hasTeamAccess && (
+            <TabsTrigger value="team" className="gap-1.5 text-xs" onClick={loadTeam}><Users size={14} weight="bold" /> Team</TabsTrigger>
+          )}
+        </TabsList>
 
-          {/* Credits note */}
-          <div className="mt-3 rounded-xl border border-amber-400/20 bg-amber-500/5 p-3">
-            <p className="text-xs text-amber-700 dark:text-amber-400 font-medium flex items-center gap-1.5">
-              <Sparkle size={14} weight="fill" />
-              1 credit per generation
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Outputs are logged to your Neon DB with status <code className="text-xs bg-muted px-1 rounded">ngo_module</code>.
-            </p>
-          </div>
-        </div>
-
-        {/* ── Main Editor ── */}
-        <div className="flex flex-col gap-4">
-          <Card className="border-border/50 shadow-sm">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold flex items-center gap-2">
-                {(() => { const Icon = currentAction.icon; return <Icon size={18} weight="bold" className="text-emerald-500" /> })()}
-                {currentAction.label}
-              </CardTitle>
-              <p className="text-sm text-muted-foreground">{currentAction.description}</p>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                  {currentAction.inputLabel}
-                </label>
-                <Textarea
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder={currentAction.placeholder}
-                  className="min-h-[180px] text-sm resize-y font-mono"
-                  disabled={isLoading}
-                />
-                <p className="text-xs text-muted-foreground mt-1.5">
-                  {input.length} chars · Minimum 30 characters required
+        {/* Tab: AI Actions */}
+        <TabsContent value="ai-actions" className="mt-4">
+          <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-6">
+            <div className="flex flex-col gap-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1 mb-1">5 Core Actions</p>
+              {NGO_ACTIONS.map((action) => {
+                const Icon = action.icon
+                const isActive = action.id === activeAction
+                return (
+                  <button key={action.id} onClick={() => handleActionChange(action.id)}
+                    className={`w-full text-left rounded-xl border p-3.5 transition-all duration-200 group ${isActive ? "bg-emerald-500/10 border-emerald-500/30 shadow-sm" : "bg-card border-border hover:border-emerald-400/30 hover:bg-emerald-500/5"}`}>
+                    <div className="flex items-center gap-3">
+                      <div className={`p-1.5 rounded-lg transition-colors ${isActive ? "bg-emerald-500/20" : "bg-muted group-hover:bg-emerald-500/10"}`}>
+                        <Icon size={18} weight="bold" className={isActive ? "text-emerald-500" : "text-muted-foreground group-hover:text-emerald-500"} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className={`text-sm font-semibold ${isActive ? "text-emerald-700 dark:text-emerald-400" : "text-foreground"}`}>{action.label}</p>
+                        <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{action.description}</p>
+                      </div>
+                    </div>
+                  </button>
+                )
+              })}
+              <div className="mt-3 rounded-xl border border-amber-400/20 bg-amber-500/5 p-3">
+                <p className="text-xs text-amber-700 dark:text-amber-400 font-medium flex items-center gap-1.5">
+                  <Sparkle size={14} weight="fill" /> 1 credit per generation
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Outputs logged to Neon DB with status <code className="text-xs bg-muted px-1 rounded">ngo_module</code>.
                 </p>
               </div>
+            </div>
 
-              <div className="flex items-center gap-3">
-                <Button
-                  onClick={handleGenerate}
-                  disabled={isLoading || input.trim().length < 30}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2"
-                >
-                  {isLoading ? (
-                    <>
-                      <ArrowClockwise size={16} weight="bold" className="animate-spin" />
-                      Generating…
-                    </>
-                  ) : (
-                    <>
-                      <Sparkle size={16} weight="fill" />
-                      Generate with Sentinel AI
-                    </>
-                  )}
-                </Button>
-                {(result || error) && (
-                  <Button variant="ghost" size="sm" onClick={clearAll} className="text-muted-foreground">
-                    <ArrowClockwise size={14} weight="bold" className="mr-1.5" />
-                    Clear
-                  </Button>
+            <div className="flex flex-col gap-4">
+              <Card className="border-border/50 shadow-sm">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base font-semibold flex items-center gap-2">
+                    {(() => { const Icon = currentAction.icon; return <Icon size={18} weight="bold" className="text-emerald-500" /> })()}
+                    {currentAction.label}
+                  </CardTitle>
+                  <p className="text-sm text-muted-foreground">{currentAction.description}</p>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="border-b border-border/50 pb-4">
+                    <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Knowledge Base Files (Optional)</label>
+                    <div className="flex items-center gap-2 mb-3">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="gap-2 text-xs border-emerald-400/40 hover:bg-emerald-500/10"
+                        onClick={() => kbFileInputRef.current?.click()}
+                        disabled={uploadingKBFile}
+                      >
+                        <UploadSimple size={14} weight="bold" />
+                        {uploadingKBFile ? "Uploading..." : "Add File"}
+                      </Button>
+                      <input
+                        ref={kbFileInputRef}
+                        type="file"
+                        accept=".txt,.csv,.md,.json,.pdf,.doc,.docx,.xls,.xlsx"
+                        onChange={(e) => handleKBFileSelect(e.target.files)}
+                        className="hidden"
+                      />
+                      <p className="text-xs text-muted-foreground">TXT, CSV, MD, JSON, PDF, DOC, XLSX · Max 10MB</p>
+                    </div>
+                    {uploadedKBFiles.length > 0 && (
+                      <div className="space-y-2">
+                        {uploadedKBFiles.map((file) => (
+                          <div key={file.id} className="space-y-2">
+                            <div className="flex items-center justify-between rounded-lg border border-emerald-400/20 bg-emerald-500/5 px-3 py-2">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-medium text-foreground truncate">{file.name}</p>
+                                <p className="text-xs text-muted-foreground">{(file.size / 1024).toFixed(1)} KB · {file.content.length} chars</p>
+                              </div>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0 text-red-500 hover:bg-red-500/10"
+                                onClick={() => handleRemoveKBFile(file.id)}
+                              >
+                                <Trash size={14} weight="bold" />
+                              </Button>
+                            </div>
+                            <div className="rounded-lg border border-emerald-300/20 bg-emerald-50 dark:bg-emerald-950/30 p-3 max-h-32 overflow-y-auto">
+                              <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 mb-2">Preview:</p>
+                              <p className="text-xs text-foreground whitespace-pre-wrap font-mono leading-relaxed">{file.content.substring(0, 300)}{file.content.length > 300 ? "...[truncated]" : ""}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider">{currentAction.inputLabel}</label>
+                      {uploadedKBFiles.length > 0 && (
+                        <Badge variant="outline" className="text-xs bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-400/30 gap-1.5">
+                          <FolderOpen size={12} />
+                          {uploadedKBFiles.length} file{uploadedKBFiles.length > 1 ? "s" : ""} loaded
+                        </Badge>
+                      )}
+                    </div>
+                    <Textarea value={input} onChange={(e) => setInput(e.target.value)} placeholder={currentAction.placeholder} className="min-h-[180px] text-sm resize-y font-mono" disabled={isLoading} />
+                    <div className="flex items-center justify-between mt-1.5">
+                      <p className="text-xs text-muted-foreground">{input.length} chars · Minimum 20 characters</p>
+                      {uploadedKBFiles.length > 0 && (
+                        <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">✓ KB context will be included</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Button onClick={handleGenerate} disabled={isLoading || input.trim().length < 20} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2">
+                      {isLoading ? <><ArrowClockwise size={16} weight="bold" className="animate-spin" />Generating…</> : <><Sparkle size={16} weight="fill" />Generate with Sentinel AI</>}
+                    </Button>
+                    {(result || error) && (
+                      <Button variant="ghost" size="sm" onClick={clearAll} className="text-muted-foreground">
+                        <ArrowClockwise size={14} weight="bold" className="mr-1.5" />Clear
+                      </Button>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <AnimatePresence>
+                {isLoading && (
+                  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
+                    className="rounded-xl border border-emerald-400/20 bg-emerald-500/5 p-6 flex items-center gap-4">
+                    <div className="w-8 h-8 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
+                    <div>
+                      <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">Sentinel AI is generating your {currentAction.label}…</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Applying Pakistan & AJK regional context · SDG alignment · Ethical review</p>
+                    </div>
+                  </motion.div>
                 )}
+              </AnimatePresence>
+
+              <AnimatePresence>
+                {error && !isLoading && (
+                  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                    className="rounded-xl border border-red-400/30 bg-red-500/5 p-4 flex items-start gap-3">
+                    <Warning size={20} weight="bold" className="text-red-500 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-semibold text-red-700 dark:text-red-400">Generation Failed</p>
+                      <p className="text-xs text-muted-foreground mt-1">{error}</p>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <AnimatePresence>
+                {result && !isLoading && (
+                  <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle size={18} weight="fill" className="text-emerald-500" />
+                        <h3 className="font-semibold text-foreground">{result.header}</h3>
+                      </div>
+                      <div className="flex flex-wrap gap-2 shrink-0">
+                        <Button variant="outline" size="sm" onClick={handleSaveResult} className="text-xs gap-1.5 border-emerald-400/40 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10">
+                          <FloppyDisk size={14} weight="bold" />Save
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => copyToClipboard(result.mainContent)} className="text-xs gap-1.5">
+                          <CheckCircle size={14} />Copy
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => exportAsPDF(result.header, result.mainContent, orgSettings)} className="text-xs gap-1.5">
+                          <Download size={14} />PDF
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => exportAsWord(result.header, result.mainContent, orgSettings)} className="text-xs gap-1.5">
+                          <Download size={14} />Word
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => exportAsExcel(result.header, [[result.mainContent]], orgSettings)} className="text-xs gap-1.5">
+                          <Download size={14} />Excel
+                        </Button>
+                      </div>
+                    </div>
+                    {result.sdgTags && result.sdgTags.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {result.sdgTags.map((tag, i) => (
+                          <Badge key={i} variant="outline" className="text-xs text-emerald-700 dark:text-emerald-400 border-emerald-400/30 bg-emerald-500/5">{tag}</Badge>
+                        ))}
+                      </div>
+                    )}
+                    {result.ethicalWarnings && result.ethicalWarnings.length > 0 && (
+                      <Card className="border-amber-400/30 bg-amber-500/5">
+                        <CardContent className="p-4">
+                          <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 flex items-center gap-1.5 mb-2"><Warning size={14} weight="fill" />Ethical Flags & PII Notes</p>
+                          <ul className="space-y-1">
+                            {result.ethicalWarnings.map((w, i) => (
+                              <li key={i} className="text-xs text-amber-800 dark:text-amber-300 flex items-start gap-1.5"><span className="text-amber-500 mt-0.5">•</span>{w}</li>
+                            ))}
+                          </ul>
+                        </CardContent>
+                      </Card>
+                    )}
+                    <Card className="border-border/50">
+                      <CardContent className="p-5">
+                        <div className="prose prose-sm dark:prose-invert max-w-none text-sm leading-relaxed" style={{ whiteSpace: "pre-wrap" }}>
+                          {result.mainContent}
+                        </div>
+                      </CardContent>
+                    </Card>
+                    {result.emailVariants && result.emailVariants.length > 0 && (
+                      <div className="space-y-3">
+                        <p className="text-sm font-semibold text-foreground flex items-center gap-2">
+                          <EnvelopeSimple size={16} weight="bold" className="text-emerald-500" />3 Email Variations
+                        </p>
+                        {result.emailVariants.map((variant, i) => (
+                          <Card key={i} className="border-border/50">
+                            <CardContent className="p-4 space-y-3">
+                              <div className="flex items-center justify-between">
+                                <Badge variant="outline" className={`text-xs ${i === 0 ? "text-blue-600 border-blue-400/30 bg-blue-500/5" : i === 1 ? "text-purple-600 border-purple-400/30 bg-purple-500/5" : "text-emerald-600 border-emerald-400/30 bg-emerald-500/5"}`}>{variant.type}</Badge>
+                                <Button variant="ghost" size="sm" className="text-xs h-7" onClick={() => copyToClipboard(`Subject: ${variant.subject}\n\n${variant.body}`, i)}>
+                                  {copiedEmail === i ? <><CheckCircle size={12} weight="fill" className="mr-1 text-emerald-500" />Copied!</> : "Copy Email"}
+                                </Button>
+                              </div>
+                              <div>
+                                <p className="text-xs font-semibold text-muted-foreground mb-1">Subject Line</p>
+                                <p className="text-sm font-medium text-foreground bg-muted/50 rounded-lg px-3 py-2">{variant.subject}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs font-semibold text-muted-foreground mb-1">Email Body</p>
+                                <div className="text-sm text-foreground bg-muted/30 rounded-lg px-3 py-2 whitespace-pre-wrap leading-relaxed">{variant.body}</div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    )}
+                    {result.suggestedKPIs && result.suggestedKPIs.length > 0 && (
+                      <Card className="border-border/50 bg-card/50">
+                        <CardContent className="p-4">
+                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                            <Target size={14} weight="bold" />Suggested KPIs
+                          </p>
+                          <ul className="space-y-1.5">
+                            {result.suggestedKPIs.map((kpi, i) => (
+                              <li key={i} className="text-sm text-foreground flex items-start gap-2">
+                                <CheckCircle size={14} weight="fill" className="text-emerald-500 shrink-0 mt-0.5" />{kpi}
+                              </li>
+                            ))}
+                          </ul>
+                        </CardContent>
+                      </Card>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
+        </TabsContent>
+
+        {/* Tab: Projects */}
+        <TabsContent value="projects" className="mt-4 space-y-6">
+          {hasWriteAccess && (
+            <Card className="border-border/50">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-semibold flex items-center gap-2">
+                  <FilePlus size={18} weight="bold" className="text-emerald-500" />Create New Project
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Input placeholder="Project name *" value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} />
+                <Textarea placeholder="Short description (optional)" value={newProjectDesc} onChange={(e) => setNewProjectDesc(e.target.value)} className="min-h-[80px] text-sm" />
+                <Button onClick={handleCreateProject} disabled={!newProjectName.trim()} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2">
+                  <FilePlus size={16} weight="bold" />Create Project
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+          {!hasWriteAccess && (
+            <div className="rounded-xl border border-amber-400/20 bg-amber-500/5 p-3">
+              <p className="text-xs text-amber-700 dark:text-amber-400 font-medium">Read-only access — project creation requires Contributor or higher</p>
+            </div>
+          )}
+          <div className="space-y-3">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Your Projects ({projects.length})</p>
+            {projects.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">No projects yet. Create your first project above.</div>
+            ) : (
+              projects.map((p) => (
+                <Card key={p.id} className={`border-border/50 cursor-pointer transition-all ${selectedProjectId === p.id ? "border-emerald-500/40 bg-emerald-500/5" : "hover:border-emerald-400/20"}`}
+                  onClick={() => setSelectedProjectId(p.id === selectedProjectId ? null : p.id)}>
+                  <CardContent className="p-4 flex items-start justify-between gap-4">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <FolderOpen size={16} weight="bold" className="text-emerald-500 shrink-0" />
+                        <p className="text-sm font-semibold text-foreground truncate">{p.name}</p>
+                      </div>
+                      {p.description && <p className="text-xs text-muted-foreground line-clamp-2">{p.description}</p>}
+                      <p className="text-xs text-muted-foreground mt-1.5">
+                        ID: <code className="bg-muted px-1 rounded text-xs">{p.id}</code>{" · "}{new Date(p.createdAt).toLocaleDateString()}
+                      </p>
+                    </div>
+                    {hasDeleteAccess && (
+                      <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-600 hover:bg-red-50 shrink-0"
+                        onClick={(e) => { e.stopPropagation(); handleDeleteProject(p.id) }}>
+                        <Trash size={14} weight="bold" />
+                      </Button>
+                    )}
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </div>
+        </TabsContent>
+
+        {/* Tab: Data Workspace */}
+        <TabsContent value="data-workspace" className="mt-4 space-y-6">
+          <Card className="border-border/50">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <UploadSimple size={18} weight="bold" className="text-emerald-500" />Upload Files
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Select Project</label>
+                <select className="w-full text-sm rounded-lg border border-border bg-background px-3 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                  value={selectedProjectId || ""} onChange={(e) => setSelectedProjectId(e.target.value || null)}>
+                  <option value="">— Select a project —</option>
+                  {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+              <div className="rounded-xl border-2 border-dashed border-border bg-muted/30 p-8 text-center">
+                <UploadSimple size={32} weight="bold" className="text-muted-foreground mx-auto mb-3" />
+                <p className="text-sm text-muted-foreground mb-3">Upload proposal templates, reports, or CSV/Excel data files</p>
+                <input ref={fileInputRef} type="file" multiple accept=".doc,.docx,.pdf,.txt,.md,.csv,.xls,.xlsx" className="hidden" onChange={handleFileUpload} />
+                <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={!selectedProjectId || !hasWriteAccess} className="gap-2">
+                  <UploadSimple size={14} weight="bold" />Choose Files
+                </Button>
+                {!selectedProjectId && <p className="text-xs text-amber-600 mt-2">Select a project first</p>}
+                {selectedProjectId && !hasWriteAccess && <p className="text-xs text-amber-600 mt-2">Read-only access — file upload requires Contributor or higher</p>}
               </div>
             </CardContent>
           </Card>
-
-          {/* ── Loading State ── */}
-          <AnimatePresence>
-            {isLoading && (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="rounded-xl border border-emerald-400/20 bg-emerald-500/5 p-6 flex items-center gap-4"
-              >
-                <div className="w-8 h-8 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
-                <div>
-                  <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">
-                    Sentinel AI is generating your {currentAction.label}…
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Applying Pakistan & AJK regional context · SDG alignment · Ethical review
-                  </p>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* ── Error State ── */}
-          <AnimatePresence>
-            {error && !isLoading && (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-                className="rounded-xl border border-red-400/30 bg-red-500/5 p-4 flex items-start gap-3"
-              >
-                <Warning size={20} weight="bold" className="text-red-500 shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm font-semibold text-red-700 dark:text-red-400">Generation Failed</p>
-                  <p className="text-xs text-muted-foreground mt-1">{error}</p>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* ── Result ── */}
-          <AnimatePresence>
-            {result && !isLoading && (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-                className="space-y-4"
-              >
-                {/* Result Header */}
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle size={18} weight="fill" className="text-emerald-500" />
-                    <h3 className="font-semibold text-foreground">{result.header}</h3>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => copyToClipboard(result.mainContent)}
-                    className="shrink-0 text-xs"
-                  >
-                    Copy Content
-                  </Button>
-                </div>
-
-                {/* SDG Tags */}
-                {result.sdgTags && result.sdgTags.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {result.sdgTags.map((tag, i) => (
-                      <Badge
-                        key={i}
-                        variant="outline"
-                        className="text-xs text-emerald-700 dark:text-emerald-400 border-emerald-400/30 bg-emerald-500/5"
-                      >
-                        {tag}
-                      </Badge>
-                    ))}
-                  </div>
-                )}
-
-                {/* Ethical Warnings */}
-                {result.ethicalWarnings && result.ethicalWarnings.length > 0 && (
-                  <Card className="border-amber-400/30 bg-amber-500/5">
-                    <CardContent className="p-4">
-                      <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 flex items-center gap-1.5 mb-2">
-                        <Warning size={14} weight="fill" />
-                        Ethical Flags & PII Notes
-                      </p>
-                      <ul className="space-y-1">
-                        {result.ethicalWarnings.map((w, i) => (
-                          <li key={i} className="text-xs text-amber-800 dark:text-amber-300 flex items-start gap-1.5">
-                            <span className="text-amber-500 mt-0.5">•</span>
-                            {w}
-                          </li>
-                        ))}
-                      </ul>
+          {selectedProject && (
+            <div className="space-y-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Files in "{selectedProject.name}" ({projectFilesForSelected.length})</p>
+              {projectFilesForSelected.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">No files uploaded for this project yet.</div>
+              ) : (
+                projectFilesForSelected.map((f) => (
+                  <Card key={f.id} className="border-border/50">
+                    <CardContent className="p-3 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        {f.type === "csv" ? <FileCsv size={20} weight="bold" className="text-green-500 shrink-0" /> : <FileText size={20} weight="bold" className="text-blue-500 shrink-0" />}
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-foreground truncate">{f.name}</p>
+                          <p className="text-xs text-muted-foreground">{(f.size / 1024).toFixed(1)} KB · {new Date(f.uploadedAt).toLocaleDateString()}</p>
+                        </div>
+                      </div>
+                      <Badge variant="outline" className="text-xs shrink-0">{f.type}</Badge>
+                      {hasDeleteAccess && (
+                        <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-600 hover:bg-red-50 shrink-0" onClick={() => handleDeleteFile(f.id)}>
+                          <Trash size={13} weight="bold" />
+                        </Button>
+                      )}
                     </CardContent>
                   </Card>
-                )}
+                ))
+              )}
+            </div>
+          )}
+        </TabsContent>
 
-                {/* Main Content */}
-                <Card className="border-border/50">
-                  <CardContent className="p-5">
-                    <div
-                      className="prose prose-sm dark:prose-invert max-w-none text-sm leading-relaxed"
-                      style={{ whiteSpace: "pre-wrap" }}
-                    >
-                      {result.mainContent}
+        {/* Tab: Reports */}
+        <TabsContent value="reports" className="mt-4 space-y-6">
+          <Card className="border-border/50">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <FileText size={18} weight="bold" className="text-emerald-500" />Generate Project Report
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">Write an AI-powered summary report based on uploaded project data.</p>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Link to Project (optional)</label>
+                <select className="w-full text-sm rounded-lg border border-border bg-background px-3 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                  value={selectedProjectId || ""} onChange={(e) => setSelectedProjectId(e.target.value || null)}>
+                  <option value="">— No project selected —</option>
+                  {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Report Title *</label>
+                <Input placeholder="e.g. Q3 2024 Field Operations Summary" value={reportTitle} onChange={(e) => setReportTitle(e.target.value)} />
+              </div>
+              <Button onClick={handleGenerateReport} disabled={reportGenerating || !reportTitle.trim() || !user} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2">
+                {reportGenerating ? <><ArrowClockwise size={16} weight="bold" className="animate-spin" />Generating Report…</> : <><Sparkle size={16} weight="fill" />Generate Report</>}
+              </Button>
+            </CardContent>
+          </Card>
+          {reportBody && (
+            <Card className="border-emerald-400/20 bg-emerald-500/5">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <CheckCircle size={16} weight="fill" className="text-emerald-500" />Generated: {reportTitle}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="prose prose-sm dark:prose-invert max-w-none text-sm leading-relaxed whitespace-pre-wrap">{reportBody}</div>
+              </CardContent>
+            </Card>
+          )}
+          {savedReports.length > 0 && (() => {
+            const visibleReports = hasDeleteAccess
+              ? savedReports
+              : savedReports.filter(r => r.status === "signed" || r.submittedBy === (user?.fullName || user?.email || userId))
+            if (visibleReports.length === 0) return null
+            return (
+            <div className="space-y-4">
+              <Separator />
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider pt-2">Saved Reports ({visibleReports.length})</p>
+              {!hasDeleteAccess && (
+                <div className="rounded-lg border border-blue-400/20 bg-blue-500/5 p-2.5">
+                  <p className="text-xs text-blue-700 dark:text-blue-400">Only signed reports and your own submissions are visible. Unsigned reports require Owner/Admin approval.</p>
+                </div>
+              )}
+              {/* Group by category */}
+              {Array.from(new Set(visibleReports.map(r => r.category || "Uncategorized"))).map(category => {
+                const catReports = visibleReports.filter(r => (r.category || "Uncategorized") === category)
+                return (
+                  <div key={category} className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="text-xs bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-400/30">{category}</Badge>
+                      <span className="text-xs text-muted-foreground">({catReports.length})</span>
                     </div>
-                  </CardContent>
-                </Card>
-
-                {/* Email Variants */}
-                {result.emailVariants && result.emailVariants.length > 0 && (
-                  <div className="space-y-3">
-                    <p className="text-sm font-semibold text-foreground flex items-center gap-2">
-                      <EnvelopeSimple size={16} weight="bold" className="text-emerald-500" />
-                      3 Email Variations
-                    </p>
-                    {result.emailVariants.map((variant, i) => (
-                      <Card key={i} className="border-border/50">
-                        <CardContent className="p-4 space-y-3">
-                          <div className="flex items-center justify-between">
-                            <Badge
-                              variant="outline"
-                              className={`text-xs ${
-                                i === 0
-                                  ? "text-blue-600 border-blue-400/30 bg-blue-500/5"
-                                  : i === 1
-                                  ? "text-purple-600 border-purple-400/30 bg-purple-500/5"
-                                  : "text-emerald-600 border-emerald-400/30 bg-emerald-500/5"
-                              }`}
-                            >
-                              {variant.type}
-                            </Badge>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-xs h-7"
-                              onClick={() =>
-                                copyToClipboard(
-                                  `Subject: ${variant.subject}\n\n${variant.body}`,
-                                  i
-                                )
-                              }
-                            >
-                              {copiedEmail === i ? (
-                                <><CheckCircle size={12} weight="fill" className="mr-1 text-emerald-500" /> Copied!</>
-                              ) : (
-                                "Copy Email"
-                              )}
-                            </Button>
-                          </div>
-                          <div>
-                            <p className="text-xs font-semibold text-muted-foreground mb-1">Subject Line</p>
-                            <p className="text-sm font-medium text-foreground bg-muted/50 rounded-lg px-3 py-2">
-                              {variant.subject}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-xs font-semibold text-muted-foreground mb-1">Email Body</p>
-                            <div className="text-sm text-foreground bg-muted/30 rounded-lg px-3 py-2 whitespace-pre-wrap leading-relaxed">
-                              {variant.body}
+                    {catReports.map((r) => (
+                      <Card key={r.id} className="border-border/50">
+                        <CardContent className="p-3">
+                          {editingReportId === r.id ? (
+                            <div className="space-y-2">
+                              <p className="text-sm font-medium text-foreground">{r.title}</p>
+                              <Textarea value={editReportBody} onChange={e => setEditReportBody(e.target.value)} className="min-h-32 text-sm" />
+                              <div className="flex gap-2">
+                                <Button size="sm" className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white gap-1" onClick={handleSaveEditedReport}>
+                                  <FloppyDisk size={14} />Save
+                                </Button>
+                                <Button size="sm" variant="ghost" className="text-xs" onClick={() => setEditingReportId(null)}>Cancel</Button>
+                              </div>
                             </div>
-                          </div>
+                          ) : (
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-sm font-medium text-foreground truncate">{r.title}</p>
+                                  <div className="flex items-center gap-2 mt-0.5">
+                                    <p className="text-xs text-muted-foreground">{new Date(r.createdAt).toLocaleDateString()}</p>
+                                    {r.submittedBy && <p className="text-xs text-muted-foreground">by {r.submittedBy}</p>}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  {/* Status badge */}
+                                  {r.status === "pending_approval" && (
+                                    <Badge variant="outline" className="text-xs text-amber-600 border-amber-400/30 bg-amber-500/5 gap-1">
+                                      <Clock size={12} />Pending Approval
+                                    </Badge>
+                                  )}
+                                  {r.status === "approved" && (
+                                    <Badge variant="outline" className="text-xs text-blue-600 border-blue-400/30 bg-blue-500/5 gap-1">
+                                      <CheckCircle size={12} />Approved
+                                    </Badge>
+                                  )}
+                                  {r.status === "signed" && (
+                                    <Badge variant="outline" className="text-xs text-emerald-600 border-emerald-400/30 bg-emerald-500/5 gap-1">
+                                      <Seal size={12} weight="fill" />Signed
+                                    </Badge>
+                                  )}
+                                  {(!r.status || r.status === "draft") && (
+                                    <Badge variant="outline" className="text-xs text-muted-foreground">Draft</Badge>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <Button variant="outline" size="sm" className="text-xs" onClick={() => { setReportTitle(r.title); setReportBody(r.body) }}>View</Button>
+                                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => handleEditReport(r)}>
+                                  <PencilSimple size={14} />
+                                </Button>
+                                {/* Owner/Admin approval & sign actions */}
+                                {hasDeleteAccess && r.status === "pending_approval" && (
+                                  <Button variant="outline" size="sm" className="text-xs gap-1 text-blue-600 border-blue-400/30 hover:bg-blue-500/10" onClick={() => handleApproveReport(r.id)}>
+                                    <CheckCircle size={13} />Approve
+                                  </Button>
+                                )}
+                                {hasDeleteAccess && (r.status === "approved" || r.status === "draft") && (
+                                  <Button variant="outline" size="sm" className="text-xs gap-1 text-emerald-600 border-emerald-400/30 hover:bg-emerald-500/10" onClick={() => handleSignReport(r.id)}>
+                                    <Seal size={13} weight="fill" />Sign
+                                  </Button>
+                                )}
+                                {hasDeleteAccess && (
+                                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={() => handleDeleteReport(r.id)}>
+                                    <Trash size={14} />
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          )}
                         </CardContent>
                       </Card>
                     ))}
                   </div>
-                )}
+                )
+              })}
+            </div>
+            )
+          })()}
+        </TabsContent>
 
-                {/* Suggested KPIs */}
-                {result.suggestedKPIs && result.suggestedKPIs.length > 0 && (
-                  <Card className="border-border/50 bg-card/50">
+        {/* Tab: Export */}
+        <TabsContent value="export" className="mt-4 space-y-6">
+          <Card className="border-border/50">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <Download size={18} weight="bold" className="text-emerald-500" />Export Reports
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Export to PDF, Word, or Excel. Only <strong>signed</strong> reports are available for export. Custom branding from <strong>Org Settings</strong> will be applied.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {savedReports.filter(r => r.status === "signed").length === 0 ? (
+                <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+                  No signed reports available for export. Reports must be signed by an Owner/Admin before they can be exported.
+                </div>
+              ) : (
+                savedReports.filter(r => r.status === "signed").map((r) => (
+                  <Card key={r.id} className="border-border/50">
                     <CardContent className="p-4">
-                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                        <Target size={14} weight="bold" />
-                        Suggested KPIs
-                      </p>
-                      <ul className="space-y-1.5">
-                        {result.suggestedKPIs.map((kpi, i) => (
-                          <li key={i} className="text-sm text-foreground flex items-start gap-2">
-                            <CheckCircle size={14} weight="fill" className="text-emerald-500 shrink-0 mt-0.5" />
-                            {kpi}
-                          </li>
-                        ))}
-                      </ul>
+                      <div className="mb-3 flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-foreground">{r.title}</p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <p className="text-xs text-muted-foreground">{new Date(r.createdAt).toLocaleDateString()}</p>
+                            {r.category && <Badge variant="outline" className="text-xs">{r.category}</Badge>}
+                          </div>
+                        </div>
+                        {r.status === "signed" && (
+                          <Badge variant="outline" className="text-xs text-emerald-600 border-emerald-400/30 bg-emerald-500/5 gap-1">
+                            <Seal size={12} weight="fill" />Signed
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button variant="outline" size="sm" className="gap-1.5 text-xs"
+                          onClick={async () => { toast.info("Generating PDF…"); await exportAsPDF(r.title, r.body, orgLoaded ? orgSettings : null, { status: r.status, submittedBy: r.submittedBy, category: r.category }) }}>
+                          <Download size={13} weight="bold" /> PDF
+                        </Button>
+                        <Button variant="outline" size="sm" className="gap-1.5 text-xs"
+                          onClick={() => { exportAsWord(r.title, r.body, orgLoaded ? orgSettings : null, { status: r.status, submittedBy: r.submittedBy, category: r.category }); toast.success("Word document downloaded.") }}>
+                          <Download size={13} weight="bold" /> Word
+                        </Button>
+                        <Button variant="outline" size="sm" className="gap-1.5 text-xs"
+                          onClick={() => {
+                            const rows = r.body.split("\n").filter(Boolean).map((line) => [line])
+                            exportAsExcel(r.title, rows, orgLoaded ? orgSettings : null)
+                            toast.success("Excel file downloaded.")
+                          }}>
+                          <Download size={13} weight="bold" /> Excel
+                        </Button>
+                      </div>
                     </CardContent>
                   </Card>
+                ))
+              )}
+              {orgLoaded && orgSettings.orgName && (
+                <div className="rounded-xl border border-emerald-400/20 bg-emerald-500/5 p-3">
+                  <p className="text-xs text-emerald-700 dark:text-emerald-400 font-medium flex items-center gap-1.5">
+                    <Buildings size={14} weight="bold" />Custom branding active: <strong className="ml-1">{orgSettings.orgName}</strong>
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Tab: Org Settings */}
+        <TabsContent value="org-settings" className="mt-4 space-y-6">
+          <Card className="border-border/50">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <Buildings size={18} weight="bold" className="text-emerald-500" />Organization Branding Settings
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Set your organization details for export branding. If not configured, default Sentinel branding is used.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    <Buildings size={13} weight="bold" /> Organization Name
+                  </label>
+                  <Input placeholder="e.g. Glimpse Foundation" value={orgSettings.orgName} onChange={(e) => setOrgSettings({ ...orgSettings, orgName: e.target.value })} disabled={!hasDeleteAccess} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Logo URL</label>
+                  <Input placeholder="https://example.com/logo.png" value={orgSettings.logoUrl} onChange={(e) => setOrgSettings({ ...orgSettings, logoUrl: e.target.value })} disabled={!hasDeleteAccess} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    <Palette size={13} weight="bold" /> Primary Color
+                  </label>
+                  <div className="flex gap-2">
+                    <input type="color" value={orgSettings.primaryColor} onChange={(e) => setOrgSettings({ ...orgSettings, primaryColor: e.target.value })} className="w-10 h-9 rounded border border-border cursor-pointer p-0.5" disabled={!hasDeleteAccess} />
+                    <Input placeholder="#5CC3EB" value={orgSettings.primaryColor} onChange={(e) => setOrgSettings({ ...orgSettings, primaryColor: e.target.value })} className="flex-1 font-mono" disabled={!hasDeleteAccess} />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    <Palette size={13} weight="bold" /> Secondary Color
+                  </label>
+                  <div className="flex gap-2">
+                    <input type="color" value={orgSettings.secondaryColor} onChange={(e) => setOrgSettings({ ...orgSettings, secondaryColor: e.target.value })} className="w-10 h-9 rounded border border-border cursor-pointer p-0.5" />
+                    <Input placeholder="#8CB499" value={orgSettings.secondaryColor} onChange={(e) => setOrgSettings({ ...orgSettings, secondaryColor: e.target.value })} className="flex-1 font-mono" />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    <Phone size={13} weight="bold" /> Phone Number
+                  </label>
+                  <Input placeholder="+92 300 1234567" value={orgSettings.phone} onChange={(e) => setOrgSettings({ ...orgSettings, phone: e.target.value })} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    <At size={13} weight="bold" /> Email
+                  </label>
+                  <Input placeholder="contact@org.org" value={orgSettings.email} onChange={(e) => setOrgSettings({ ...orgSettings, email: e.target.value })} />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  <MapPin size={13} weight="bold" /> Office Address
+                </label>
+                <Input placeholder="123 Main Street, Islamabad, Pakistan" value={orgSettings.address} onChange={(e) => setOrgSettings({ ...orgSettings, address: e.target.value })} />
+              </div>
+              {orgSettings.orgName && (
+                <div className="rounded-xl border border-border/50 p-4 bg-muted/30">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Brand Preview</p>
+                  <div className="rounded-lg p-4 border" style={{ borderColor: orgSettings.primaryColor + "60", backgroundColor: orgSettings.primaryColor + "10" }}>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-bold text-sm" style={{ color: orgSettings.primaryColor }}>{orgSettings.orgName}</p>
+                        {orgSettings.email && <p className="text-xs mt-0.5" style={{ color: orgSettings.secondaryColor }}>{orgSettings.email}</p>}
+                      </div>
+                      {orgSettings.logoUrl && (
+                        <img src={orgSettings.logoUrl} alt="logo" className="h-10 object-contain rounded"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }} />
+                      )}
+                    </div>
+                    {orgSettings.address && <p className="text-xs text-muted-foreground mt-2">{orgSettings.address}</p>}
+                  </div>
+                </div>
+              )}
+              <Button onClick={handleSaveOrgSettings} disabled={orgSaving || !hasDeleteAccess} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2">
+                {orgSaving ? <><ArrowClockwise size={16} weight="bold" className="animate-spin" />Saving…</> : <><FloppyDisk size={16} weight="bold" />Save Organization Settings</>}
+              </Button>
+              {!hasDeleteAccess && (
+                <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">Org settings can only be modified by Owner or Admin</p>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Tab: Team Management */}
+        {hasTeamAccess && (
+          <TabsContent value="team" className="mt-4 space-y-6">
+            <Card className="border-border/50">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-semibold flex items-center gap-2">
+                  <UserPlus size={18} weight="bold" className="text-emerald-500" />Add Team Member
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Create a new collaborator account with specific access to the NGO-SAAS module.
+                  Members login with email and password you provide.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Full Name</label>
+                    <Input placeholder="e.g. Ali Hassan" value={newMemberName} onChange={e => setNewMemberName(e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Email</label>
+                    <Input type="email" placeholder="ali@org.org" value={newMemberEmail} onChange={e => setNewMemberEmail(e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Password</label>
+                    <Input type="password" placeholder="Min 6 characters" value={newMemberPassword} onChange={e => setNewMemberPassword(e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Access Level</label>
+                    <select
+                      value={newMemberLevel}
+                      onChange={e => setNewMemberLevel(e.target.value as NGOAccessLevel)}
+                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    >
+                      <option value="user">User (Read Only)</option>
+                      <option value="contributor">Contributor (Read + Write)</option>
+                      <option value="owner">Owner (Full Access)</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="rounded-lg border border-border/50 p-3 bg-muted/30 text-xs text-muted-foreground space-y-1">
+                  <p><strong>User (Read Only):</strong> View, generate AI actions, save reports (sent for CEO/Manager approval). Cannot delete, create projects, or upload workspace files.</p>
+                  <p><strong>Contributor (Read + Write):</strong> All user access plus can create projects, upload workspace files. Reports sent for approval.</p>
+                  <p><strong>Owner (Full Access):</strong> Full control — approve & sign reports, delete content, manage team, and edit org settings.</p>
+                </div>
+                <Button
+                  onClick={handleAddMember}
+                  disabled={addingMember || !newMemberEmail || !newMemberPassword || !newMemberName}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2"
+                >
+                  {addingMember ? <><ArrowClockwise size={16} className="animate-spin" />Adding...</> : <><UserPlus size={16} weight="bold" />Add Member</>}
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Team Members List */}
+            <Card className="border-border/50">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base font-semibold flex items-center gap-2">
+                    <Users size={18} weight="bold" className="text-emerald-500" />Team Members
+                  </CardTitle>
+                  <Badge variant="secondary" className="text-xs">{teamMembers.length} member{teamMembers.length !== 1 ? "s" : ""}</Badge>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {teamMembers.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-6">No team members yet. Add your first collaborator above.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {teamMembers.map(member => (
+                      <div key={member.id} className="flex items-center justify-between p-3 rounded-lg border border-border/50 bg-muted/20">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{member.fullName}</p>
+                          <p className="text-xs text-muted-foreground truncate">{member.email}</p>
+                          <p className="text-xs text-muted-foreground">Added {new Date(member.addedAt).toLocaleDateString()}</p>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {editingMemberId === member.id ? (
+                            <select
+                              defaultValue={member.accessLevel}
+                              onChange={e => handleUpdateMemberLevel(member.id, e.target.value as NGOAccessLevel)}
+                              className="h-7 rounded border border-input bg-transparent px-2 text-xs"
+                            >
+                              <option value="user">User</option>
+                              <option value="contributor">Contributor</option>
+                              <option value="owner">Owner</option>
+                            </select>
+                          ) : (
+                            <Badge
+                              variant={member.accessLevel === "owner" ? "default" : member.accessLevel === "contributor" ? "secondary" : "outline"}
+                              className="text-xs"
+                            >
+                              {member.accessLevel === "owner" && <ShieldCheck size={12} className="mr-1" />}
+                              {member.accessLevel.charAt(0).toUpperCase() + member.accessLevel.slice(1)}
+                            </Badge>
+                          )}
+                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setEditingMemberId(editingMemberId === member.id ? null : member.id)}>
+                            <PencilSimple size={14} />
+                          </Button>
+                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={() => handleRemoveMember(member.id, member.fullName)}>
+                            <Trash size={14} />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 )}
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
+      </Tabs>
     </div>
   )
 }

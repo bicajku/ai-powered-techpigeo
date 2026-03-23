@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { AuthForm } from "@/components/AuthForm"
-import { Sparkle, Target, Lightbulb, ShieldCheck, Quotes, Brain, ChartBar, Presentation, Rocket, Users, Lightning, ArrowRight, CheckCircle, ArrowLeft, UserCircle, CursorClick } from "@phosphor-icons/react"
+import { Sparkle, Target, Lightbulb, ShieldCheck, Quotes, Brain, ChartBar, Presentation, Rocket, Users, Lightning, ArrowRight, CheckCircle, ArrowLeft, UserCircle, CursorClick, HandHeart, PenNib } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
 import faviconImg from "@/assets/images/favicon.png"
 
@@ -49,9 +49,11 @@ const ORBIT_PILLS = [
   { id: "idea", tab: "ideas", label: "Idea Generation", icon: Lightbulb, color: "sky", desc: "AI-powered brainstorming and concept expansion" },
   { id: "strategy", tab: "generate", label: "Strategy Engine", icon: Target, color: "sage", desc: "Multi-engine market analysis and planning" },
   { id: "integrity", tab: "plagiarism", label: "Integrity Check", icon: ShieldCheck, color: "gold", desc: "Plagiarism detection and quality validation" },
+  { id: "humanizer", tab: "humanizer", label: "AI Humanizer", icon: PenNib, color: "sky", desc: "Rewrite AI text to sound natural and authentic" },
   { id: "consensus", tab: "generate", label: "Consensus AI", icon: Sparkle, color: "sky", desc: "All engines vote, synthesize, and humanize" },
   { id: "brain", tab: "sentinel-brain", label: "Sentinel Cortex", icon: Brain, color: "sage", desc: "Knowledge base ingestion and RAG queries" },
   { id: "canvas", tab: "generate", label: "Business Canvas", icon: Presentation, color: "gold", desc: "Auto-generated business model canvas" },
+  { id: "ngo", tab: "ngo-saas", label: "NGO-SAAS Module", icon: HandHeart, color: "sage", desc: "Grant alignment, impact scans, ethical narratives, donor outreach" },
 ]
 
 // Techpigeon brand palette: primary #5cc3eb, secondary #8cb499, accent #bca444

@@ -746,9 +746,35 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
     }
   }
 
+  /** Detect gibberish / nonsensical input */
+  const isGibberish = (input: string): boolean => {
+    const words = input.trim().split(/\s+/).filter(w => w.length > 1)
+    if (words.length === 0) return true
+    const vowels = /[aeiouy]/i
+    const consonantStreak = /[^aeiouy\s\d]{5,}/i
+    let suspectWords = 0
+    for (const word of words) {
+      const clean = word.replace(/[^a-zA-Z]/g, "")
+      if (clean.length < 2) continue
+      const hasVowel = vowels.test(clean)
+      const hasLongConsonants = consonantStreak.test(clean)
+      const vowelRatio = (clean.match(/[aeiouy]/gi) || []).length / clean.length
+      if (!hasVowel || hasLongConsonants || vowelRatio < 0.1 || clean.length > 18) {
+        suspectWords++
+      }
+    }
+    const meaningfulWords = words.filter(w => w.replace(/[^a-zA-Z]/g, "").length >= 2)
+    if (meaningfulWords.length === 0) return true
+    return (suspectWords / meaningfulWords.length) > 0.5
+  }
+
   const checkPlagiarism = async () => {
     if (!text.trim() || text.trim().length < 50) {
       toast.error("Please enter at least 50 characters to check")
+      return
+    }
+    if (isGibberish(text)) {
+      toast.error("No meaningful content detected — please paste real text, an essay, or article for integrity analysis.")
       return
     }
 
@@ -1023,9 +1049,13 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
       toast.error("Please enter text to humanize")
       return
     }
+    if (isGibberish(text)) {
+      toast.error("No meaningful content detected \u2014 please provide real text to humanize.")
+      return
+    }
 
-    if (!entitlements.isPaidPlan && user.role !== "admin") {
-      toast.info("🔒 Humanizer is available for Admin, Pro, and Team plans. Upgrade to unlock this feature.")
+    if (!entitlements.isPaidPlan && !entitlements.isWelcomeBonusActive && user.role !== "admin") {
+      toast.info("\uD83D\uDD12 Humanizer is available for Admin, Pro, and Team plans. Upgrade to unlock this feature.")
       return
     }
 
@@ -1129,7 +1159,7 @@ Return ONLY a valid JSON object:
 
       setProCredits(creditUse.remainingCredits)
       setHumanizedResult(humanized)
-      toast.success(`Text humanized successfully! ${creditUse.remainingCredits} Pro credits left.`)
+      toast.success(`Text humanized successfully! ${creditUse.remainingCredits} credits remaining.`)
     } catch (error) {
       console.error("Humanization error:", error)
       toast.error("Failed to humanize text. Please try again.")
@@ -1339,16 +1369,16 @@ Return ONLY a valid JSON object:
               <div className="flex flex-wrap items-center gap-2">
                 <Button
                   onClick={humanizeText}
-                  disabled={!text.trim() || isHumanizing || isChecking || (entitlements.isPaidPlan && proCredits <= 0)}
+                  disabled={!text.trim() || isHumanizing || isChecking || (!entitlements.canUseHumanizer && user.role !== "admin")}
                   variant="outline"
                   size="sm"
                   className="gap-2"
                 >
                   <LockKey size={16} weight="duotone" />
-                  {isHumanizing ? "Humanizing..." : entitlements.isPaidPlan ? `Humanize (${subscriptionPlan.charAt(0).toUpperCase() + subscriptionPlan.slice(1)}: ${proCredits})` : "Humanize (Pro/Team)"}
+                  {isHumanizing ? "Humanizing..." : entitlements.canUseHumanizer || user.role === "admin" ? `Humanize (${proCredits} cr)` : "Humanize (Pro/Team)"}
                 </Button>
 
-                {!entitlements.isPaidPlan && user.role !== "admin" && (
+                {!entitlements.isPaidPlan && !entitlements.isWelcomeBonusActive && user.role !== "admin" && (
                   <div className="flex gap-1">
                     <Button onClick={handleUpgradeToPro} variant="secondary" size="sm">
                       Upgrade to Pro
@@ -1359,7 +1389,7 @@ Return ONLY a valid JSON object:
                   </div>
                 )}
 
-                {entitlements.isPaidPlan && proCredits <= 0 && (
+                {(entitlements.isPaidPlan || entitlements.isWelcomeBonusActive) && proCredits <= 0 && user.role !== "admin" && (
                   <Button onClick={handleBuyCredits} variant="secondary" size="sm">
                     Buy Credits
                   </Button>
@@ -1939,10 +1969,10 @@ Return ONLY a valid JSON object:
                       {humanizedResult.changes.slice(0, 5).map((change, index) => (
                         <div key={index} className="p-3 border border-border rounded-lg text-sm">
                           <p className="text-muted-foreground mb-1">
-                            <span className="font-mono line-through">"{change.original}"</span>
+                            <span className="font-mono line-through">&quot;{change.original}&quot;</span>
                           </p>
                           <p className="text-foreground">
-                            <span className="font-mono">"{change.humanized}"</span>
+                            <span className="font-mono">&quot;{change.humanized}&quot;</span>
                           </p>
                         </div>
                       ))}
