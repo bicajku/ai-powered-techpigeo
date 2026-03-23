@@ -1,4 +1,4 @@
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import { v4 as uuidv4 } from "uuid"
 import type { Icon } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
@@ -429,6 +429,11 @@ export function NGOModule({ userId, user }: NGOModuleProps) {
   const [orgLoaded, setOrgLoaded] = useState(false)
   const [orgSaving, setOrgSaving] = useState(false)
 
+  // Knowledge Base files for AI context
+  const [uploadedKBFiles, setUploadedKBFiles] = useState<ProjectFile[]>([])
+  const [uploadingKBFile, setUploadingKBFile] = useState(false)
+  const kbFileInputRef = useRef<HTMLInputElement>(null)
+
   const entitlements = user ? getFeatureEntitlements(user) : null
   const canAccessNGOModule = user?.role === "admin" || !!entitlements?.canAccessNGOSaaS
 
@@ -468,7 +473,31 @@ export function NGOModule({ userId, user }: NGOModuleProps) {
     setReportsLoaded(true)
   }
 
-  // AI Actions handlers
+  // Persist NGO Module State
+  useEffect(() => {
+    const loadNGOState = async () => {
+      const saved = await kvGet<{ activeAction: string; input: string; uploadedKBFiles: ProjectFile[] }>(
+        `ngo-module-state-${userId}`
+      )
+      if (saved) {
+        setActiveAction(saved.activeAction)
+        setInput(saved.input)
+        setUploadedKBFiles(saved.uploadedKBFiles)
+      }
+    }
+    loadNGOState()
+  }, [userId])
+
+  useEffect(() => {
+    const saveNGOState = async () => {
+      await kvSet(`ngo-module-state-${userId}`, {
+        activeAction,
+        input,
+        uploadedKBFiles,
+      })
+    }
+    saveNGOState()
+  }, [activeAction, input, uploadedKBFiles, userId])
 
   const handleActionChange = (actionId: string) => {
     setActiveAction(actionId); setInput(""); setResult(null); setError(null)
@@ -486,7 +515,8 @@ export function NGOModule({ userId, user }: NGOModuleProps) {
         toast.error(creditResult.error ?? "You've used all your credits. Please upgrade your plan.")
         setIsLoading(false); return
       }
-      const prompt = getPromptForAction(activeAction, input)
+      let prompt = getPromptForAction(activeAction, input)
+      prompt += getKBContext()
       const res = await sentinelQuery(prompt, {
         module: "ngo_module",
         userId: typeof user.id === "number" ? user.id : undefined,
@@ -636,6 +666,72 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
 
   const clearAll = () => { setInput(""); setResult(null); setError(null) }
 
+  // Knowledge Base file handlers
+
+  const handleKBFileSelect = async (files: FileList | null) => {
+    if (!files || files.length === 0) return
+    setUploadingKBFile(true)
+    try {
+      const file = files[0]
+      const MAX_SIZE_MB = 10
+      if (file.size > MAX_SIZE_MB * 1024 * 1024) {
+        toast.error(`File size must be less than ${MAX_SIZE_MB}MB`)
+        return
+      }
+
+      // Only text files for KB context
+      const acceptedTypes = ["text/csv", "text/plain"]
+      if (!acceptedTypes.includes(file.type)) {
+        toast.error("Supported formats: TXT, CSV (text files only)")
+        return
+      }
+
+      const content = await file.text()
+      const truncatedContent = content.length > 5000 ? content.substring(0, 5000) + "\n[... content truncated ...]" : content
+
+      const newFile: ProjectFile = {
+        id: uuidv4(),
+        projectId: "kb",
+        name: file.name,
+        type: file.type.includes("csv") ? "csv" : "other",
+        size: file.size,
+        content: truncatedContent,
+        uploadedAt: Date.now(),
+      }
+
+      const updated = [...uploadedKBFiles, newFile]
+      setUploadedKBFiles(updated)
+      await kvSet(`ngo-kb-files-${userId}`, updated)
+      toast.success(`"${file.name}" added to knowledge base`)
+    } catch (err) {
+      toast.error("Failed to upload file. Please try again.")
+      console.error("KB file upload error:", err)
+    } finally {
+      setUploadingKBFile(false)
+      if (kbFileInputRef.current) kbFileInputRef.current.value = ""
+    }
+  }
+
+  const handleRemoveKBFile = async (fileId: string) => {
+    const updated = uploadedKBFiles.filter(f => f.id !== fileId)
+    setUploadedKBFiles(updated)
+    await kvSet(`ngo-kb-files-${userId}`, updated)
+    toast.success("File removed from knowledge base")
+  }
+
+  const getKBContext = (): string => {
+    if (uploadedKBFiles.length === 0) return ""
+    const escapedContent = uploadedKBFiles.map(f => {
+      const escaped = f.content
+        .replace(/\\/g, "\\\\")
+        .replace(/"/g, '\\"')
+        .replace(/\n/g, "\\n")
+        .replace(/\r/g, "\\r")
+      return `File: ${f.name}\n${escaped}`
+    }).join("\n\n")
+    return `\n\nREFERENCE MATERIALS FROM KNOWLEDGE BASE:\n${escapedContent}`
+  }
+
   // Access guard
 
   if (!canAccessNGOModule) {
@@ -736,6 +832,51 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
                   <p className="text-sm text-muted-foreground">{currentAction.description}</p>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  <div className="border-b border-border/50 pb-4">
+                    <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Knowledge Base Files (Optional)</label>
+                    <div className="flex items-center gap-2 mb-3">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="gap-2 text-xs border-emerald-400/40 hover:bg-emerald-500/10"
+                        onClick={() => kbFileInputRef.current?.click()}
+                        disabled={uploadingKBFile}
+                      >
+                        <UploadSimple size={14} weight="bold" />
+                        {uploadingKBFile ? "Uploading..." : "Add File"}
+                      </Button>
+                      <input
+                        ref={kbFileInputRef}
+                        type="file"
+                        accept=".csv,.txt"
+                        onChange={(e) => handleKBFileSelect(e.target.files)}
+                        className="hidden"
+                      />
+                      <p className="text-xs text-muted-foreground">TXT, CSV (text files) · Max 10MB</p>
+                    </div>
+                    {uploadedKBFiles.length > 0 && (
+                      <div className="space-y-2">
+                        {uploadedKBFiles.map((file) => (
+                          <div key={file.id} className="flex items-center justify-between rounded-lg border border-emerald-400/20 bg-emerald-500/5 px-3 py-2">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-medium text-foreground truncate">{file.name}</p>
+                              <p className="text-xs text-muted-foreground">{(file.size / 1024).toFixed(1)} KB</p>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 w-6 p-0 text-red-500 hover:bg-red-500/10"
+                              onClick={() => handleRemoveKBFile(file.id)}
+                            >
+                              <Trash size={14} weight="bold" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <div>
                     <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{currentAction.inputLabel}</label>
                     <Textarea value={input} onChange={(e) => setInput(e.target.value)} placeholder={currentAction.placeholder} className="min-h-[180px] text-sm resize-y font-mono" disabled={isLoading} />
@@ -788,7 +929,20 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
                         <CheckCircle size={18} weight="fill" className="text-emerald-500" />
                         <h3 className="font-semibold text-foreground">{result.header}</h3>
                       </div>
-                      <Button variant="outline" size="sm" onClick={() => copyToClipboard(result.mainContent)} className="shrink-0 text-xs">Copy Content</Button>
+                      <div className="flex flex-wrap gap-2 shrink-0">
+                        <Button variant="outline" size="sm" onClick={() => copyToClipboard(result.mainContent)} className="text-xs gap-1.5">
+                          <CheckCircle size={14} />Copy
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => exportAsPDF(result.header, result.mainContent, orgSettings)} className="text-xs gap-1.5">
+                          <Download size={14} />PDF
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => exportAsWord(result.header, result.mainContent, orgSettings)} className="text-xs gap-1.5">
+                          <Download size={14} />Word
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => exportAsExcel(result.header, [[result.mainContent]], orgSettings)} className="text-xs gap-1.5">
+                          <Download size={14} />Excel
+                        </Button>
+                      </div>
                     </div>
                     {result.sdgTags && result.sdgTags.length > 0 && (
                       <div className="flex flex-wrap gap-2">

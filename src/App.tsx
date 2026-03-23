@@ -1293,6 +1293,12 @@ ${JSON.stringify(candidate)}`
                 <ClockCounterClockwise size={18} weight="bold" />
                 <span>Timeline</span>
               </TabsTrigger>
+              {canAccessNGOSaaS && (
+                <TabsTrigger value="ngo-saas" className="gap-2 text-sm">
+                  <Target size={18} weight="bold" />
+                  <span>NGO-SAAS</span>
+                </TabsTrigger>
+              )}
               {user.role === "admin" && (
                 <TabsTrigger value="sentinel-brain" className="gap-2 text-sm">
                   <Brain size={18} weight="bold" />

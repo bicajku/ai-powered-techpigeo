@@ -86,6 +86,8 @@ export interface FeatureEntitlements {
   proCreditsRemaining: number
   isTrialActive: boolean
   trialSubmissionsRemaining: number
+  isWelcomeBonusActive: boolean
+  welcomeBonusExpiresAt: number | null
 }
 
 export function getDefaultSubscription(): SubscriptionInfo {
@@ -132,8 +134,13 @@ export function getFeatureEntitlements(user: UserProfile): FeatureEntitlements {
   // Review access: admin always, paid plans with active sub & credits, or active trial with remaining submissions
   const canAccessReview = isAdmin || (isPaidPlan && isSubscriptionActive && credits > 0) || isTrialActive
 
-  // Humanize: admin always, paid plans with active sub & credits
-  const canUseHumanizer = isAdmin || (isPaidPlan && isSubscriptionActive && credits > 0)
+  // Welcome bonus
+  const wb = subscription.welcomeBonus
+  const isWelcomeBonusActive = !!(wb?.granted && wb.expiresAt > Date.now() && credits > 0)
+  const welcomeBonusExpiresAt = wb?.expiresAt ?? null
+
+  // Humanize: admin always, paid plans with active sub & credits, or active welcome bonus
+  const canUseHumanizer = isAdmin || (isPaidPlan && isSubscriptionActive && credits > 0) || isWelcomeBonusActive
 
   // NGO SaaS: strictly Enterprise tier, explicit module grant, or admin
   const canAccessNGOSaaS =
@@ -153,6 +160,8 @@ export function getFeatureEntitlements(user: UserProfile): FeatureEntitlements {
     proCreditsRemaining: credits,
     isTrialActive,
     trialSubmissionsRemaining,
+    isWelcomeBonusActive,
+    welcomeBonusExpiresAt,
   }
 }
 
@@ -478,6 +487,46 @@ export async function addProCredits(userId: string, creditsToAdd: number): Promi
   } catch (error) {
     console.error("Failed to add Pro credits:", error)
     return { success: false, credits: 0, error: "Failed to add credits" }
+  }
+}
+
+// ============ Welcome Bonus ============
+
+const WELCOME_BONUS_CREDITS = 10
+const WELCOME_BONUS_DAYS = 7
+
+export async function grantWelcomeBonus(userId: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const users = (await getSafeKVClient().get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
+    const user = users[userId]
+    if (!user) return { success: false, error: "User not found" }
+
+    const safeUser = ensureUserSubscription(user)
+    const subscription = safeUser.subscription || getDefaultSubscription()
+
+    if (subscription.welcomeBonus?.granted) {
+      return { success: false, error: "Welcome bonus already granted" }
+    }
+
+    users[userId] = {
+      ...safeUser,
+      subscription: {
+        ...subscription,
+        proCredits: (subscription.proCredits || 0) + WELCOME_BONUS_CREDITS,
+        welcomeBonus: {
+          granted: true,
+          credits: WELCOME_BONUS_CREDITS,
+          expiresAt: Date.now() + WELCOME_BONUS_DAYS * 24 * 60 * 60 * 1000,
+        },
+        updatedAt: Date.now(),
+      },
+    }
+
+    await getSafeKVClient().set(USERS_STORAGE_KEY, users)
+    return { success: true }
+  } catch (error) {
+    console.error("Failed to grant welcome bonus:", error)
+    return { success: false, error: "Failed to grant welcome bonus" }
   }
 }
 
