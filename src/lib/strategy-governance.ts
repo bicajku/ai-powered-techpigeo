@@ -45,6 +45,13 @@ const DEFAULT_PLAN_CONFIG: Record<SubscriptionPlan, StrategyPlanConfig> = {
     enableQaLoop: true,
     maxWorkflowRetries: 5,
   },
+  enterprise: {
+    plan: "enterprise",
+    maxSavedStrategies: Infinity,
+    monthlyBudgetCents: 99000,
+    enableQaLoop: true,
+    maxWorkflowRetries: 5,
+  },
 }
 
 const DEFAULT_EXPORT_PLAN_CONFIG: Record<SubscriptionPlan, ExportPlanConfig> = {
@@ -60,6 +67,11 @@ const DEFAULT_EXPORT_PLAN_CONFIG: Record<SubscriptionPlan, ExportPlanConfig> = {
   },
   team: {
     plan: "team",
+    monthlyExports: Infinity,
+    allowWordExport: true,
+  },
+  enterprise: {
+    plan: "enterprise",
     monthlyExports: Infinity,
     allowWordExport: true,
   },
