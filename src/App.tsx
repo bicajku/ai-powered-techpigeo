@@ -998,14 +998,14 @@ ${JSON.stringify(candidate)}`
     })
   }, [workflowRuns, timelineSearch, timelinePlanFilter, timelineStatusFilter])
 
+  useEffect(() => {
+    if (activeTab === "ngo-saas" && !canAccessNGOSaaS) {
+      setActiveTab("generate")
+      toast.error("NGO-SAAS is available for Team plan and Super Admin only.")
+    }
+  }, [activeTab, canAccessNGOSaaS])
+
   const comparedRuns = useMemo(() => {
-  
-      useEffect(() => {
-        if (activeTab === "ngo-saas" && !canAccessNGOSaaS) {
-          setActiveTab("generate")
-          toast.error("NGO-SAAS is available for Team plan and Super Admin only.")
-        }
-      }, [activeTab, canAccessNGOSaaS])
     return (workflowRuns || []).filter((run) => selectedTimelineCompare.includes(run.id)).slice(0, 2)
   }, [workflowRuns, selectedTimelineCompare])
 
