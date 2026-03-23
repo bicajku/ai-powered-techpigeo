@@ -61,6 +61,7 @@ import { ErrorLogsViewer } from "@/components/ErrorLogsViewer"
 import { InviteManager } from "@/components/InviteManager"
 import { BudgetConfigManager } from "@/components/BudgetConfigManager"
 import { AdminSubscriptionPanel } from "@/components/AdminSubscriptionPanel"
+import { getSafeKVClient } from "@/lib/spark-shim"
 
 export function AdminDashboard() {
   const [users, setUsers] = useState<UserProfile[]>([])
@@ -238,23 +239,24 @@ export function AdminDashboard() {
 
     try {
       const { userId, reviewId, action } = reviewActionTarget
-      const reviews = await spark.kv.get<SavedReviewDocument[]>(`saved-reviews-${userId}`) || []
+      const kv = getSafeKVClient()
+      const reviews = await kv.get<SavedReviewDocument[]>(`saved-reviews-${userId}`) || []
 
       if (action === "delete") {
         const updatedReviews = reviews.filter(r => r.id !== reviewId)
-        await spark.kv.set(`saved-reviews-${userId}`, updatedReviews)
+        await kv.set(`saved-reviews-${userId}`, updatedReviews)
         toast.success("Review deleted successfully")
       } else if (action === "archive") {
         const updatedReviews = reviews.map(r =>
           r.id === reviewId ? { ...r, archived: true } : r
         )
-        await spark.kv.set(`saved-reviews-${userId}`, updatedReviews)
+        await kv.set(`saved-reviews-${userId}`, updatedReviews)
         toast.success("Review archived successfully")
       } else if (action === "unarchive") {
         const updatedReviews = reviews.map(r =>
           r.id === reviewId ? { ...r, archived: false } : r
         )
-        await spark.kv.set(`saved-reviews-${userId}`, updatedReviews)
+        await kv.set(`saved-reviews-${userId}`, updatedReviews)
         toast.success("Review unarchived successfully")
       }
 

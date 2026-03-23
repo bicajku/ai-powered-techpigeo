@@ -34,7 +34,7 @@ import { performEnhancedPlagiarismCheck } from "@/lib/enhanced-plagiarism"
 import { performExternalSourceCheck } from "@/lib/external-source-check"
 import { computeReviewAnalysis, ReviewComputationMeta, ReviewFilters, SectionSummary } from "@/lib/review-engine"
 import { AdvancedDetectionResult } from "@/lib/advanced-detection"
-import { addProCredits, consumeProCredits, consumeReviewCredit, getFeatureEntitlements, requestUpgrade, PLAN_CONFIG } from "@/lib/subscription"
+import { addProCredits, consumeProCredits, consumeReviewCredit, getFeatureEntitlements, requestUpgrade } from "@/lib/subscription"
 import { UpgradePaywall } from "@/components/UpgradePaywall"
 import type { SubscriptionPlan } from "@/types"
 import { getCurrentMonthKey, getExportPlanConfig } from "@/lib/strategy-governance"
@@ -50,6 +50,7 @@ interface PlagiarismCheckerProps {
   user: UserProfile | null
 }
 
+// Auth guard wrapper — keeps hooks unconditionally called in the inner component.
 export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
   if (!user) {
     return (
@@ -67,6 +68,11 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
     )
   }
 
+  return <PlagiarismCheckerInner user={user} />
+}
+
+// Inner component: always receives a non-null user so hooks are always called unconditionally.
+function PlagiarismCheckerInner({ user }: { user: UserProfile }) {
   const userId = user.id
   const [text, setText] = useState("")
   const [isChecking, setIsChecking] = useState(false)
@@ -103,7 +109,8 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
     minMatchWords: 8,
   })
   const [advancedMetrics, setAdvancedMetrics] = useState<AdvancedDetectionResult | null>(null)
-  const [subscriptionPlan, setSubscriptionPlan] = useState<SubscriptionPlan>(user.subscription?.plan || "basic")
+  // subscriptionPlan is read-only here; derived from user.subscription at mount time
+  const [subscriptionPlan] = useState<SubscriptionPlan>(user.subscription?.plan || "basic")
   const [proCredits, setProCredits] = useState(user.subscription?.proCredits || 0)
   const [trialSubmissionsUsed, setTrialSubmissionsUsed] = useState(user.subscription?.trial?.submissionsUsed || 0)
   const [, setDocumentReviews] = useSafeKV<DocumentReviewResult[]>(

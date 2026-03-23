@@ -63,7 +63,7 @@ const COLOR_MAP: Record<string, { bg: string; text: string; glow: string }> = {
   gold: { bg: "bg-[#bca444]/20", text: "text-[#bca444]", glow: "shadow-[#bca444]/30" },
 }
 
-export function LandingPage({ onLogin, onSignup, onAuthSuccess, user, onBackToDashboard, onNavigate }: LandingPageProps) {
+export function LandingPage({ onAuthSuccess, user, onBackToDashboard, onNavigate }: LandingPageProps) {
   const [activeQuote, setActiveQuote] = useState<QuoteNode | null>(null)
   const [authModal, setAuthModal] = useState<"login" | "signup" | null>(null)
   const [hoveredPill, setHoveredPill] = useState<string | null>(null)

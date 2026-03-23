@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef } from "react"
 import { v4 as uuidv4 } from "uuid"
 import type { Icon } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
@@ -33,23 +33,17 @@ import {
   MapPin,
   FloppyDisk,
   Trash,
-  UserPlus,
-  PencilSimple,
-  ShieldCheck,
-  Clock,
-  Seal,
 } from "@phosphor-icons/react"
 import { motion, AnimatePresence } from "framer-motion"
 import { toast } from "sonner"
 import { sentinelQuery } from "@/lib/sentinel-query-pipeline"
-import { consumeNGOCredit, getFeatureEntitlements } from "@/lib/subscription"
+import { consumeReviewCredit, getFeatureEntitlements } from "@/lib/subscription"
 import { isNeonConfigured } from "@/lib/neon-client"
 import { isGeminiConfigured } from "@/lib/gemini-client"
 import { isCopilotConfigured } from "@/lib/copilot-client"
 import { logQuery } from "@/lib/sentinel-brain"
 import { REPORT_BRAND } from "@/lib/report-branding"
-import { UserProfile, NGOTeamMember, NGOAccessLevel } from "@/types"
-import { getTeamMembers, addTeamMember, updateMemberAccess, removeMember, getNGOAccessLevel, canWrite, canDelete, canManageTeam } from "@/lib/ngo-team"
+import { UserProfile } from "@/types"
 
 // --- Types ---
 
@@ -337,71 +331,24 @@ function getBrandForExport(org: OrgSettings | null) {
   }
 }
 
-function buildReportHtml(title: string, body: string, brand: ReturnType<typeof getBrandForExport>, options?: { status?: string; submittedBy?: string; category?: string }): string {
+function buildReportHtml(title: string, body: string, brand: ReturnType<typeof getBrandForExport>): string {
   const logoHtml = brand.logo
     ? `<img src="${brand.logo}" alt="${brand.name} logo" style="height:44px;object-fit:contain;" />`
     : `<span style="font-size:20px;font-weight:700;color:${brand.primary};">${brand.name}</span>`
-  const dateStr = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })
-  const isSigned = options?.status === "signed"
-  const isApproved = options?.status === "approved" || isSigned
-  const categoryLabel = options?.category ? `<span style="display:inline-block;background:${brand.primary}15;color:${brand.primary};padding:2px 10px;border-radius:12px;font-size:11px;font-weight:600;letter-spacing:0.5px;border:1px solid ${brand.primary}30;">${options.category}</span>` : ""
-  const signatureBlock = isSigned
-    ? `<div style="margin-top:48px;padding-top:24px;border-top:1px solid #ddd;">
-        <div style="display:flex;justify-content:space-between;gap:48px;">
-          <div style="flex:1;">
-            <p style="font-size:11px;color:#6A5B5B;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Prepared By</p>
-            <p style="font-size:13px;font-weight:600;">${options?.submittedBy || "—"}</p>
-            <p style="font-size:11px;color:#999;">${dateStr}</p>
-          </div>
-          <div style="flex:1;">
-            <p style="font-size:11px;color:#6A5B5B;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Approved & Signed By</p>
-            <div style="border-bottom:2px solid ${brand.primary};width:200px;margin-bottom:6px;padding-bottom:24px;"></div>
-            <p style="font-size:11px;color:#999;">CEO / Manager · ${brand.name}</p>
-            <p style="font-size:11px;color:#999;">${dateStr}</p>
-          </div>
-        </div>
-      </div>`
-    : isApproved
-    ? `<div style="margin-top:48px;padding-top:24px;border-top:1px solid #ddd;">
-        <p style="font-size:11px;color:#6A5B5B;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Status: Approved</p>
-        <p style="font-size:13px;font-weight:600;">${options?.submittedBy || "—"} · ${dateStr}</p>
-      </div>`
-    : ""
   return `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>${title}</title>
 <style>
-  @page { margin: 48px; }
-  body{font-family:Inter,Calibri,sans-serif;padding:48px;max-width:960px;margin:0 auto;color:#1C1414;line-height:1.8;}
+  body{font-family:Inter,Calibri,sans-serif;padding:48px;max-width:960px;margin:0 auto;color:#1C1414;}
   .header{border-bottom:3px solid ${brand.primary};padding-bottom:16px;margin-bottom:28px;display:flex;justify-content:space-between;align-items:center;}
-  .header-right{text-align:right;font-size:11px;color:#6A5B5B;line-height:1.6;}
-  h1{color:${brand.primary};margin-top:0;font-size:22px;line-height:1.3;}
-  h2{color:${brand.secondary};border-left:4px solid ${brand.primary};padding-left:10px;margin-top:28px;font-size:16px;}
-  h3{color:${brand.primary};font-size:14px;margin-top:20px;}
-  .meta{display:flex;align-items:center;gap:12px;margin-bottom:24px;flex-wrap:wrap;}
-  .meta-date{font-size:12px;color:#6A5B5B;}
-  .content{white-space:pre-wrap;line-height:1.8;font-size:13px;}
-  .footer{margin-top:56px;border-top:2px solid ${brand.primary};padding-top:16px;text-align:center;font-size:11px;color:#6A5B5B;}
-  .footer p{margin:2px 0;}
-  .confidential{font-size:10px;color:#999;text-transform:uppercase;letter-spacing:1px;margin-top:8px;}
+  h1{color:${brand.primary};margin-top:0;}
+  h2{color:${brand.secondary};border-left:4px solid ${brand.primary};padding-left:10px;}
+  .footer{margin-top:56px;border-top:2px solid ${brand.primary};padding-top:16px;text-align:center;font-size:12px;color:#6A5B5B;}
 </style>
 </head><body>
-  <div class="header">
-    <div>${logoHtml}</div>
-    <div class="header-right">
-      ${brand.contact ? `<p>${brand.contact}</p>` : ""}
-      <p>${dateStr}</p>
-      ${isSigned ? '<p style="color:#059669;font-weight:600;">✓ SIGNED</p>' : isApproved ? '<p style="color:#2563eb;font-weight:600;">✓ APPROVED</p>' : ""}
-    </div>
-  </div>
+  <div class="header"><div>${logoHtml}</div><div style="text-align:right;font-size:12px;color:#6A5B5B;">${brand.contact}</div></div>
   <h1>${title}</h1>
-  <div class="meta">${categoryLabel}<span class="meta-date">${dateStr}</span></div>
-  <div class="content">${body}</div>
-  ${signatureBlock}
-  <div class="footer">
-    <p><strong>${brand.name}</strong></p>
-    <p>Generated by Sentinel AI · ${dateStr}</p>
-    <p class="confidential">Confidential — For authorized use only</p>
-  </div>
+  <div style="white-space:pre-wrap;line-height:1.7;">${body}</div>
+  <div class="footer">${brand.name} — Generated by Sentinel AI · ${new Date().toLocaleDateString()}</div>
 </body></html>`
 }
 
@@ -413,18 +360,18 @@ function downloadBlob(blob: Blob, filename: string) {
   setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url) }, 500)
 }
 
-async function exportAsPDF(title: string, body: string, org: OrgSettings | null, options?: { status?: string; submittedBy?: string; category?: string }) {
+async function exportAsPDF(title: string, body: string, org: OrgSettings | null) {
   const brand = getBrandForExport(org)
-  const html = buildReportHtml(title, body, brand, options)
+  const html = buildReportHtml(title, body, brand)
   const { default: jsPDF } = await import("jspdf")
   const doc = new jsPDF({ unit: "pt", format: "a4" })
   await doc.html(html, { x: 0, y: 0, width: 595, windowWidth: 960 })
   doc.save(`${title.replace(/\s+/g, "-")}.pdf`)
 }
 
-function exportAsWord(title: string, body: string, org: OrgSettings | null, options?: { status?: string; submittedBy?: string; category?: string }) {
+function exportAsWord(title: string, body: string, org: OrgSettings | null) {
   const brand = getBrandForExport(org)
-  const html = buildReportHtml(title, body, brand, options)
+  const html = buildReportHtml(title, body, brand)
   const blob = new Blob(["\ufeff", html], { type: "application/msword" })
   downloadBlob(blob, `${title.replace(/\s+/g, "-")}.doc`)
 }
@@ -471,12 +418,7 @@ export function NGOModule({ userId, user }: NGOModuleProps) {
   const [reportTitle, setReportTitle] = useState("")
   const [reportBody, setReportBody] = useState("")
   const [reportGenerating, setReportGenerating] = useState(false)
-  const [savedReports, setSavedReports] = useState<{
-    id: string; title: string; body: string; createdAt: number;
-    category?: string;
-    status?: "draft" | "pending_approval" | "approved" | "signed";
-    submittedBy?: string;
-  }[]>([])
+  const [savedReports, setSavedReports] = useState<{ id: string; title: string; body: string; createdAt: number }[]>([])
   const [reportsLoaded, setReportsLoaded] = useState(false)
 
   // Org settings state
@@ -487,28 +429,8 @@ export function NGOModule({ userId, user }: NGOModuleProps) {
   const [orgLoaded, setOrgLoaded] = useState(false)
   const [orgSaving, setOrgSaving] = useState(false)
 
-  // Knowledge Base files for AI context
-  const [uploadedKBFiles, setUploadedKBFiles] = useState<ProjectFile[]>([])
-  const [uploadingKBFile, setUploadingKBFile] = useState(false)
-  const [stateRestored, setStateRestored] = useState(false)
-  const kbFileInputRef = useRef<HTMLInputElement>(null)
-
-  // Team management
-  const [teamMembers, setTeamMembers] = useState<NGOTeamMember[]>([])
-  const [teamLoaded, setTeamLoaded] = useState(false)
-  const [newMemberEmail, setNewMemberEmail] = useState("")
-  const [newMemberPassword, setNewMemberPassword] = useState("")
-  const [newMemberName, setNewMemberName] = useState("")
-  const [newMemberLevel, setNewMemberLevel] = useState<NGOAccessLevel>("user")
-  const [addingMember, setAddingMember] = useState(false)
-  const [editingMemberId, setEditingMemberId] = useState<string | null>(null)
-
   const entitlements = user ? getFeatureEntitlements(user) : null
   const canAccessNGOModule = user?.role === "admin" || !!entitlements?.canAccessNGOSaaS
-  const accessLevel = getNGOAccessLevel(user)
-  const hasWriteAccess = canWrite(accessLevel)
-  const hasDeleteAccess = canDelete(accessLevel)
-  const hasTeamAccess = canManageTeam(accessLevel)
 
   const currentAction = NGO_ACTIONS.find((a) => a.id === activeAction) ?? NGO_ACTIONS[0]
   const neonReady = isNeonConfigured()
@@ -539,15 +461,6 @@ export function NGOModule({ userId, user }: NGOModuleProps) {
     setOrgLoaded(true)
   }
 
-  const loadTeam = async () => {
-    if (teamLoaded) return
-    try {
-      const members = await getTeamMembers(userId)
-      setTeamMembers(members)
-    } catch { /* ignore */ }
-    setTeamLoaded(true)
-  }
-
   const loadReports = async () => {
     if (reportsLoaded) return
     const data = await kvGet<typeof savedReports>(`ngo-reports-${userId}`)
@@ -555,80 +468,25 @@ export function NGOModule({ userId, user }: NGOModuleProps) {
     setReportsLoaded(true)
   }
 
-  // Persist NGO Module State
-  useEffect(() => {
-    const loadNGOState = async () => {
-      const saved = await kvGet<{ activeAction: string; input: string; uploadedKBFiles: ProjectFile[] }>(
-        `ngo-module-state-${userId}`
-      )
-      if (saved) {
-        if (saved.activeAction) setActiveAction(saved.activeAction)
-        if (saved.input) setInput(saved.input)
-        if (saved.uploadedKBFiles?.length) setUploadedKBFiles(saved.uploadedKBFiles)
-      }
-      setStateRestored(true)
-    }
-    loadNGOState()
-  }, [userId])
-
-  useEffect(() => {
-    if (!stateRestored) return
-    const saveNGOState = async () => {
-      await kvSet(`ngo-module-state-${userId}`, {
-        activeAction,
-        input,
-        uploadedKBFiles,
-      })
-    }
-    saveNGOState()
-  }, [activeAction, input, uploadedKBFiles, userId, stateRestored])
+  // AI Actions handlers
 
   const handleActionChange = (actionId: string) => {
     setActiveAction(actionId); setInput(""); setResult(null); setError(null)
   }
 
-  /** Detect gibberish / nonsensical input */
-  const isGibberish = (text: string): boolean => {
-    const words = text.trim().split(/\s+/).filter(w => w.length > 1)
-    if (words.length === 0) return true
-    const vowels = /[aeiouy]/i
-    const consonantStreak = /[^aeiouy\s\d]{5,}/i
-    let suspectWords = 0
-    for (const word of words) {
-      const clean = word.replace(/[^a-zA-Z]/g, "")
-      if (clean.length < 2) continue
-      const hasVowel = vowels.test(clean)
-      const hasLongConsonants = consonantStreak.test(clean)
-      const vowelRatio = (clean.match(/[aeiouy]/gi) || []).length / clean.length
-      if (!hasVowel || hasLongConsonants || vowelRatio < 0.1 || clean.length > 18) {
-        suspectWords++
-      }
-    }
-    const meaningfulWords = words.filter(w => w.replace(/[^a-zA-Z]/g, "").length >= 2)
-    if (meaningfulWords.length === 0) return true
-    return (suspectWords / meaningfulWords.length) > 0.5
-  }
-
   const handleGenerate = async () => {
     if (!user) { toast.error("Please sign in to use the NGO module."); return }
     if (!canAccessNGOModule) { toast.error("NGO-SAAS is available for Enterprise plan and Super Admin only."); return }
-    if (input.trim().length < 20) { toast.error("Please provide more detail (at least 20 characters)."); return }
-    if (isGibberish(input)) { toast.error("No meaningful context — please specify according to core actions."); return }
+    if (input.trim().length < 30) { toast.error("Please provide more detail (at least 30 characters)."); return }
 
     setIsLoading(true); setError(null); setResult(null)
     try {
-      // Credit check — skip gracefully if spark.kv user lookup fails
-      try {
-        const creditResult = await consumeNGOCredit(user.id)
-        if (!creditResult.success && creditResult.error !== "User not found") {
-          toast.error(creditResult.error ?? "You've used all your credits. Please upgrade your plan.")
-          setIsLoading(false); return
-        }
-      } catch {
-        // spark.kv unavailable — allow generation to proceed
+      const creditResult = await consumeReviewCredit(user.id)
+      if (!creditResult.success) {
+        toast.error(creditResult.error ?? "You've used all your credits. Please upgrade your plan.")
+        setIsLoading(false); return
       }
-      let prompt = getPromptForAction(activeAction, input)
-      prompt += getKBContext()
+      const prompt = getPromptForAction(activeAction, input)
       const res = await sentinelQuery(prompt, {
         module: "ngo_module",
         userId: typeof user.id === "number" ? user.id : undefined,
@@ -729,7 +587,7 @@ Write a concise project summary report titled "${reportTitle}".${context}
 Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommendations, Next Steps. 2-4 paragraphs each.`
     setReportGenerating(true)
     try {
-      const creditResult = await consumeNGOCredit(user.id)
+      const creditResult = await consumeReviewCredit(user.id)
       if (!creditResult.success) { toast.error(creditResult.error ?? "No credits remaining."); return }
       const res = await sentinelQuery(prompt, {
         module: "ngo_module",
@@ -744,21 +602,11 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
       })
       const body = typeof res.response === "string" ? res.response : JSON.stringify(res.response, null, 2)
       setReportBody(body)
-      const isOwnerOrAdmin = hasDeleteAccess
-      const newReport = {
-        id: uuidv4(), title: reportTitle, body, createdAt: Date.now(),
-        category: "Project Report",
-        status: isOwnerOrAdmin ? "draft" as const : "pending_approval" as const,
-        submittedBy: user?.fullName || user?.email || userId,
-      }
+      const newReport = { id: uuidv4(), title: reportTitle, body, createdAt: Date.now() }
       const updated = [newReport, ...savedReports]
       setSavedReports(updated)
       await kvSet(`ngo-reports-${userId}`, updated)
-      if (isOwnerOrAdmin) {
-        toast.success("Report generated and saved.")
-      } else {
-        toast.success("Report generated and sent to CEO / Manager for approval & sign")
-      }
+      toast.success("Report generated and saved.")
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Report generation failed.")
     } finally {
@@ -780,99 +628,6 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
     }
   }
 
-  // --- Team Management Handlers ---
-  const handleAddMember = async () => {
-    if (!newMemberEmail || !newMemberPassword || !newMemberName) {
-      toast.error("Please fill all fields: name, email, and password.")
-      return
-    }
-    setAddingMember(true)
-    try {
-      const result = await addTeamMember(userId, newMemberEmail, newMemberPassword, newMemberName, newMemberLevel)
-      if (result.success && result.member) {
-        setTeamMembers(prev => [...prev, result.member!])
-        setNewMemberEmail("")
-        setNewMemberPassword("")
-        setNewMemberName("")
-        setNewMemberLevel("user")
-        toast.success(`${result.member.fullName} added as ${result.member.accessLevel}`)
-      } else {
-        toast.error(result.error || "Failed to add member")
-      }
-    } catch {
-      toast.error("Failed to add team member")
-    } finally {
-      setAddingMember(false)
-    }
-  }
-
-  const handleUpdateMemberLevel = async (memberId: string, level: NGOAccessLevel) => {
-    const result = await updateMemberAccess(userId, memberId, level)
-    if (result.success) {
-      setTeamMembers(prev => prev.map(m => m.id === memberId ? { ...m, accessLevel: level } : m))
-      setEditingMemberId(null)
-      toast.success("Access level updated")
-    } else {
-      toast.error(result.error || "Failed to update access level")
-    }
-  }
-
-  const handleRemoveMember = async (memberId: string, memberName: string) => {
-    const result = await removeMember(userId, memberId)
-    if (result.success) {
-      setTeamMembers(prev => prev.filter(m => m.id !== memberId))
-      toast.success(`${memberName} removed from team`)
-    } else {
-      toast.error(result.error || "Failed to remove member")
-    }
-  }
-
-  const handleDeleteReport = async (reportId: string) => {
-    const updated = savedReports.filter(r => r.id !== reportId)
-    setSavedReports(updated)
-    await kvSet(`ngo-reports-${userId}`, updated)
-    toast.success("Report deleted")
-  }
-
-  const [editingReportId, setEditingReportId] = useState<string | null>(null)
-  const [editReportBody, setEditReportBody] = useState("")
-
-  const handleEditReport = (report: { id: string; title: string; body: string }) => {
-    setEditingReportId(report.id)
-    setEditReportBody(report.body)
-  }
-
-  const handleSaveEditedReport = async () => {
-    if (!editingReportId) return
-    const updated = savedReports.map(r => r.id === editingReportId ? { ...r, body: editReportBody } : r)
-    setSavedReports(updated)
-    await kvSet(`ngo-reports-${userId}`, updated)
-    setEditingReportId(null)
-    setEditReportBody("")
-    toast.success("Report updated")
-  }
-
-  const handleApproveReport = async (reportId: string) => {
-    const updated = savedReports.map(r => r.id === reportId ? { ...r, status: "approved" as const } : r)
-    setSavedReports(updated)
-    await kvSet(`ngo-reports-${userId}`, updated)
-    toast.success("Report approved")
-  }
-
-  const handleSignReport = async (reportId: string) => {
-    const report = savedReports.find(r => r.id === reportId)
-    if (!report) return
-    const signerName = user?.fullName || user?.email || "CEO / Manager"
-    const dateStr = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })
-    const orgName = orgLoaded && orgSettings.orgName ? orgSettings.orgName : "Sentinel AI"
-    const signatureBlock = `\n\n────────────────────────────────\nSIGNED & APPROVED\n\nSignatory: ${signerName}\nOrganization: ${orgName}\nDate: ${dateStr}\nStatus: Officially Signed\n────────────────────────────────`
-    const signedBody = report.body + signatureBlock
-    const updated = savedReports.map(r => r.id === reportId ? { ...r, body: signedBody, status: "signed" as const } : r)
-    setSavedReports(updated)
-    await kvSet(`ngo-reports-${userId}`, updated)
-    toast.success("Report signed — signature added and available for all users")
-  }
-
   const copyToClipboard = async (text: string, idx?: number) => {
     await navigator.clipboard.writeText(text)
     if (idx !== undefined) { setCopiedEmail(idx); setTimeout(() => setCopiedEmail(null), 2000) }
@@ -880,109 +635,6 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
   }
 
   const clearAll = () => { setInput(""); setResult(null); setError(null) }
-
-  const handleSaveResult = async () => {
-    if (!result) return
-    const title = `[${currentAction.label}] ${result.header}`
-    const body = result.mainContent + (result.suggestedKPIs?.length ? `\n\nKPIs:\n${result.suggestedKPIs.join("\n")}` : "")
-    const isOwnerOrAdmin = hasDeleteAccess
-    const newReport = {
-      id: uuidv4(), title, body, createdAt: Date.now(),
-      category: currentAction.label,
-      status: isOwnerOrAdmin ? "draft" as const : "pending_approval" as const,
-      submittedBy: user?.fullName || user?.email || userId,
-    }
-    const updated = [newReport, ...savedReports]
-    setSavedReports(updated)
-    await kvSet(`ngo-reports-${userId}`, updated)
-    if (isOwnerOrAdmin) {
-      toast.success(`"${result.header}" saved to Reports under ${currentAction.label}`)
-    } else {
-      toast.success(`"${result.header}" saved and sent to CEO / Manager for approval & sign`)
-    }
-  }
-
-  // Knowledge Base file handlers
-
-  const handleKBFileSelect = async (files: FileList | null) => {
-    if (!files || files.length === 0) return
-    setUploadingKBFile(true)
-    try {
-      const file = files[0]
-      const MAX_SIZE_MB = 10
-      if (file.size > MAX_SIZE_MB * 1024 * 1024) {
-        toast.error(`File size must be less than ${MAX_SIZE_MB}MB`)
-        return
-      }
-
-      const allowedExtensions = [".txt", ".csv", ".md", ".json", ".pdf", ".doc", ".docx", ".xls", ".xlsx"]
-      const ext = file.name.toLowerCase().substring(file.name.lastIndexOf("."))
-      if (!allowedExtensions.includes(ext)) {
-        toast.error("Supported: TXT, CSV, MD, JSON, PDF, DOC, DOCX, XLS, XLSX")
-        return
-      }
-
-      // Text-readable formats: extract content directly
-      const textExtensions = [".txt", ".csv", ".md", ".json"]
-      let content: string
-      let fileType: ProjectFile["type"] = "other"
-
-      if (textExtensions.includes(ext)) {
-        content = await file.text()
-        fileType = ext === ".csv" ? "csv" : "document"
-      } else {
-        // Binary formats (PDF, DOCX, XLSX): store metadata as context
-        content = `[Binary file: ${file.name} · ${(file.size / 1024).toFixed(1)} KB · Uploaded ${new Date().toLocaleDateString()}]\nNote: Binary file content cannot be extracted in-browser. Use this file as a reference in your prompt description.`
-        fileType = "document"
-        toast.info(`"${file.name}" added as reference — describe its contents in the text box for best AI results.`)
-      }
-
-      const truncatedContent = content.length > 5000 ? content.substring(0, 5000) + "\n[... content truncated ...]" : content
-
-      const newFile: ProjectFile = {
-        id: uuidv4(),
-        projectId: "kb",
-        name: file.name,
-        type: fileType,
-        size: file.size,
-        content: truncatedContent,
-        uploadedAt: Date.now(),
-      }
-
-      const updated = [...uploadedKBFiles, newFile]
-      setUploadedKBFiles(updated)
-      await kvSet(`ngo-kb-files-${userId}`, updated)
-      if (textExtensions.includes(ext)) {
-        toast.success(`"${file.name}" added to knowledge base`)
-      }
-    } catch (err) {
-      toast.error("Failed to upload file. Please try again.")
-      console.error("KB file upload error:", err)
-    } finally {
-      setUploadingKBFile(false)
-      if (kbFileInputRef.current) kbFileInputRef.current.value = ""
-    }
-  }
-
-  const handleRemoveKBFile = async (fileId: string) => {
-    const updated = uploadedKBFiles.filter(f => f.id !== fileId)
-    setUploadedKBFiles(updated)
-    await kvSet(`ngo-kb-files-${userId}`, updated)
-    toast.success("File removed from knowledge base")
-  }
-
-  const getKBContext = (): string => {
-    if (uploadedKBFiles.length === 0) return ""
-    const escapedContent = uploadedKBFiles.map(f => {
-      const escaped = f.content
-        .replace(/\\/g, "\\\\")
-        .replace(/"/g, '\\"')
-        .replace(/\n/g, "\\n")
-        .replace(/\r/g, "\\r")
-      return `File: ${f.name}\n${escaped}`
-    }).join("\n\n")
-    return `\n\nREFERENCE MATERIALS FROM KNOWLEDGE BASE:\n${escapedContent}`
-  }
 
   // Access guard
 
@@ -1022,10 +674,10 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
         </div>
         {(geminiReady || copilotReady || sparkReady || neonReady) && (
           <div className="ml-auto flex flex-wrap gap-2">
-            <Badge variant="outline" className="text-xs text-emerald-600 border-emerald-400/40 bg-emerald-500/5">
-              Sentinel AI {[geminiReady, copilotReady, sparkReady].filter(Boolean).length > 1 ? "Multi-Engine" : "Active"}
-            </Badge>
-            {neonReady && <Badge variant="outline" className="text-xs text-blue-600 border-blue-400/40 bg-blue-500/5">Analytics</Badge>}
+            {geminiReady && <Badge variant="outline" className="text-xs text-emerald-600 border-emerald-400/40 bg-emerald-500/5">Gemini 2.5 Flash</Badge>}
+            {copilotReady && <Badge variant="outline" className="text-xs text-violet-600 border-violet-400/40 bg-violet-500/5">Copilot Bridge</Badge>}
+            {sparkReady && <Badge variant="outline" className="text-xs text-amber-600 border-amber-400/40 bg-amber-500/5">Spark Fallback</Badge>}
+            {neonReady && <Badge variant="outline" className="text-xs text-blue-600 border-blue-400/40 bg-blue-500/5">Neon Logging</Badge>}
           </div>
         )}
       </div>
@@ -1039,9 +691,6 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
           <TabsTrigger value="reports" className="gap-1.5 text-xs" onClick={() => { loadProjects(); loadFiles(); loadReports() }}><FileText size={14} weight="bold" /> Reports</TabsTrigger>
           <TabsTrigger value="export" className="gap-1.5 text-xs" onClick={() => { loadReports(); loadOrgSettings() }}><Download size={14} weight="bold" /> Export</TabsTrigger>
           <TabsTrigger value="org-settings" className="gap-1.5 text-xs" onClick={loadOrgSettings}><Buildings size={14} weight="bold" /> Org Settings</TabsTrigger>
-          {hasTeamAccess && (
-            <TabsTrigger value="team" className="gap-1.5 text-xs" onClick={loadTeam}><Users size={14} weight="bold" /> Team</TabsTrigger>
-          )}
         </TabsList>
 
         {/* Tab: AI Actions */}
@@ -1087,77 +736,13 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
                   <p className="text-sm text-muted-foreground">{currentAction.description}</p>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="border-b border-border/50 pb-4">
-                    <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Knowledge Base Files (Optional)</label>
-                    <div className="flex items-center gap-2 mb-3">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="gap-2 text-xs border-emerald-400/40 hover:bg-emerald-500/10"
-                        onClick={() => kbFileInputRef.current?.click()}
-                        disabled={uploadingKBFile}
-                      >
-                        <UploadSimple size={14} weight="bold" />
-                        {uploadingKBFile ? "Uploading..." : "Add File"}
-                      </Button>
-                      <input
-                        ref={kbFileInputRef}
-                        type="file"
-                        accept=".txt,.csv,.md,.json,.pdf,.doc,.docx,.xls,.xlsx"
-                        onChange={(e) => handleKBFileSelect(e.target.files)}
-                        className="hidden"
-                      />
-                      <p className="text-xs text-muted-foreground">TXT, CSV, MD, JSON, PDF, DOC, XLSX · Max 10MB</p>
-                    </div>
-                    {uploadedKBFiles.length > 0 && (
-                      <div className="space-y-2">
-                        {uploadedKBFiles.map((file) => (
-                          <div key={file.id} className="space-y-2">
-                            <div className="flex items-center justify-between rounded-lg border border-emerald-400/20 bg-emerald-500/5 px-3 py-2">
-                              <div className="flex-1 min-w-0">
-                                <p className="text-xs font-medium text-foreground truncate">{file.name}</p>
-                                <p className="text-xs text-muted-foreground">{(file.size / 1024).toFixed(1)} KB · {file.content.length} chars</p>
-                              </div>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="h-6 w-6 p-0 text-red-500 hover:bg-red-500/10"
-                                onClick={() => handleRemoveKBFile(file.id)}
-                              >
-                                <Trash size={14} weight="bold" />
-                              </Button>
-                            </div>
-                            <div className="rounded-lg border border-emerald-300/20 bg-emerald-50 dark:bg-emerald-950/30 p-3 max-h-32 overflow-y-auto">
-                              <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 mb-2">Preview:</p>
-                              <p className="text-xs text-foreground whitespace-pre-wrap font-mono leading-relaxed">{file.content.substring(0, 300)}{file.content.length > 300 ? "...[truncated]" : ""}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
                   <div>
-                    <div className="flex items-center justify-between mb-3">
-                      <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider">{currentAction.inputLabel}</label>
-                      {uploadedKBFiles.length > 0 && (
-                        <Badge variant="outline" className="text-xs bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-400/30 gap-1.5">
-                          <FolderOpen size={12} />
-                          {uploadedKBFiles.length} file{uploadedKBFiles.length > 1 ? "s" : ""} loaded
-                        </Badge>
-                      )}
-                    </div>
+                    <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{currentAction.inputLabel}</label>
                     <Textarea value={input} onChange={(e) => setInput(e.target.value)} placeholder={currentAction.placeholder} className="min-h-[180px] text-sm resize-y font-mono" disabled={isLoading} />
-                    <div className="flex items-center justify-between mt-1.5">
-                      <p className="text-xs text-muted-foreground">{input.length} chars · Minimum 20 characters</p>
-                      {uploadedKBFiles.length > 0 && (
-                        <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">✓ KB context will be included</p>
-                      )}
-                    </div>
+                    <p className="text-xs text-muted-foreground mt-1.5">{input.length} chars · Minimum 30 characters required</p>
                   </div>
                   <div className="flex items-center gap-3">
-                    <Button onClick={handleGenerate} disabled={isLoading || input.trim().length < 20} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2">
+                    <Button onClick={handleGenerate} disabled={isLoading || input.trim().length < 30} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2">
                       {isLoading ? <><ArrowClockwise size={16} weight="bold" className="animate-spin" />Generating…</> : <><Sparkle size={16} weight="fill" />Generate with Sentinel AI</>}
                     </Button>
                     {(result || error) && (
@@ -1203,23 +788,7 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
                         <CheckCircle size={18} weight="fill" className="text-emerald-500" />
                         <h3 className="font-semibold text-foreground">{result.header}</h3>
                       </div>
-                      <div className="flex flex-wrap gap-2 shrink-0">
-                        <Button variant="outline" size="sm" onClick={handleSaveResult} className="text-xs gap-1.5 border-emerald-400/40 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10">
-                          <FloppyDisk size={14} weight="bold" />Save
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={() => copyToClipboard(result.mainContent)} className="text-xs gap-1.5">
-                          <CheckCircle size={14} />Copy
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={() => exportAsPDF(result.header, result.mainContent, orgSettings)} className="text-xs gap-1.5">
-                          <Download size={14} />PDF
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={() => exportAsWord(result.header, result.mainContent, orgSettings)} className="text-xs gap-1.5">
-                          <Download size={14} />Word
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={() => exportAsExcel(result.header, [[result.mainContent]], orgSettings)} className="text-xs gap-1.5">
-                          <Download size={14} />Excel
-                        </Button>
-                      </div>
+                      <Button variant="outline" size="sm" onClick={() => copyToClipboard(result.mainContent)} className="shrink-0 text-xs">Copy Content</Button>
                     </div>
                     {result.sdgTags && result.sdgTags.length > 0 && (
                       <div className="flex flex-wrap gap-2">
@@ -1299,27 +868,20 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
 
         {/* Tab: Projects */}
         <TabsContent value="projects" className="mt-4 space-y-6">
-          {hasWriteAccess && (
-            <Card className="border-border/50">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base font-semibold flex items-center gap-2">
-                  <FilePlus size={18} weight="bold" className="text-emerald-500" />Create New Project
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <Input placeholder="Project name *" value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} />
-                <Textarea placeholder="Short description (optional)" value={newProjectDesc} onChange={(e) => setNewProjectDesc(e.target.value)} className="min-h-[80px] text-sm" />
-                <Button onClick={handleCreateProject} disabled={!newProjectName.trim()} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2">
-                  <FilePlus size={16} weight="bold" />Create Project
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-          {!hasWriteAccess && (
-            <div className="rounded-xl border border-amber-400/20 bg-amber-500/5 p-3">
-              <p className="text-xs text-amber-700 dark:text-amber-400 font-medium">Read-only access — project creation requires Contributor or higher</p>
-            </div>
-          )}
+          <Card className="border-border/50">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <FilePlus size={18} weight="bold" className="text-emerald-500" />Create New Project
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Input placeholder="Project name *" value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} />
+              <Textarea placeholder="Short description (optional)" value={newProjectDesc} onChange={(e) => setNewProjectDesc(e.target.value)} className="min-h-[80px] text-sm" />
+              <Button onClick={handleCreateProject} disabled={!newProjectName.trim()} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2">
+                <FilePlus size={16} weight="bold" />Create Project
+              </Button>
+            </CardContent>
+          </Card>
           <div className="space-y-3">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Your Projects ({projects.length})</p>
             {projects.length === 0 ? (
@@ -1339,12 +901,10 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
                         ID: <code className="bg-muted px-1 rounded text-xs">{p.id}</code>{" · "}{new Date(p.createdAt).toLocaleDateString()}
                       </p>
                     </div>
-                    {hasDeleteAccess && (
-                      <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-600 hover:bg-red-50 shrink-0"
-                        onClick={(e) => { e.stopPropagation(); handleDeleteProject(p.id) }}>
-                        <Trash size={14} weight="bold" />
-                      </Button>
-                    )}
+                    <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-600 hover:bg-red-50 shrink-0"
+                      onClick={(e) => { e.stopPropagation(); handleDeleteProject(p.id) }}>
+                      <Trash size={14} weight="bold" />
+                    </Button>
                   </CardContent>
                 </Card>
               ))
@@ -1373,11 +933,10 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
                 <UploadSimple size={32} weight="bold" className="text-muted-foreground mx-auto mb-3" />
                 <p className="text-sm text-muted-foreground mb-3">Upload proposal templates, reports, or CSV/Excel data files</p>
                 <input ref={fileInputRef} type="file" multiple accept=".doc,.docx,.pdf,.txt,.md,.csv,.xls,.xlsx" className="hidden" onChange={handleFileUpload} />
-                <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={!selectedProjectId || !hasWriteAccess} className="gap-2">
+                <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={!selectedProjectId} className="gap-2">
                   <UploadSimple size={14} weight="bold" />Choose Files
                 </Button>
                 {!selectedProjectId && <p className="text-xs text-amber-600 mt-2">Select a project first</p>}
-                {selectedProjectId && !hasWriteAccess && <p className="text-xs text-amber-600 mt-2">Read-only access — file upload requires Contributor or higher</p>}
               </div>
             </CardContent>
           </Card>
@@ -1398,11 +957,9 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
                         </div>
                       </div>
                       <Badge variant="outline" className="text-xs shrink-0">{f.type}</Badge>
-                      {hasDeleteAccess && (
-                        <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-600 hover:bg-red-50 shrink-0" onClick={() => handleDeleteFile(f.id)}>
-                          <Trash size={13} weight="bold" />
-                        </Button>
-                      )}
+                      <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-600 hover:bg-red-50 shrink-0" onClick={() => handleDeleteFile(f.id)}>
+                        <Trash size={13} weight="bold" />
+                      </Button>
                     </CardContent>
                   </Card>
                 ))
@@ -1450,108 +1007,23 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
               </CardContent>
             </Card>
           )}
-          {savedReports.length > 0 && (() => {
-            const visibleReports = hasDeleteAccess
-              ? savedReports
-              : savedReports.filter(r => r.status === "signed" || r.submittedBy === (user?.fullName || user?.email || userId))
-            if (visibleReports.length === 0) return null
-            return (
-            <div className="space-y-4">
+          {savedReports.length > 0 && (
+            <div className="space-y-2">
               <Separator />
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider pt-2">Saved Reports ({visibleReports.length})</p>
-              {!hasDeleteAccess && (
-                <div className="rounded-lg border border-blue-400/20 bg-blue-500/5 p-2.5">
-                  <p className="text-xs text-blue-700 dark:text-blue-400">Only signed reports and your own submissions are visible. Unsigned reports require Owner/Admin approval.</p>
-                </div>
-              )}
-              {/* Group by category */}
-              {Array.from(new Set(visibleReports.map(r => r.category || "Uncategorized"))).map(category => {
-                const catReports = visibleReports.filter(r => (r.category || "Uncategorized") === category)
-                return (
-                  <div key={category} className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="text-xs bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-400/30">{category}</Badge>
-                      <span className="text-xs text-muted-foreground">({catReports.length})</span>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider pt-2">Saved Reports ({savedReports.length})</p>
+              {savedReports.map((r) => (
+                <Card key={r.id} className="border-border/50">
+                  <CardContent className="p-3 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">{r.title}</p>
+                      <p className="text-xs text-muted-foreground">{new Date(r.createdAt).toLocaleDateString()}</p>
                     </div>
-                    {catReports.map((r) => (
-                      <Card key={r.id} className="border-border/50">
-                        <CardContent className="p-3">
-                          {editingReportId === r.id ? (
-                            <div className="space-y-2">
-                              <p className="text-sm font-medium text-foreground">{r.title}</p>
-                              <Textarea value={editReportBody} onChange={e => setEditReportBody(e.target.value)} className="min-h-32 text-sm" />
-                              <div className="flex gap-2">
-                                <Button size="sm" className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white gap-1" onClick={handleSaveEditedReport}>
-                                  <FloppyDisk size={14} />Save
-                                </Button>
-                                <Button size="sm" variant="ghost" className="text-xs" onClick={() => setEditingReportId(null)}>Cancel</Button>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="space-y-2">
-                              <div className="flex items-center justify-between gap-3">
-                                <div className="min-w-0 flex-1">
-                                  <p className="text-sm font-medium text-foreground truncate">{r.title}</p>
-                                  <div className="flex items-center gap-2 mt-0.5">
-                                    <p className="text-xs text-muted-foreground">{new Date(r.createdAt).toLocaleDateString()}</p>
-                                    {r.submittedBy && <p className="text-xs text-muted-foreground">by {r.submittedBy}</p>}
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-1 shrink-0">
-                                  {/* Status badge */}
-                                  {r.status === "pending_approval" && (
-                                    <Badge variant="outline" className="text-xs text-amber-600 border-amber-400/30 bg-amber-500/5 gap-1">
-                                      <Clock size={12} />Pending Approval
-                                    </Badge>
-                                  )}
-                                  {r.status === "approved" && (
-                                    <Badge variant="outline" className="text-xs text-blue-600 border-blue-400/30 bg-blue-500/5 gap-1">
-                                      <CheckCircle size={12} />Approved
-                                    </Badge>
-                                  )}
-                                  {r.status === "signed" && (
-                                    <Badge variant="outline" className="text-xs text-emerald-600 border-emerald-400/30 bg-emerald-500/5 gap-1">
-                                      <Seal size={12} weight="fill" />Signed
-                                    </Badge>
-                                  )}
-                                  {(!r.status || r.status === "draft") && (
-                                    <Badge variant="outline" className="text-xs text-muted-foreground">Draft</Badge>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <Button variant="outline" size="sm" className="text-xs" onClick={() => { setReportTitle(r.title); setReportBody(r.body) }}>View</Button>
-                                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => handleEditReport(r)}>
-                                  <PencilSimple size={14} />
-                                </Button>
-                                {/* Owner/Admin approval & sign actions */}
-                                {hasDeleteAccess && r.status === "pending_approval" && (
-                                  <Button variant="outline" size="sm" className="text-xs gap-1 text-blue-600 border-blue-400/30 hover:bg-blue-500/10" onClick={() => handleApproveReport(r.id)}>
-                                    <CheckCircle size={13} />Approve
-                                  </Button>
-                                )}
-                                {hasDeleteAccess && (r.status === "approved" || r.status === "draft") && (
-                                  <Button variant="outline" size="sm" className="text-xs gap-1 text-emerald-600 border-emerald-400/30 hover:bg-emerald-500/10" onClick={() => handleSignReport(r.id)}>
-                                    <Seal size={13} weight="fill" />Sign
-                                  </Button>
-                                )}
-                                {hasDeleteAccess && (
-                                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={() => handleDeleteReport(r.id)}>
-                                    <Trash size={14} />
-                                  </Button>
-                                )}
-                              </div>
-                            </div>
-                          )}
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
-                )
-              })}
+                    <Button variant="outline" size="sm" className="text-xs" onClick={() => { setReportTitle(r.title); setReportBody(r.body) }}>View</Button>
+                  </CardContent>
+                </Card>
+              ))}
             </div>
-            )
-          })()}
+          )}
         </TabsContent>
 
         {/* Tab: Export */}
@@ -1562,39 +1034,29 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
                 <Download size={18} weight="bold" className="text-emerald-500" />Export Reports
               </CardTitle>
               <p className="text-sm text-muted-foreground">
-                Export to PDF, Word, or Excel. Only <strong>signed</strong> reports are available for export. Custom branding from <strong>Org Settings</strong> will be applied.
+                Export to PDF, Word, or Excel. Custom branding from <strong>Org Settings</strong> will be applied if configured.
               </p>
             </CardHeader>
             <CardContent className="space-y-4">
-              {savedReports.filter(r => r.status === "signed").length === 0 ? (
+              {savedReports.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-                  No signed reports available for export. Reports must be signed by an Owner/Admin before they can be exported.
+                  No reports to export yet. Generate a report in the Reports tab first.
                 </div>
               ) : (
-                savedReports.filter(r => r.status === "signed").map((r) => (
+                savedReports.map((r) => (
                   <Card key={r.id} className="border-border/50">
                     <CardContent className="p-4">
-                      <div className="mb-3 flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-semibold text-foreground">{r.title}</p>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <p className="text-xs text-muted-foreground">{new Date(r.createdAt).toLocaleDateString()}</p>
-                            {r.category && <Badge variant="outline" className="text-xs">{r.category}</Badge>}
-                          </div>
-                        </div>
-                        {r.status === "signed" && (
-                          <Badge variant="outline" className="text-xs text-emerald-600 border-emerald-400/30 bg-emerald-500/5 gap-1">
-                            <Seal size={12} weight="fill" />Signed
-                          </Badge>
-                        )}
+                      <div className="mb-3">
+                        <p className="text-sm font-semibold text-foreground">{r.title}</p>
+                        <p className="text-xs text-muted-foreground">{new Date(r.createdAt).toLocaleDateString()}</p>
                       </div>
                       <div className="flex flex-wrap gap-2">
                         <Button variant="outline" size="sm" className="gap-1.5 text-xs"
-                          onClick={async () => { toast.info("Generating PDF…"); await exportAsPDF(r.title, r.body, orgLoaded ? orgSettings : null, { status: r.status, submittedBy: r.submittedBy, category: r.category }) }}>
+                          onClick={async () => { toast.info("Generating PDF…"); await exportAsPDF(r.title, r.body, orgLoaded ? orgSettings : null) }}>
                           <Download size={13} weight="bold" /> PDF
                         </Button>
                         <Button variant="outline" size="sm" className="gap-1.5 text-xs"
-                          onClick={() => { exportAsWord(r.title, r.body, orgLoaded ? orgSettings : null, { status: r.status, submittedBy: r.submittedBy, category: r.category }); toast.success("Word document downloaded.") }}>
+                          onClick={() => { exportAsWord(r.title, r.body, orgLoaded ? orgSettings : null); toast.success("Word document downloaded.") }}>
                           <Download size={13} weight="bold" /> Word
                         </Button>
                         <Button variant="outline" size="sm" className="gap-1.5 text-xs"
@@ -1638,19 +1100,19 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
                   <label className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                     <Buildings size={13} weight="bold" /> Organization Name
                   </label>
-                  <Input placeholder="e.g. Glimpse Foundation" value={orgSettings.orgName} onChange={(e) => setOrgSettings({ ...orgSettings, orgName: e.target.value })} disabled={!hasDeleteAccess} />
+                  <Input placeholder="e.g. Glimpse Foundation" value={orgSettings.orgName} onChange={(e) => setOrgSettings({ ...orgSettings, orgName: e.target.value })} />
                 </div>
                 <div className="space-y-1.5">
                   <label className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Logo URL</label>
-                  <Input placeholder="https://example.com/logo.png" value={orgSettings.logoUrl} onChange={(e) => setOrgSettings({ ...orgSettings, logoUrl: e.target.value })} disabled={!hasDeleteAccess} />
+                  <Input placeholder="https://example.com/logo.png" value={orgSettings.logoUrl} onChange={(e) => setOrgSettings({ ...orgSettings, logoUrl: e.target.value })} />
                 </div>
                 <div className="space-y-1.5">
                   <label className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                     <Palette size={13} weight="bold" /> Primary Color
                   </label>
                   <div className="flex gap-2">
-                    <input type="color" value={orgSettings.primaryColor} onChange={(e) => setOrgSettings({ ...orgSettings, primaryColor: e.target.value })} className="w-10 h-9 rounded border border-border cursor-pointer p-0.5" disabled={!hasDeleteAccess} />
-                    <Input placeholder="#5CC3EB" value={orgSettings.primaryColor} onChange={(e) => setOrgSettings({ ...orgSettings, primaryColor: e.target.value })} className="flex-1 font-mono" disabled={!hasDeleteAccess} />
+                    <input type="color" value={orgSettings.primaryColor} onChange={(e) => setOrgSettings({ ...orgSettings, primaryColor: e.target.value })} className="w-10 h-9 rounded border border-border cursor-pointer p-0.5" />
+                    <Input placeholder="#5CC3EB" value={orgSettings.primaryColor} onChange={(e) => setOrgSettings({ ...orgSettings, primaryColor: e.target.value })} className="flex-1 font-mono" />
                   </div>
                 </div>
                 <div className="space-y-1.5">
@@ -1699,128 +1161,12 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
                   </div>
                 </div>
               )}
-              <Button onClick={handleSaveOrgSettings} disabled={orgSaving || !hasDeleteAccess} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2">
+              <Button onClick={handleSaveOrgSettings} disabled={orgSaving} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2">
                 {orgSaving ? <><ArrowClockwise size={16} weight="bold" className="animate-spin" />Saving…</> : <><FloppyDisk size={16} weight="bold" />Save Organization Settings</>}
               </Button>
-              {!hasDeleteAccess && (
-                <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">Org settings can only be modified by Owner or Admin</p>
-              )}
             </CardContent>
           </Card>
         </TabsContent>
-
-        {/* Tab: Team Management */}
-        {hasTeamAccess && (
-          <TabsContent value="team" className="mt-4 space-y-6">
-            <Card className="border-border/50">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base font-semibold flex items-center gap-2">
-                  <UserPlus size={18} weight="bold" className="text-emerald-500" />Add Team Member
-                </CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  Create a new collaborator account with specific access to the NGO-SAAS module.
-                  Members login with email and password you provide.
-                </p>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Full Name</label>
-                    <Input placeholder="e.g. Ali Hassan" value={newMemberName} onChange={e => setNewMemberName(e.target.value)} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Email</label>
-                    <Input type="email" placeholder="ali@org.org" value={newMemberEmail} onChange={e => setNewMemberEmail(e.target.value)} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Password</label>
-                    <Input type="password" placeholder="Min 6 characters" value={newMemberPassword} onChange={e => setNewMemberPassword(e.target.value)} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Access Level</label>
-                    <select
-                      value={newMemberLevel}
-                      onChange={e => setNewMemberLevel(e.target.value as NGOAccessLevel)}
-                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                    >
-                      <option value="user">User (Read Only)</option>
-                      <option value="contributor">Contributor (Read + Write)</option>
-                      <option value="owner">Owner (Full Access)</option>
-                    </select>
-                  </div>
-                </div>
-                <div className="rounded-lg border border-border/50 p-3 bg-muted/30 text-xs text-muted-foreground space-y-1">
-                  <p><strong>User (Read Only):</strong> View, generate AI actions, save reports (sent for CEO/Manager approval). Cannot delete, create projects, or upload workspace files.</p>
-                  <p><strong>Contributor (Read + Write):</strong> All user access plus can create projects, upload workspace files. Reports sent for approval.</p>
-                  <p><strong>Owner (Full Access):</strong> Full control — approve & sign reports, delete content, manage team, and edit org settings.</p>
-                </div>
-                <Button
-                  onClick={handleAddMember}
-                  disabled={addingMember || !newMemberEmail || !newMemberPassword || !newMemberName}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2"
-                >
-                  {addingMember ? <><ArrowClockwise size={16} className="animate-spin" />Adding...</> : <><UserPlus size={16} weight="bold" />Add Member</>}
-                </Button>
-              </CardContent>
-            </Card>
-
-            {/* Team Members List */}
-            <Card className="border-border/50">
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base font-semibold flex items-center gap-2">
-                    <Users size={18} weight="bold" className="text-emerald-500" />Team Members
-                  </CardTitle>
-                  <Badge variant="secondary" className="text-xs">{teamMembers.length} member{teamMembers.length !== 1 ? "s" : ""}</Badge>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {teamMembers.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-6">No team members yet. Add your first collaborator above.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {teamMembers.map(member => (
-                      <div key={member.id} className="flex items-center justify-between p-3 rounded-lg border border-border/50 bg-muted/20">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">{member.fullName}</p>
-                          <p className="text-xs text-muted-foreground truncate">{member.email}</p>
-                          <p className="text-xs text-muted-foreground">Added {new Date(member.addedAt).toLocaleDateString()}</p>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          {editingMemberId === member.id ? (
-                            <select
-                              defaultValue={member.accessLevel}
-                              onChange={e => handleUpdateMemberLevel(member.id, e.target.value as NGOAccessLevel)}
-                              className="h-7 rounded border border-input bg-transparent px-2 text-xs"
-                            >
-                              <option value="user">User</option>
-                              <option value="contributor">Contributor</option>
-                              <option value="owner">Owner</option>
-                            </select>
-                          ) : (
-                            <Badge
-                              variant={member.accessLevel === "owner" ? "default" : member.accessLevel === "contributor" ? "secondary" : "outline"}
-                              className="text-xs"
-                            >
-                              {member.accessLevel === "owner" && <ShieldCheck size={12} className="mr-1" />}
-                              {member.accessLevel.charAt(0).toUpperCase() + member.accessLevel.slice(1)}
-                            </Badge>
-                          )}
-                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setEditingMemberId(editingMemberId === member.id ? null : member.id)}>
-                            <PencilSimple size={14} />
-                          </Button>
-                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={() => handleRemoveMember(member.id, member.fullName)}>
-                            <Trash size={14} />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-        )}
       </Tabs>
     </div>
   )

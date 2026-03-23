@@ -1,4 +1,5 @@
-import { NGOAccessLevel, SubscriptionInfo, SubscriptionPlan, SubscriptionRequest, TrialInfo, UserProfile, WelcomeBonusInfo } from "@/types"
+import { SubscriptionInfo, SubscriptionPlan, SubscriptionRequest, TrialInfo, UserProfile } from "@/types"
+import { getSafeKVClient } from "@/lib/spark-shim"
 
 const USERS_STORAGE_KEY = "platform-users"
 const SUBSCRIPTION_REQUESTS_KEY = "subscription-requests"
@@ -72,8 +73,6 @@ export const PLAN_CONFIG = {
 
 export const TRIAL_CREDITS = 10
 export const TRIAL_MAX_SUBMISSIONS = 3
-export const WELCOME_BONUS_CREDITS = 10
-export const WELCOME_BONUS_DURATION_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
 
 export interface FeatureEntitlements {
   isPro: boolean
@@ -87,9 +86,6 @@ export interface FeatureEntitlements {
   proCreditsRemaining: number
   isTrialActive: boolean
   trialSubmissionsRemaining: number
-  isWelcomeBonusActive: boolean
-  welcomeBonusExpiresAt?: number
-  ngoAccessLevel: NGOAccessLevel | "admin" | null
 }
 
 export function getDefaultSubscription(): SubscriptionInfo {
@@ -110,14 +106,6 @@ export function ensureUserSubscription(user: UserProfile): UserProfile {
     ...user,
     subscription: getDefaultSubscription(),
   }
-}
-
-export function checkWelcomeBonusActive(subscription: SubscriptionInfo): boolean {
-  const bonus = subscription.welcomeBonus
-  if (!bonus || !bonus.granted) return false
-  if (Date.now() > bonus.expiresAt) return false
-  if ((subscription.proCredits || 0) <= 0) return false
-  return true
 }
 
 export function getFeatureEntitlements(user: UserProfile): FeatureEntitlements {
@@ -141,28 +129,17 @@ export function getFeatureEntitlements(user: UserProfile): FeatureEntitlements {
     ? Math.max(0, (trial?.maxSubmissions || 0) - (trial?.submissionsUsed || 0))
     : 0
 
-  const welcomeBonusActive = !isPaidPlan && subscription.plan === "basic"
-    ? checkWelcomeBonusActive(subscription)
-    : false
+  // Review access: admin always, paid plans with active sub & credits, or active trial with remaining submissions
+  const canAccessReview = isAdmin || (isPaidPlan && isSubscriptionActive && credits > 0) || isTrialActive
 
-  // Review access: admin always, paid plans with active sub & credits, active trial, or active welcome bonus
-  const canAccessReview = isAdmin || (isPaidPlan && isSubscriptionActive && credits > 0) || isTrialActive || welcomeBonusActive
-
-  // Humanize: admin always, paid plans with active sub & credits, or active welcome bonus
-  const canUseHumanizer = isAdmin || (isPaidPlan && isSubscriptionActive && credits > 0) || welcomeBonusActive
+  // Humanize: admin always, paid plans with active sub & credits
+  const canUseHumanizer = isAdmin || (isPaidPlan && isSubscriptionActive && credits > 0)
 
   // NGO SaaS: strictly Enterprise tier, explicit module grant, or admin
   const canAccessNGOSaaS =
     isAdmin ||
     (isEnterprise && isSubscriptionActive) ||
     !!(subscription.hasNgoModuleAccess && isSubscriptionActive)
-
-  // NGO access level
-  const ngoAccessLevel: NGOAccessLevel | "admin" | null = isAdmin
-    ? "admin"
-    : subscription.hasNgoModuleAccess
-      ? (subscription.ngoAccessLevel || "user")
-      : null
 
   return {
     isPro,
@@ -176,15 +153,12 @@ export function getFeatureEntitlements(user: UserProfile): FeatureEntitlements {
     proCreditsRemaining: credits,
     isTrialActive,
     trialSubmissionsRemaining,
-    isWelcomeBonusActive: welcomeBonusActive,
-    welcomeBonusExpiresAt: subscription.welcomeBonus?.expiresAt,
-    ngoAccessLevel,
   }
 }
 
 export async function consumeReviewCredit(userId: string): Promise<{ success: boolean; remainingCredits: number; trialSubmissionsUsed?: number; error?: string }> {
   try {
-    const users = (await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
+    const users = (await getSafeKVClient().get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
     const user = users[userId]
 
     if (!user) {
@@ -199,7 +173,7 @@ export async function consumeReviewCredit(userId: string): Promise<{ success: bo
       return { success: true, remainingCredits: subscription.proCredits || 0 }
     }
 
-    const isPaidPlan = subscription.plan === "pro" || subscription.plan === "team" || subscription.plan === "enterprise"
+    const isPaidPlan = subscription.plan === "pro" || subscription.plan === "team"
     const trial = subscription.trial
 
     // If on trial (basic plan with active trial)
@@ -215,7 +189,7 @@ export async function consumeReviewCredit(userId: string): Promise<{ success: bo
             updatedAt: Date.now(),
           },
         }
-        await spark.kv.set(USERS_STORAGE_KEY, users)
+        await getSafeKVClient().set(USERS_STORAGE_KEY, users)
         return { success: false, remainingCredits: 0, error: "Trial exhausted. Please upgrade to Pro or Team to continue." }
       }
 
@@ -237,7 +211,7 @@ export async function consumeReviewCredit(userId: string): Promise<{ success: bo
           updatedAt: Date.now(),
         },
       }
-      await spark.kv.set(USERS_STORAGE_KEY, users)
+      await getSafeKVClient().set(USERS_STORAGE_KEY, users)
       return {
         success: true,
         remainingCredits: isNowExhausted ? 0 : newCreditsUsed,
@@ -268,79 +242,11 @@ export async function consumeReviewCredit(userId: string): Promise<{ success: bo
         updatedAt: Date.now(),
       },
     }
-    await spark.kv.set(USERS_STORAGE_KEY, users)
+    await getSafeKVClient().set(USERS_STORAGE_KEY, users)
     return { success: true, remainingCredits }
   } catch (error) {
     console.error("Failed to consume review credit:", error)
     return { success: false, remainingCredits: 0, error: "Failed to consume credit" }
-  }
-}
-
-// NGO Module credit consumption — delegates to team admin's credit pool
-export async function consumeNGOCredit(userId: string): Promise<{
-  success: boolean; remainingCredits: number; creditOwnerId: string; error?: string
-}> {
-  try {
-    const users = (await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
-    const user = users[userId]
-
-    if (!user) {
-      return { success: false, remainingCredits: 0, creditOwnerId: userId, error: "User not found" }
-    }
-
-    const safeUser = ensureUserSubscription(user)
-    const subscription = safeUser.subscription || getDefaultSubscription()
-
-    // Platform super-admin: always allowed, no credit consumed
-    if (safeUser.role === "admin") {
-      return { success: true, remainingCredits: subscription.proCredits || 0, creditOwnerId: userId }
-    }
-
-    // Determine credit owner: team members delegate to ngoTeamAdminId; owners use own pool
-    const creditOwnerId = subscription.ngoTeamAdminId || userId
-    const creditOwner = users[creditOwnerId]
-
-    if (!creditOwner) {
-      return { success: false, remainingCredits: 0, creditOwnerId, error: "NGO admin account not found. Contact your team owner." }
-    }
-
-    const ownerSafe = ensureUserSubscription(creditOwner)
-    const ownerSub = ownerSafe.subscription || getDefaultSubscription()
-
-    // Credit owner must be platform admin or on a paid plan
-    if (ownerSafe.role === "admin") {
-      return { success: true, remainingCredits: ownerSub.proCredits || 0, creditOwnerId }
-    }
-
-    const ownerIsPaidPlan = ownerSub.plan === "enterprise" || ownerSub.plan === "team" || ownerSub.plan === "pro"
-    if (!ownerIsPaidPlan) {
-      return { success: false, remainingCredits: 0, creditOwnerId, error: "NGO admin does not have a paid plan" }
-    }
-
-    if (!(ownerSub.status === "active" || ownerSub.status === "grace")) {
-      return { success: false, remainingCredits: ownerSub.proCredits || 0, creditOwnerId, error: "NGO admin subscription is not active" }
-    }
-
-    const currentCredits = Math.max(0, ownerSub.proCredits || 0)
-    if (currentCredits < 1) {
-      return { success: false, remainingCredits: 0, creditOwnerId, error: "NGO credit pool exhausted. Ask your NGO admin to add more credits." }
-    }
-
-    // Deduct 1 credit from the credit owner's pool
-    const remainingCredits = currentCredits - 1
-    users[creditOwnerId] = {
-      ...ownerSafe,
-      subscription: {
-        ...ownerSub,
-        proCredits: remainingCredits,
-        updatedAt: Date.now(),
-      },
-    }
-    await spark.kv.set(USERS_STORAGE_KEY, users)
-    return { success: true, remainingCredits, creditOwnerId }
-  } catch (error) {
-    console.error("Failed to consume NGO credit:", error)
-    return { success: false, remainingCredits: 0, creditOwnerId: userId, error: "Failed to consume NGO credit" }
   }
 }
 
@@ -351,7 +257,7 @@ export async function consumeProCredits(userId: string, creditsToConsume: number
   }
 
   try {
-    const users = (await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
+    const users = (await getSafeKVClient().get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
     const user = users[userId]
 
     if (!user) {
@@ -365,13 +271,12 @@ export async function consumeProCredits(userId: string, creditsToConsume: number
       return { success: true, remainingCredits: subscription.proCredits || 0 }
     }
 
-    const isPaidPlan = subscription.plan === "pro" || subscription.plan === "team" || subscription.plan === "enterprise"
-    const welcomeBonusActive = checkWelcomeBonusActive(subscription)
-    if (!isPaidPlan && !welcomeBonusActive) {
+    const isPaidPlan = subscription.plan === "pro" || subscription.plan === "team"
+    if (!isPaidPlan) {
       return { success: false, remainingCredits: subscription.proCredits || 0, error: "Pro or Team subscription required" }
     }
 
-    if (isPaidPlan && !(subscription.status === "active" || subscription.status === "grace")) {
+    if (!(subscription.status === "active" || subscription.status === "grace")) {
       return { success: false, remainingCredits: subscription.proCredits || 0, error: "Subscription is not active" }
     }
 
@@ -389,7 +294,7 @@ export async function consumeProCredits(userId: string, creditsToConsume: number
         updatedAt: Date.now(),
       },
     }
-    await spark.kv.set(USERS_STORAGE_KEY, users)
+    await getSafeKVClient().set(USERS_STORAGE_KEY, users)
     return { success: true, remainingCredits }
   } catch (error) {
     console.error("Failed to consume Pro credits:", error)
@@ -397,46 +302,9 @@ export async function consumeProCredits(userId: string, creditsToConsume: number
   }
 }
 
-export async function grantWelcomeBonus(userId: string): Promise<{ success: boolean; error?: string }> {
-  try {
-    const users = (await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
-    const user = users[userId]
-    if (!user) return { success: false, error: "User not found" }
-
-    const safeUser = ensureUserSubscription(user)
-    const subscription = safeUser.subscription || getDefaultSubscription()
-
-    if (subscription.welcomeBonus?.granted) {
-      return { success: false, error: "Welcome bonus already granted" }
-    }
-
-    const now = Date.now()
-    users[userId] = {
-      ...safeUser,
-      subscription: {
-        ...subscription,
-        proCredits: (subscription.proCredits || 0) + WELCOME_BONUS_CREDITS,
-        welcomeBonus: {
-          granted: true,
-          grantedAt: now,
-          creditsGranted: WELCOME_BONUS_CREDITS,
-          expiresAt: now + WELCOME_BONUS_DURATION_MS,
-        },
-        updatedAt: now,
-      },
-    }
-
-    await spark.kv.set(USERS_STORAGE_KEY, users)
-    return { success: true }
-  } catch (error) {
-    console.error("Failed to grant welcome bonus:", error)
-    return { success: false, error: "Failed to grant welcome bonus" }
-  }
-}
-
 export async function requestTrial(userId: string): Promise<{ success: boolean; error?: string }> {
   try {
-    const users = (await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
+    const users = (await getSafeKVClient().get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
     const user = users[userId]
 
     if (!user) {
@@ -455,7 +323,7 @@ export async function requestTrial(userId: string): Promise<{ success: boolean; 
     }
 
     // Check if a pending request already exists
-    const requests = (await spark.kv.get<SubscriptionRequest[]>(SUBSCRIPTION_REQUESTS_KEY)) || []
+    const requests = (await getSafeKVClient().get<SubscriptionRequest[]>(SUBSCRIPTION_REQUESTS_KEY)) || []
     const existingRequest = requests.find(
       (r) => r.userId === userId && r.type === "trial" && r.status === "pending"
     )
@@ -475,7 +343,7 @@ export async function requestTrial(userId: string): Promise<{ success: boolean; 
     }
 
     requests.push(request)
-    await spark.kv.set(SUBSCRIPTION_REQUESTS_KEY, requests)
+    await getSafeKVClient().set(SUBSCRIPTION_REQUESTS_KEY, requests)
     return { success: true }
   } catch (error) {
     console.error("Failed to request trial:", error)
@@ -490,7 +358,7 @@ export async function requestUpgrade(
   message?: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const users = (await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
+    const users = (await getSafeKVClient().get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
     const user = users[userId]
 
     if (!user) {
@@ -505,7 +373,7 @@ export async function requestUpgrade(
     }
 
     // Check for existing pending request
-    const requests = (await spark.kv.get<SubscriptionRequest[]>(SUBSCRIPTION_REQUESTS_KEY)) || []
+    const requests = (await getSafeKVClient().get<SubscriptionRequest[]>(SUBSCRIPTION_REQUESTS_KEY)) || []
     const existingRequest = requests.find(
       (r) => r.userId === userId && r.type === "upgrade" && r.status === "pending"
     )
@@ -528,7 +396,7 @@ export async function requestUpgrade(
     }
 
     requests.push(request)
-    await spark.kv.set(SUBSCRIPTION_REQUESTS_KEY, requests)
+    await getSafeKVClient().set(SUBSCRIPTION_REQUESTS_KEY, requests)
     return { success: true }
   } catch (error) {
     console.error("Failed to submit upgrade request:", error)
@@ -539,7 +407,7 @@ export async function requestUpgrade(
 // Keep for backward compatibility (used internally by admin approval)
 export async function upgradeToPlan(userId: string, plan: "pro" | "team" | "enterprise"): Promise<{ success: boolean; credits: number; error?: string }> {
   try {
-    const users = (await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
+    const users = (await getSafeKVClient().get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
     const user = users[userId]
 
     if (!user) {
@@ -552,15 +420,15 @@ export async function upgradeToPlan(userId: string, plan: "pro" | "team" | "ente
     users[userId] = {
       ...safeUser,
       subscription: {
-        ...safeUser.subscription,
         plan,
         status: "active",
         proCredits: Math.max(0, initialCredits),
         updatedAt: Date.now(),
+        trial: safeUser.subscription?.trial,
       },
     }
 
-    await spark.kv.set(USERS_STORAGE_KEY, users)
+    await getSafeKVClient().set(USERS_STORAGE_KEY, users)
     return { success: true, credits: initialCredits }
   } catch (error) {
     console.error(`Failed to upgrade user to ${plan}:`, error)
@@ -580,7 +448,7 @@ export async function addProCredits(userId: string, creditsToAdd: number): Promi
   }
 
   try {
-    const users = (await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
+    const users = (await getSafeKVClient().get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
     const user = users[userId]
 
     if (!user) {
@@ -605,7 +473,7 @@ export async function addProCredits(userId: string, creditsToAdd: number): Promi
       },
     }
 
-    await spark.kv.set(USERS_STORAGE_KEY, users)
+    await getSafeKVClient().set(USERS_STORAGE_KEY, users)
     return { success: true, credits: newCredits }
   } catch (error) {
     console.error("Failed to add Pro credits:", error)
@@ -617,7 +485,7 @@ export async function addProCredits(userId: string, creditsToAdd: number): Promi
 
 export async function getSubscriptionRequests(): Promise<SubscriptionRequest[]> {
   try {
-    return (await spark.kv.get<SubscriptionRequest[]>(SUBSCRIPTION_REQUESTS_KEY)) || []
+    return (await getSafeKVClient().get<SubscriptionRequest[]>(SUBSCRIPTION_REQUESTS_KEY)) || []
   } catch (error) {
     console.error("Failed to get subscription requests:", error)
     return []
@@ -626,14 +494,14 @@ export async function getSubscriptionRequests(): Promise<SubscriptionRequest[]> 
 
 export async function approveTrialRequest(requestId: string, adminEmail: string): Promise<{ success: boolean; error?: string }> {
   try {
-    const requests = (await spark.kv.get<SubscriptionRequest[]>(SUBSCRIPTION_REQUESTS_KEY)) || []
+    const requests = (await getSafeKVClient().get<SubscriptionRequest[]>(SUBSCRIPTION_REQUESTS_KEY)) || []
     const idx = requests.findIndex((r) => r.id === requestId && r.type === "trial" && r.status === "pending")
     if (idx === -1) {
       return { success: false, error: "Request not found or already resolved" }
     }
 
     const request = requests[idx]
-    const users = (await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
+    const users = (await getSafeKVClient().get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
     const user = users[request.userId]
 
     if (!user) {
@@ -669,8 +537,8 @@ export async function approveTrialRequest(requestId: string, adminEmail: string)
       resolvedBy: adminEmail,
     }
 
-    await spark.kv.set(USERS_STORAGE_KEY, users)
-    await spark.kv.set(SUBSCRIPTION_REQUESTS_KEY, requests)
+    await getSafeKVClient().set(USERS_STORAGE_KEY, users)
+    await getSafeKVClient().set(SUBSCRIPTION_REQUESTS_KEY, requests)
     return { success: true }
   } catch (error) {
     console.error("Failed to approve trial request:", error)
@@ -680,7 +548,7 @@ export async function approveTrialRequest(requestId: string, adminEmail: string)
 
 export async function approveUpgradeRequest(requestId: string, adminEmail: string): Promise<{ success: boolean; error?: string }> {
   try {
-    const requests = (await spark.kv.get<SubscriptionRequest[]>(SUBSCRIPTION_REQUESTS_KEY)) || []
+    const requests = (await getSafeKVClient().get<SubscriptionRequest[]>(SUBSCRIPTION_REQUESTS_KEY)) || []
     const idx = requests.findIndex((r) => r.id === requestId && r.type === "upgrade" && r.status === "pending")
     if (idx === -1) {
       return { success: false, error: "Request not found or already resolved" }
@@ -701,7 +569,7 @@ export async function approveUpgradeRequest(requestId: string, adminEmail: strin
       resolvedBy: adminEmail,
     }
 
-    await spark.kv.set(SUBSCRIPTION_REQUESTS_KEY, requests)
+    await getSafeKVClient().set(SUBSCRIPTION_REQUESTS_KEY, requests)
     return { success: true }
   } catch (error) {
     console.error("Failed to approve upgrade request:", error)
@@ -711,7 +579,7 @@ export async function approveUpgradeRequest(requestId: string, adminEmail: strin
 
 export async function rejectRequest(requestId: string, adminEmail: string, adminNote?: string): Promise<{ success: boolean; error?: string }> {
   try {
-    const requests = (await spark.kv.get<SubscriptionRequest[]>(SUBSCRIPTION_REQUESTS_KEY)) || []
+    const requests = (await getSafeKVClient().get<SubscriptionRequest[]>(SUBSCRIPTION_REQUESTS_KEY)) || []
     const idx = requests.findIndex((r) => r.id === requestId && r.status === "pending")
     if (idx === -1) {
       return { success: false, error: "Request not found or already resolved" }
@@ -725,7 +593,7 @@ export async function rejectRequest(requestId: string, adminEmail: string, admin
       resolvedBy: adminEmail,
     }
 
-    await spark.kv.set(SUBSCRIPTION_REQUESTS_KEY, requests)
+    await getSafeKVClient().set(SUBSCRIPTION_REQUESTS_KEY, requests)
     return { success: true }
   } catch (error) {
     console.error("Failed to reject request:", error)
@@ -739,7 +607,7 @@ export async function adminAddCredits(userId: string, creditsToAdd: number): Pro
   }
 
   try {
-    const users = (await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
+    const users = (await getSafeKVClient().get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
     const user = users[userId]
 
     if (!user) {
@@ -759,7 +627,7 @@ export async function adminAddCredits(userId: string, creditsToAdd: number): Pro
       },
     }
 
-    await spark.kv.set(USERS_STORAGE_KEY, users)
+    await getSafeKVClient().set(USERS_STORAGE_KEY, users)
     return { success: true, credits: newCredits }
   } catch (error) {
     console.error("Failed to add credits:", error)
@@ -769,7 +637,7 @@ export async function adminAddCredits(userId: string, creditsToAdd: number): Pro
 
 export async function adminSetPlan(userId: string, plan: SubscriptionPlan): Promise<{ success: boolean; error?: string }> {
   try {
-    const users = (await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
+    const users = (await getSafeKVClient().get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
     const user = users[userId]
 
     if (!user) {
@@ -791,7 +659,7 @@ export async function adminSetPlan(userId: string, plan: SubscriptionPlan): Prom
       },
     }
 
-    await spark.kv.set(USERS_STORAGE_KEY, users)
+    await getSafeKVClient().set(USERS_STORAGE_KEY, users)
     return { success: true }
   } catch (error) {
     console.error("Failed to set plan:", error)

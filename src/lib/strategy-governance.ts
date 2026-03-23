@@ -1,4 +1,5 @@
 import { SubscriptionPlan } from "@/types"
+import { getSafeKVClient } from "@/lib/spark-shim"
 
 export interface StrategyPlanConfig {
   plan: SubscriptionPlan
@@ -81,7 +82,7 @@ let cachedBudgetLimits: BudgetLimits | null = null
 
 export async function loadBudgetLimits() {
   try {
-    cachedBudgetLimits = await spark.kv.get<BudgetLimits>("admin-budget-limits") || null
+    cachedBudgetLimits = await getSafeKVClient().get<BudgetLimits>("admin-budget-limits") || null
   } catch (error) {
     console.error("Failed to load admin budget limits:", error)
   }

@@ -63,25 +63,6 @@ export interface TrialInfo {
   exhausted: boolean
 }
 
-export interface WelcomeBonusInfo {
-  granted: boolean
-  grantedAt: number
-  creditsGranted: number
-  expiresAt: number
-}
-
-export type NGOAccessLevel = "user" | "contributor" | "owner"
-
-export interface NGOTeamMember {
-  id: string
-  email: string
-  fullName: string
-  accessLevel: NGOAccessLevel
-  addedBy: string
-  addedAt: number
-  lastActiveAt?: number
-}
-
 export type SubscriptionRequestType = "trial" | "upgrade"
 export type SubscriptionRequestStatus = "pending" | "approved" | "rejected"
 
@@ -109,9 +90,6 @@ export interface SubscriptionInfo {
   updatedAt: number
   trial?: TrialInfo
   hasNgoModuleAccess?: boolean
-  ngoAccessLevel?: NGOAccessLevel
-  ngoTeamAdminId?: string
-  welcomeBonus?: WelcomeBonusInfo
 }
 
 export interface UserProfile {

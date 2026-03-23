@@ -57,7 +57,7 @@ import { toast } from "sonner"
 import { setNeonDbUrl, isNeonConfigured, testConnection } from "@/lib/neon-client"
 import { setGeminiApiKey, isGeminiConfigured, testGeminiConnection } from "@/lib/gemini-client"
 import { setCopilotToken, isCopilotConfigured, testCopilotConnection } from "@/lib/copilot-client"
-import { hasSecret, retrieveSecret, maskSecret } from "@/lib/secret-store"
+import { retrieveSecret, maskSecret } from "@/lib/secret-store"
 import {
   pushLocalToNeon,
   pullNeonToLocal,

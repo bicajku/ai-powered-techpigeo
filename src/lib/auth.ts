@@ -1,5 +1,21 @@
 import { UserProfile } from "@/types"
-import { ensureUserSubscription, getDefaultSubscription, grantWelcomeBonus } from "@/lib/subscription"
+import { ensureUserSubscription, getDefaultSubscription } from "@/lib/subscription"
+import { getSafeKVClient } from "@/lib/spark-shim"
+
+/**
+ * Safe accessor for spark.user() — guards against ReferenceError when Spark
+ * SDK is not present. Falls back to undefined so callers can handle gracefully.
+ */
+const safeSparkUser = async (): Promise<{ id: string; login: string; email?: string; avatarUrl?: string; isOwner?: boolean } | null> => {
+  try {
+    // typeof check prevents ReferenceError if spark global is not defined
+    if (typeof spark === "undefined" || typeof spark.user !== "function") return null
+    const result = await spark.user()
+    return result as unknown as { id: string; login: string; email?: string; avatarUrl?: string; isOwner?: boolean }
+  } catch {
+    return null
+  }
+}
 
 const USERS_STORAGE_KEY = "platform-users"
 const CURRENT_USER_KEY = "current-user-id"
@@ -33,14 +49,15 @@ export const authService = {
   async initializeMasterAdmin(): Promise<void> {
     // Ensure master admin exists — merges into existing users, never overwrites
     try {
+      const kv = getSafeKVClient()
       const adminEmail = "admin@techpigeon.org"
       const adminId = "master-admin"
 
       // Additional admin emails that should always have admin role
       const ADMIN_EMAILS = new Set(["admin@techpigeon.org", "umerslone@github.user"])
 
-      const credentials = await spark.kv.get<Record<string, StoredCredential>>(USER_CREDENTIALS_KEY) || {}
-      const users = await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
+      const credentials = await kv.get<Record<string, StoredCredential>>(USER_CREDENTIALS_KEY) || {}
+      const users = await kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
       let usersChanged = false
 
       // Promote any existing users whose email is in ADMIN_EMAILS
@@ -57,7 +74,7 @@ export const authService = {
           users[adminId].role = "admin"
           usersChanged = true
         }
-        if (usersChanged) await spark.kv.set(USERS_STORAGE_KEY, users)
+        if (usersChanged) await kv.set(USERS_STORAGE_KEY, users)
         return
       }
 
@@ -67,7 +84,7 @@ export const authService = {
 
       if (!credentials[adminEmail]) {
         credentials[adminEmail] = { email: adminEmail, passwordHash, userId: adminId }
-        await spark.kv.set(USER_CREDENTIALS_KEY, credentials)
+        await kv.set(USER_CREDENTIALS_KEY, credentials)
       }
 
       if (!users[adminId]) {
@@ -83,7 +100,7 @@ export const authService = {
         usersChanged = true
       }
 
-      if (usersChanged) await spark.kv.set(USERS_STORAGE_KEY, users)
+      if (usersChanged) await kv.set(USERS_STORAGE_KEY, users)
       console.info("Master admin(s) ensured")
     } catch (e) {
       console.warn("Master admin init skipped:", e)
@@ -100,18 +117,19 @@ export const authService = {
         return { success: false, error: "Password must be at least 6 characters" }
       }
 
-      const credentials = await spark.kv.get<Record<string, StoredCredential>>(USER_CREDENTIALS_KEY) || {}
+      const kv = getSafeKVClient()
+      const credentials = await kv.get<Record<string, StoredCredential>>(USER_CREDENTIALS_KEY) || {}
       
       if (credentials[email.toLowerCase()]) {
         return { success: false, error: "Email already exists" }
       }
 
-      const users = await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
+      const users = await kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
       
       const userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
       const passwordHash = await simpleHash(password)
 
-      let newUser: UserProfile = {
+      const newUser: UserProfile = {
         id: userId,
         email: email.toLowerCase(),
         fullName: fullName,
@@ -129,16 +147,9 @@ export const authService = {
 
       users[userId] = newUser
 
-      await spark.kv.set(USER_CREDENTIALS_KEY, credentials)
-      await spark.kv.set(USERS_STORAGE_KEY, users)
-      await spark.kv.set(CURRENT_USER_KEY, userId)
-
-      // Auto-grant welcome bonus for new users
-      const bonusResult = await grantWelcomeBonus(userId)
-      if (bonusResult.success) {
-        const updatedUsers = await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
-        if (updatedUsers[userId]) newUser = updatedUsers[userId]
-      }
+      await kv.set(USER_CREDENTIALS_KEY, credentials)
+      await kv.set(USERS_STORAGE_KEY, users)
+      await kv.set(CURRENT_USER_KEY, userId)
 
       return { success: true, user: newUser }
     } catch (error) {
@@ -153,7 +164,8 @@ export const authService = {
         return { success: false, error: "Email and password are required" }
       }
 
-      const credentials = await spark.kv.get<Record<string, StoredCredential>>(USER_CREDENTIALS_KEY) || {}
+      const kv = getSafeKVClient()
+      const credentials = await kv.get<Record<string, StoredCredential>>(USER_CREDENTIALS_KEY) || {}
       const credential = credentials[email.toLowerCase()]
 
       if (!credential) {
@@ -166,7 +178,7 @@ export const authService = {
         return { success: false, error: "Invalid email or password" }
       }
 
-      const users = await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
+      const users = await kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
       const user = users[credential.userId]
 
       if (!user) {
@@ -176,8 +188,8 @@ export const authService = {
       const normalizedUser = ensureUserSubscription(user)
       normalizedUser.lastLoginAt = Date.now()
       users[credential.userId] = normalizedUser
-      await spark.kv.set(USERS_STORAGE_KEY, users)
-      await spark.kv.set(CURRENT_USER_KEY, normalizedUser.id)
+      await kv.set(USERS_STORAGE_KEY, users)
+      await kv.set(CURRENT_USER_KEY, normalizedUser.id)
 
       return { success: true, user: normalizedUser }
     } catch (error) {
@@ -191,13 +203,11 @@ export const authService = {
       let githubUser: { id: string; login: string; email?: string; avatarUrl?: string; isOwner?: boolean } | null = null
 
       // Attempt 1: Spark runtime's native GitHub integration
-      try {
-        const result = await spark.user()
-        if (result && "login" in result && result.login && result.login !== "Local User") {
-          githubUser = result as unknown as typeof githubUser
-        }
-      } catch {
-        // spark.user() is not available or failed
+      githubUser = await safeSparkUser()
+
+      // Filter out the shim's placeholder "Local User" login
+      if (githubUser && (!githubUser.login || githubUser.login === "Local User")) {
+        githubUser = null
       }
 
       // Attempt 2: Codespace dev server endpoint (proxies GITHUB_TOKEN → GitHub API)
@@ -227,19 +237,21 @@ export const authService = {
         }
       }
 
-      const users = await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
+      const kv = getSafeKVClient()
+      const users = await kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
       
       const ADMIN_EMAILS = new Set(["admin@techpigeon.org", "umerslone@github.user"])
       const userEmail = (githubUser.email || `${githubUser.login}@github.user`).toLowerCase()
       const isAdmin = githubUser.isOwner || ADMIN_EMAILS.has(userEmail)
+      const githubUserId = githubUser.id
       
-      const existingUser = Object.values(users).find(u => u.id === githubUser.id)
+      const existingUser = Object.values(users).find(u => u.id === githubUserId)
       
       let user: UserProfile
       
       if (!existingUser) {
         user = {
-          id: githubUser.id,
+          id: githubUserId,
           email: userEmail,
           fullName: githubUser.login,
           role: isAdmin ? "admin" : "client",
@@ -249,15 +261,8 @@ export const authService = {
           lastLoginAt: Date.now(),
         }
         
-        users[githubUser.id] = user
-        await spark.kv.set(USERS_STORAGE_KEY, users)
-
-        // Auto-grant welcome bonus for new GitHub users
-        const bonusResult = await grantWelcomeBonus(githubUser.id)
-        if (bonusResult.success) {
-          const updatedUsers = await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
-          if (updatedUsers[githubUser.id]) user = updatedUsers[githubUser.id]
-        }
+        users[githubUserId] = user
+        await kv.set(USERS_STORAGE_KEY, users)
       } else {
         user = ensureUserSubscription(existingUser)
         user.lastLoginAt = Date.now()
@@ -272,11 +277,11 @@ export const authService = {
           user.email = githubUser.email
         }
         
-        users[githubUser.id] = user
-        await spark.kv.set(USERS_STORAGE_KEY, users)
+        users[githubUserId] = user
+        await kv.set(USERS_STORAGE_KEY, users)
       }
 
-      await spark.kv.set(CURRENT_USER_KEY, user.id)
+      await kv.set(CURRENT_USER_KEY, user.id)
 
       return { success: true, user }
     } catch (error) {
@@ -286,41 +291,48 @@ export const authService = {
   },
 
   async logout(): Promise<void> {
-    await spark.kv.delete(CURRENT_USER_KEY)
+    // Non-blocking — failures here should never prevent the user from "logging out" in the UI
+    try {
+      await getSafeKVClient().delete(CURRENT_USER_KEY)
+    } catch {
+      // Intentional: ignore KV delete failures on logout
+    }
   },
 
   async getCurrentUser(): Promise<UserProfile | null> {
     try {
-      const currentUserId = await spark.kv.get<string>(CURRENT_USER_KEY)
+      const kv = getSafeKVClient()
+      const currentUserId = await kv.get<string>(CURRENT_USER_KEY)
       
       if (currentUserId) {
-        const users = await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
+        const users = await kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
         const storedUser = users[currentUserId]
         if (!storedUser) return null
 
         const normalized = ensureUserSubscription(storedUser)
         if (!storedUser.subscription) {
           users[currentUserId] = normalized
-          await spark.kv.set(USERS_STORAGE_KEY, users)
+          await kv.set(USERS_STORAGE_KEY, users)
         }
 
         return normalized
       }
 
+      // Attempt GitHub SSO lookup (Spark runtime only — safeSparkUser guards typeof spark)
       try {
-        const githubUser = await spark.user()
+        const githubUser = await safeSparkUser()
         
         if (githubUser && githubUser.login) {
-          const users = await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
+          const users = await kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
           const existingUser = Object.values(users).find(u => u.id === githubUser.id)
           
           if (existingUser) {
             const normalized = ensureUserSubscription(existingUser)
             if (!existingUser.subscription) {
               users[existingUser.id] = normalized
-              await spark.kv.set(USERS_STORAGE_KEY, users)
+              await kv.set(USERS_STORAGE_KEY, users)
             }
-            await spark.kv.set(CURRENT_USER_KEY, normalized.id)
+            await kv.set(CURRENT_USER_KEY, normalized.id)
             return normalized
           }
         }
@@ -337,7 +349,8 @@ export const authService = {
 
   async updateProfile(userId: string, updates: Partial<UserProfile>): Promise<{ success: boolean; user?: UserProfile; error?: string }> {
     try {
-      const users = await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
+      const kv = getSafeKVClient()
+      const users = await kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
       const user = users[userId]
 
       if (!user) {
@@ -354,17 +367,18 @@ export const authService = {
         subscription: user.subscription || getDefaultSubscription(),
       }
 
+      // Attach GitHub avatar if available in Spark runtime
       try {
-        const githubUser = await spark.user()
+        const githubUser = await safeSparkUser()
         if (githubUser?.avatarUrl && user.id === githubUser.id) {
           updatedUser.avatarUrl = githubUser.avatarUrl
         }
       } catch {
-        console.log("GitHub not available for avatar update")
+        // Non-blocking — avatar update failure should not block profile save
       }
       
       users[userId] = updatedUser
-      await spark.kv.set(USERS_STORAGE_KEY, users)
+      await kv.set(USERS_STORAGE_KEY, users)
 
       return { success: true, user: updatedUser }
     } catch (error) {
@@ -379,7 +393,8 @@ export const authService = {
         return { success: false, error: "Email is required" }
       }
 
-      const credentials = await spark.kv.get<Record<string, StoredCredential>>(USER_CREDENTIALS_KEY) || {}
+      const kv = getSafeKVClient()
+      const credentials = await kv.get<Record<string, StoredCredential>>(USER_CREDENTIALS_KEY) || {}
       const credential = credentials[email.toLowerCase()]
 
       if (!credential) {
@@ -389,7 +404,7 @@ export const authService = {
       const resetCode = Math.floor(100000 + Math.random() * 900000).toString()
       const expiresAt = Date.now() + 15 * 60 * 1000
 
-      const resetCodes = await spark.kv.get<Record<string, PasswordResetCode>>(RESET_CODES_KEY) || {}
+      const resetCodes = await kv.get<Record<string, PasswordResetCode>>(RESET_CODES_KEY) || {}
       
       resetCodes[email.toLowerCase()] = {
         email: email.toLowerCase(),
@@ -398,7 +413,7 @@ export const authService = {
         userId: credential.userId,
       }
 
-      await spark.kv.set(RESET_CODES_KEY, resetCodes)
+      await kv.set(RESET_CODES_KEY, resetCodes)
 
       // Reset code stored securely — do not log to console
 
@@ -415,7 +430,8 @@ export const authService = {
         return { success: false, error: "Email and code are required" }
       }
 
-      const resetCodes = await spark.kv.get<Record<string, PasswordResetCode>>(RESET_CODES_KEY) || {}
+      const kv = getSafeKVClient()
+      const resetCodes = await kv.get<Record<string, PasswordResetCode>>(RESET_CODES_KEY) || {}
       const resetData = resetCodes[email.toLowerCase()]
 
       if (!resetData) {
@@ -428,7 +444,7 @@ export const authService = {
 
       if (Date.now() > resetData.expiresAt) {
         delete resetCodes[email.toLowerCase()]
-        await spark.kv.set(RESET_CODES_KEY, resetCodes)
+        await kv.set(RESET_CODES_KEY, resetCodes)
         return { success: false, error: "Reset code has expired. Please request a new one." }
       }
 
@@ -454,14 +470,15 @@ export const authService = {
         return verifyResult
       }
 
-      const resetCodes = await spark.kv.get<Record<string, PasswordResetCode>>(RESET_CODES_KEY) || {}
+      const kv = getSafeKVClient()
+      const resetCodes = await kv.get<Record<string, PasswordResetCode>>(RESET_CODES_KEY) || {}
       const resetData = resetCodes[email.toLowerCase()]
 
       if (!resetData) {
         return { success: false, error: "Invalid reset session" }
       }
 
-      const credentials = await spark.kv.get<Record<string, StoredCredential>>(USER_CREDENTIALS_KEY) || {}
+      const credentials = await kv.get<Record<string, StoredCredential>>(USER_CREDENTIALS_KEY) || {}
       const credential = credentials[email.toLowerCase()]
 
       if (!credential) {
@@ -472,10 +489,10 @@ export const authService = {
       credential.passwordHash = newPasswordHash
       credentials[email.toLowerCase()] = credential
 
-      await spark.kv.set(USER_CREDENTIALS_KEY, credentials)
+      await kv.set(USER_CREDENTIALS_KEY, credentials)
 
       delete resetCodes[email.toLowerCase()]
-      await spark.kv.set(RESET_CODES_KEY, resetCodes)
+      await kv.set(RESET_CODES_KEY, resetCodes)
 
       return { success: true }
     } catch (error) {
