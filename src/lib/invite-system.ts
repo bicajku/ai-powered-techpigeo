@@ -1,3 +1,4 @@
+import { getSafeKVClient } from "@/lib/spark-shim"
 export interface InviteLink {
   code: string
   createdAt: number
@@ -42,7 +43,7 @@ export const inviteService = {
       const now = Date.now()
       const expiresAt = now + expirationDays * 24 * 60 * 60 * 1000
 
-      const invites = (await spark.kv.get<Record<string, InviteLink>>(INVITES_STORAGE_KEY)) || {}
+      const invites = (await getSafeKVClient().get<Record<string, InviteLink>>(INVITES_STORAGE_KEY)) || {}
 
       invites[code] = {
         code,
@@ -52,7 +53,7 @@ export const inviteService = {
         createdBy: createdByUserId,
       }
 
-      await spark.kv.set(INVITES_STORAGE_KEY, invites)
+      await getSafeKVClient().set(INVITES_STORAGE_KEY, invites)
 
   const link = buildInviteLink(code)
 
@@ -65,7 +66,7 @@ export const inviteService = {
 
   async validateInviteLink(code: string): Promise<{ valid: boolean; invite?: InviteLink; error?: string }> {
     try {
-      const invites = (await spark.kv.get<Record<string, InviteLink>>(INVITES_STORAGE_KEY)) || {}
+      const invites = (await getSafeKVClient().get<Record<string, InviteLink>>(INVITES_STORAGE_KEY)) || {}
       const invite = invites[code]
 
       if (!invite) {
@@ -89,7 +90,7 @@ export const inviteService = {
 
   async useInviteLink(code: string, userId: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const invites = (await spark.kv.get<Record<string, InviteLink>>(INVITES_STORAGE_KEY)) || {}
+      const invites = (await getSafeKVClient().get<Record<string, InviteLink>>(INVITES_STORAGE_KEY)) || {}
       const invite = invites[code]
 
       if (!invite) {
@@ -108,7 +109,7 @@ export const inviteService = {
       invite.usedAt = Date.now()
       invite.usedBy = userId
 
-      await spark.kv.set(INVITES_STORAGE_KEY, invites)
+      await getSafeKVClient().set(INVITES_STORAGE_KEY, invites)
 
       return { success: true }
     } catch (error) {
@@ -119,7 +120,7 @@ export const inviteService = {
 
   async getInviteLinks(createdByUserId: string): Promise<InviteLink[]> {
     try {
-      const invites = (await spark.kv.get<Record<string, InviteLink>>(INVITES_STORAGE_KEY)) || {}
+      const invites = (await getSafeKVClient().get<Record<string, InviteLink>>(INVITES_STORAGE_KEY)) || {}
       return Object.values(invites)
         .filter(invite => invite.createdBy === createdByUserId)
         .sort((a, b) => b.createdAt - a.createdAt)
@@ -131,7 +132,7 @@ export const inviteService = {
 
   async revokeInviteLink(code: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const invites = (await spark.kv.get<Record<string, InviteLink>>(INVITES_STORAGE_KEY)) || {}
+      const invites = (await getSafeKVClient().get<Record<string, InviteLink>>(INVITES_STORAGE_KEY)) || {}
       const invite = invites[code]
 
       if (!invite) {
@@ -139,7 +140,7 @@ export const inviteService = {
       }
 
       invite.isActive = false
-      await spark.kv.set(INVITES_STORAGE_KEY, invites)
+      await getSafeKVClient().set(INVITES_STORAGE_KEY, invites)
 
       return { success: true }
     } catch (error) {

@@ -1,4 +1,5 @@
 import { UserProfile, SavedStrategy, UserRole, SavedReviewDocument } from "@/types"
+import { getSafeKVClient } from "@/lib/spark-shim"
 
 const USERS_STORAGE_KEY = "platform-users"
 const USER_CREDENTIALS_KEY = "user-credentials"
@@ -26,7 +27,7 @@ async function simpleHash(text: string): Promise<string> {
 export const adminService = {
   async getAllUsers(): Promise<UserProfile[]> {
     try {
-      const users = await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
+      const users = await getSafeKVClient().get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
       return Object.values(users)
     } catch (error) {
       console.error("Failed to get all users:", error)
@@ -36,7 +37,7 @@ export const adminService = {
 
   async getUserStrategies(userId: string): Promise<SavedStrategy[]> {
     try {
-      const strategies = await spark.kv.get<SavedStrategy[]>(`saved-strategies-${userId}`)
+      const strategies = await getSafeKVClient().get<SavedStrategy[]>(`saved-strategies-${userId}`)
       return Array.isArray(strategies) ? strategies : []
     } catch (error) {
       console.error(`Failed to get strategies for user ${userId}:`, error)
@@ -46,7 +47,7 @@ export const adminService = {
 
   async getUserReviews(userId: string): Promise<SavedReviewDocument[]> {
     try {
-      const reviews = await spark.kv.get<SavedReviewDocument[]>(`saved-reviews-${userId}`)
+      const reviews = await getSafeKVClient().get<SavedReviewDocument[]>(`saved-reviews-${userId}`)
       return Array.isArray(reviews) ? reviews : []
     } catch (error) {
       console.error(`Failed to get reviews for user ${userId}:`, error)
@@ -88,7 +89,7 @@ export const adminService = {
 
   async updateUserRole(email: string, newRole: UserRole): Promise<{ success: boolean; error?: string }> {
     try {
-      const users = await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
+      const users = await getSafeKVClient().get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
       const userEntry = Object.entries(users).find(([, candidate]) => candidate.email === email)
       const user = userEntry?.[1]
       const userId = userEntry?.[0]
@@ -99,7 +100,7 @@ export const adminService = {
 
       user.role = newRole
       users[userId] = user
-      await spark.kv.set(USERS_STORAGE_KEY, users)
+      await getSafeKVClient().set(USERS_STORAGE_KEY, users)
 
       return { success: true }
     } catch (error) {
@@ -114,7 +115,7 @@ export const adminService = {
         return { success: false, error: "Cannot delete master admin" }
       }
 
-      const users = await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
+      const users = await getSafeKVClient().get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
       const userEntry = Object.entries(users).find(([, candidate]) => candidate.email === email)
       const user = userEntry?.[1]
       const userId = userEntry?.[0]
@@ -124,22 +125,22 @@ export const adminService = {
       }
 
       delete users[userId]
-      await spark.kv.set(USERS_STORAGE_KEY, users)
+      await getSafeKVClient().set(USERS_STORAGE_KEY, users)
 
-      const credentials = await spark.kv.get<Record<string, StoredCredential>>(USER_CREDENTIALS_KEY) || {}
+      const credentials = await getSafeKVClient().get<Record<string, StoredCredential>>(USER_CREDENTIALS_KEY) || {}
       delete credentials[email.toLowerCase()]
-      await spark.kv.set(USER_CREDENTIALS_KEY, credentials)
+      await getSafeKVClient().set(USER_CREDENTIALS_KEY, credentials)
 
-      await spark.kv.delete(`saved-strategies-${user.id}`)
-      await spark.kv.delete(`saved-reviews-${user.id}`)
-      await spark.kv.delete(`saved-ideas-${user.id}`)
-      await spark.kv.delete(`idea-memory-${user.id}`)
-      await spark.kv.delete(`document-reviews-${user.id}`)
-      await spark.kv.delete(`user-prompt-memory-${user.id}`)
-      await spark.kv.delete(`strategy-workflow-runs-${user.id}`)
-      await spark.kv.delete(`${getCurrentMonthKey("strategy-spend")}-${user.id}`)
-      await spark.kv.delete(`${getCurrentMonthKey("strategy-exports")}-${user.id}`)
-      await spark.kv.delete(`${getCurrentMonthKey("review-exports")}-${user.id}`)
+      await getSafeKVClient().delete(`saved-strategies-${user.id}`)
+      await getSafeKVClient().delete(`saved-reviews-${user.id}`)
+      await getSafeKVClient().delete(`saved-ideas-${user.id}`)
+      await getSafeKVClient().delete(`idea-memory-${user.id}`)
+      await getSafeKVClient().delete(`document-reviews-${user.id}`)
+      await getSafeKVClient().delete(`user-prompt-memory-${user.id}`)
+      await getSafeKVClient().delete(`strategy-workflow-runs-${user.id}`)
+      await getSafeKVClient().delete(`${getCurrentMonthKey("strategy-spend")}-${user.id}`)
+      await getSafeKVClient().delete(`${getCurrentMonthKey("strategy-exports")}-${user.id}`)
+      await getSafeKVClient().delete(`${getCurrentMonthKey("review-exports")}-${user.id}`)
 
       return { success: true }
     } catch (error) {
@@ -201,7 +202,7 @@ export const adminService = {
         return { success: false, error: "Password must be at least 6 characters" }
       }
 
-      const credentials = await spark.kv.get<Record<string, StoredCredential>>(USER_CREDENTIALS_KEY) || {}
+      const credentials = await getSafeKVClient().get<Record<string, StoredCredential>>(USER_CREDENTIALS_KEY) || {}
       const credential = credentials[email.toLowerCase()]
 
       if (!credential) {
@@ -210,7 +211,7 @@ export const adminService = {
 
       credential.passwordHash = await simpleHash(newPassword)
       credentials[email.toLowerCase()] = credential
-      await spark.kv.set(USER_CREDENTIALS_KEY, credentials)
+      await getSafeKVClient().set(USER_CREDENTIALS_KEY, credentials)
 
       return { success: true }
     } catch (error) {

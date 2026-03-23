@@ -173,6 +173,9 @@ Keep all string values short (1-2 sentences max). Limit highlights to 3 items, a
           }
         }
       } else {
+        if (typeof spark === "undefined" || typeof spark.llm !== "function") {
+          throw new Error("AI service unavailable")
+        }
         response = await spark.llm(strPrompt, "gpt-4o", false)
       }
 
