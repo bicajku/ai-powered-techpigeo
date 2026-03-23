@@ -135,11 +135,10 @@ export function getFeatureEntitlements(user: UserProfile): FeatureEntitlements {
   // Humanize: admin always, paid plans with active sub & credits
   const canUseHumanizer = isAdmin || (isPaidPlan && isSubscriptionActive && credits > 0)
 
-  // NGO SaaS: strictly Enterprise tier, explicit module grant, or admin
+  // NGO SaaS: strictly admin OR enterprise + explicitly created by NGO admin (ngoTeamAdminId/ngoAccessLevel set)
   const canAccessNGOSaaS =
     isAdmin ||
-    (isEnterprise && isSubscriptionActive) ||
-    !!(subscription.hasNgoModuleAccess && isSubscriptionActive)
+    (isEnterprise && isSubscriptionActive && !!(subscription.ngoTeamAdminId && subscription.ngoAccessLevel))
 
   return {
     isPro,
