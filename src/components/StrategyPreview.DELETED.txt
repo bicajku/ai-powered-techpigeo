@@ -1,2 +1,0 @@
-This file (StrategyPreview.tsx) has been deleted as it was corrupted and not in use.
-
