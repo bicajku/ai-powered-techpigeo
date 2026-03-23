@@ -19,7 +19,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion"
 import { toast } from "sonner"
 import { sentinelQuery } from "@/lib/sentinel-query-pipeline"
-import { consumeProCredits, consumeReviewCredit, getFeatureEntitlements } from "@/lib/subscription"
+import { consumeReviewCredit, getFeatureEntitlements } from "@/lib/subscription"
 import { isNeonConfigured } from "@/lib/neon-client"
 import { isGeminiConfigured } from "@/lib/gemini-client"
 import { isCopilotConfigured } from "@/lib/copilot-client"
@@ -40,7 +40,7 @@ interface NGOResult {
 interface NGOAction {
   id: string
   label: string
-  icon: React.ComponentType<any>
+  icon: React.ComponentType<{ size?: number; weight?: string; className?: string }>
   description: string
   placeholder: string
   inputLabel: string
@@ -286,7 +286,7 @@ interface NGOModuleProps {
   user?: UserProfile
 }
 
-export function NGOModule({ userId, user }: NGOModuleProps) {
+export function NGOModule({ user }: NGOModuleProps) {
   const [activeAction, setActiveAction] = useState<string>("grant")
   const [input, setInput] = useState("")
   const [isLoading, setIsLoading] = useState(false)

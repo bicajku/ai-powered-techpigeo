@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
-import { Sparkle, Lightbulb, ChatsCircle, Palette, Target, ArrowClockwise, FloppyDisk, FolderOpen, Code, Desktop, Database, DeviceMobile, ListChecks, ChartBar, ShieldCheck, MagnifyingGlass, CaretUpDown, Check, BookOpen, ClockCounterClockwise, ArrowsHorizontal, LockSimple, Lightning, SignIn, UserPlus, Brain } from "@phosphor-icons/react"
+import { Sparkle, Lightbulb, ChatsCircle, Palette, Target, ArrowClockwise, FloppyDisk, FolderOpen, Code, Desktop, Database, DeviceMobile, ListChecks, ChartBar, ShieldCheck, MagnifyingGlass, CaretUpDown, Check, BookOpen, ClockCounterClockwise, ArrowsHorizontal, LockSimple, Lightning, Brain } from "@phosphor-icons/react"
 import { UpgradePaywall } from "@/components/UpgradePaywall"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { ResultCard } from "@/components/ResultCard"
@@ -11,7 +11,6 @@ import { SavedStrategies } from "@/components/SavedStrategies"
 import { ComparisonView } from "@/components/ComparisonView"
 import { SaveStrategyDialog } from "@/components/SaveStrategyDialog"
 import { StrategyTemplatesBrowser } from "@/components/StrategyTemplatesBrowser"
-import { AuthForm } from "@/components/AuthForm"
 import { UserMenu } from "@/components/UserMenu"
 import { Dashboard } from "@/components/Dashboard"
 import { AdminDashboard } from "@/components/AdminDashboard"
@@ -154,8 +153,6 @@ function App() {
     return isBrandThemeName(storedTheme) ? storedTheme : DEFAULT_BRAND_THEME
   })
   const [activeTab, setActiveTab] = useState("generate")
-  const [showAuthModal, setShowAuthModal] = useState(false)
-  const [authMode, setAuthMode] = useState<"login" | "signup">("login")
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const [showLandingPage, setShowLandingPage] = useState(false)
   const [adminAllStrategies, setAdminAllStrategies] = useState<SavedStrategy[]>([])
@@ -529,9 +526,10 @@ Keep each value concise. Do NOT use newlines inside string values. Return ONLY v
       const repairAttempts: string[] = []
       
       // Step 1: Basic cleanup
-      let repaired = cleanedResponse
+      const repaired = cleanedResponse
         .replace(/,\s*}/g, '}')
         .replace(/,\s*]/g, ']')
+        // eslint-disable-next-line no-control-regex
         .replace(/[\x00-\x1F\x7F]/g, (ch) => ch === '\n' || ch === '\r' || ch === '\t' ? ' ' : '')
       repairAttempts.push(repaired)
       
@@ -1146,8 +1144,8 @@ ${JSON.stringify(candidate)}`
   if (!user) {
     return (
       <LandingPage
-        onLogin={() => { setAuthMode("login"); setShowAuthModal(true) }}
-        onSignup={() => { setAuthMode("signup"); setShowAuthModal(true) }}
+        onLogin={() => {}}
+        onSignup={() => {}}
         onAuthSuccess={handleAuthSuccess}
       />
     )
