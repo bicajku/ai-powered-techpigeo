@@ -39,7 +39,7 @@ interface NGOResult {
 interface NGOAction {
   id: string
   label: string
-  icon: React.ComponentType<{ size?: number; weight?: string; className?: string }>
+  icon: React.ComponentType<any>
   description: string
   placeholder: string
   inputLabel: string

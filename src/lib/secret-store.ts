@@ -71,14 +71,16 @@ async function decryptSecret(payload: string): Promise<string | null> {
     const key = await deriveKey()
     const iv = fromBase64(ivB64)
     const ciphertext = fromBase64(ctB64)
+    const ivSource = iv as unknown as BufferSource
+    const ciphertextSource = ciphertext as unknown as BufferSource
 
     const plaintext = await crypto.subtle.decrypt(
       {
         name: "AES-GCM",
-        iv,
+        iv: ivSource,
       },
       key,
-      ciphertext
+      ciphertextSource
     )
 
     return new TextDecoder().decode(plaintext)
@@ -145,7 +147,7 @@ export function hasSecret(key: string): boolean {
  * Return a masked representation for UI display.
  */
 export function maskSecret(value: string | null): string {
-  if (!value) return ""
+  if (typeof value !== "string" || value.length === 0) return ""
   if (value.length <= 4) return "****"
   return "******" + value.slice(-4)
 }
