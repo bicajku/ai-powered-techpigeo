@@ -33,6 +33,9 @@ import {
   MapPin,
   FloppyDisk,
   Trash,
+  PencilSimple,
+  Signature,
+  UserPlus,
 } from "@phosphor-icons/react"
 import { motion, AnimatePresence } from "framer-motion"
 import { toast } from "sonner"
@@ -43,7 +46,8 @@ import { isGeminiConfigured } from "@/lib/gemini-client"
 import { isCopilotConfigured } from "@/lib/copilot-client"
 import { logQuery } from "@/lib/sentinel-brain"
 import { REPORT_BRAND } from "@/lib/report-branding"
-import { UserProfile } from "@/types"
+import { getNGOAccessLevel, canWrite, canDelete, canManageTeam, getTeamMembers, addTeamMember, updateMemberAccess, removeMember } from "@/lib/ngo-team"
+import { UserProfile, NGOAccessLevel, NGOTeamMember } from "@/types"
 
 // --- Types ---
 
@@ -418,7 +422,7 @@ export function NGOModule({ userId, user }: NGOModuleProps) {
   const [reportTitle, setReportTitle] = useState("")
   const [reportBody, setReportBody] = useState("")
   const [reportGenerating, setReportGenerating] = useState(false)
-  const [savedReports, setSavedReports] = useState<{ id: string; title: string; body: string; createdAt: number }[]>([])
+  const [savedReports, setSavedReports] = useState<{ id: string; title: string; body: string; createdAt: number; status?: "draft" | "signed"; generatedBy?: string }[]>([])
   const [reportsLoaded, setReportsLoaded] = useState(false)
 
   // Org settings state
@@ -436,6 +440,21 @@ export function NGOModule({ userId, user }: NGOModuleProps) {
 
   const entitlements = user ? getFeatureEntitlements(user) : null
   const canAccessNGOModule = user?.role === "admin" || !!entitlements?.canAccessNGOSaaS
+
+  // --- Access level ---
+  const accessLevel = getNGOAccessLevel(user)
+  const hasWriteAccess = canWrite(accessLevel)
+  const hasDeleteAccess = canDelete(accessLevel)
+  const hasTeamAccess = canManageTeam(accessLevel)
+
+  // --- Team state ---
+  const [teamMembers, setTeamMembers] = useState<NGOTeamMember[]>([])
+  const [teamLoaded, setTeamLoaded] = useState(false)
+  const [newMemberEmail, setNewMemberEmail] = useState("")
+  const [newMemberName, setNewMemberName] = useState("")
+  const [newMemberPass, setNewMemberPass] = useState("")
+  const [newMemberLevel, setNewMemberLevel] = useState<NGOAccessLevel>("user")
+  const [addingMember, setAddingMember] = useState(false)
 
   const currentAction = NGO_ACTIONS.find((a) => a.id === activeAction) ?? NGO_ACTIONS[0]
   const neonReady = isNeonConfigured()
@@ -471,6 +490,73 @@ export function NGOModule({ userId, user }: NGOModuleProps) {
     const data = await kvGet<typeof savedReports>(`ngo-reports-${userId}`)
     setSavedReports(data || [])
     setReportsLoaded(true)
+  }
+
+  const loadTeamMembers = async () => {
+    if (teamLoaded) return
+    const members = await getTeamMembers(userId)
+    setTeamMembers(members)
+    setTeamLoaded(true)
+  }
+
+  const handleAddMember = async () => {
+    if (!newMemberEmail || !newMemberName || !newMemberPass) {
+      toast.error("All fields are required"); return
+    }
+    setAddingMember(true)
+    const result = await addTeamMember(userId, newMemberEmail, newMemberPass, newMemberName, newMemberLevel)
+    setAddingMember(false)
+    if (result.success && result.member) {
+      setTeamMembers(prev => [...prev, result.member!])
+      setNewMemberEmail(""); setNewMemberName(""); setNewMemberPass(""); setNewMemberLevel("user")
+      toast.success(`${result.member.fullName} added to team`)
+    } else {
+      toast.error(result.error || "Failed to add member")
+    }
+  }
+
+  const handleUpdateMemberAccess = async (memberId: string, level: NGOAccessLevel) => {
+    const result = await updateMemberAccess(userId, memberId, level)
+    if (result.success) {
+      setTeamMembers(prev => prev.map(m => m.id === memberId ? { ...m, accessLevel: level } : m))
+      toast.success("Access level updated")
+    } else {
+      toast.error(result.error || "Failed to update")
+    }
+  }
+
+  const handleRemoveMember = async (memberId: string) => {
+    const result = await removeMember(userId, memberId)
+    if (result.success) {
+      setTeamMembers(prev => prev.filter(m => m.id !== memberId))
+      toast.success("Member removed")
+    } else {
+      toast.error(result.error || "Failed to remove member")
+    }
+  }
+
+  const handleSignReport = (reportId: string) => {
+    if (!user) return
+    const signatureBlock = `\n\n──────────────────────────\nSigned by: ${user.fullName}\nEmail: ${user.email}\nDate: ${new Date().toLocaleDateString()}\nRole: ${user.role === "admin" ? "Super Admin" : "Owner"}\n──────────────────────────`
+    setSavedReports(prev => {
+      const updated = prev.map(r =>
+        r.id === reportId
+          ? { ...r, body: r.body + signatureBlock, status: "signed" as const }
+          : r
+      )
+      kvSet(`ngo-reports-${userId}`, updated)
+      return updated
+    })
+    toast.success("Report signed. It is now available for export and visible to all team members.")
+  }
+
+  const handleDeleteReport = (reportId: string) => {
+    setSavedReports(prev => {
+      const updated = prev.filter(r => r.id !== reportId)
+      kvSet(`ngo-reports-${userId}`, updated)
+      return updated
+    })
+    toast.success("Report deleted")
   }
 
   // Persist NGO Module State
@@ -632,7 +718,7 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
       })
       const body = typeof res.response === "string" ? res.response : JSON.stringify(res.response, null, 2)
       setReportBody(body)
-      const newReport = { id: uuidv4(), title: reportTitle, body, createdAt: Date.now() }
+      const newReport = { id: uuidv4(), title: reportTitle, body, createdAt: Date.now(), status: "draft" as const, generatedBy: user?.fullName || "Unknown" }
       const updated = [newReport, ...savedReports]
       setSavedReports(updated)
       await kvSet(`ngo-reports-${userId}`, updated)
@@ -786,6 +872,9 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
           <TabsTrigger value="data-workspace" className="gap-1.5 text-xs" onClick={() => { loadProjects(); loadFiles() }}><UploadSimple size={14} weight="bold" /> Data Workspace</TabsTrigger>
           <TabsTrigger value="reports" className="gap-1.5 text-xs" onClick={() => { loadProjects(); loadFiles(); loadReports() }}><FileText size={14} weight="bold" /> Reports</TabsTrigger>
           <TabsTrigger value="export" className="gap-1.5 text-xs" onClick={() => { loadReports(); loadOrgSettings() }}><Download size={14} weight="bold" /> Export</TabsTrigger>
+          {hasTeamAccess && (
+            <TabsTrigger value="team" className="gap-1.5 text-xs" onClick={loadTeamMembers}><Users size={14} weight="bold" /> Team</TabsTrigger>
+          )}
           <TabsTrigger value="org-settings" className="gap-1.5 text-xs" onClick={loadOrgSettings}><Buildings size={14} weight="bold" /> Org Settings</TabsTrigger>
         </TabsList>
 
@@ -1022,20 +1111,22 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
 
         {/* Tab: Projects */}
         <TabsContent value="projects" className="mt-4 space-y-6">
-          <Card className="border-border/50">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold flex items-center gap-2">
-                <FilePlus size={18} weight="bold" className="text-emerald-500" />Create New Project
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <Input placeholder="Project name *" value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} />
-              <Textarea placeholder="Short description (optional)" value={newProjectDesc} onChange={(e) => setNewProjectDesc(e.target.value)} className="min-h-[80px] text-sm" />
-              <Button onClick={handleCreateProject} disabled={!newProjectName.trim()} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2">
-                <FilePlus size={16} weight="bold" />Create Project
-              </Button>
-            </CardContent>
-          </Card>
+          {hasWriteAccess && (
+            <Card className="border-border/50">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-semibold flex items-center gap-2">
+                  <FilePlus size={18} weight="bold" className="text-emerald-500" />Create New Project
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Input placeholder="Project name *" value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} />
+                <Textarea placeholder="Short description (optional)" value={newProjectDesc} onChange={(e) => setNewProjectDesc(e.target.value)} className="min-h-[80px] text-sm" />
+                <Button onClick={handleCreateProject} disabled={!newProjectName.trim()} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2">
+                  <FilePlus size={16} weight="bold" />Create Project
+                </Button>
+              </CardContent>
+            </Card>
+          )}
           <div className="space-y-3">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Your Projects ({projects.length})</p>
             {projects.length === 0 ? (
@@ -1055,10 +1146,12 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
                         ID: <code className="bg-muted px-1 rounded text-xs">{p.id}</code>{" · "}{new Date(p.createdAt).toLocaleDateString()}
                       </p>
                     </div>
-                    <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-600 hover:bg-red-50 shrink-0"
-                      onClick={(e) => { e.stopPropagation(); handleDeleteProject(p.id) }}>
-                      <Trash size={14} weight="bold" />
-                    </Button>
+                    {hasDeleteAccess && (
+                      <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-600 hover:bg-red-50 shrink-0"
+                        onClick={(e) => { e.stopPropagation(); handleDeleteProject(p.id) }}>
+                        <Trash size={14} weight="bold" />
+                      </Button>
+                    )}
                   </CardContent>
                 </Card>
               ))
@@ -1087,10 +1180,11 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
                 <UploadSimple size={32} weight="bold" className="text-muted-foreground mx-auto mb-3" />
                 <p className="text-sm text-muted-foreground mb-3">Upload proposal templates, reports, or CSV/Excel data files</p>
                 <input ref={fileInputRef} type="file" multiple accept=".doc,.docx,.pdf,.txt,.md,.csv,.xls,.xlsx" className="hidden" onChange={handleFileUpload} />
-                <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={!selectedProjectId} className="gap-2">
+                <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={!selectedProjectId || !hasWriteAccess} className="gap-2">
                   <UploadSimple size={14} weight="bold" />Choose Files
                 </Button>
                 {!selectedProjectId && <p className="text-xs text-amber-600 mt-2">Select a project first</p>}
+                {!hasWriteAccess && <p className="text-xs text-amber-600 mt-2">Write access required to upload files</p>}
               </div>
             </CardContent>
           </Card>
@@ -1111,9 +1205,11 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
                         </div>
                       </div>
                       <Badge variant="outline" className="text-xs shrink-0">{f.type}</Badge>
-                      <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-600 hover:bg-red-50 shrink-0" onClick={() => handleDeleteFile(f.id)}>
-                        <Trash size={13} weight="bold" />
-                      </Button>
+                      {hasDeleteAccess && (
+                        <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-600 hover:bg-red-50 shrink-0" onClick={() => handleDeleteFile(f.id)}>
+                          <Trash size={13} weight="bold" />
+                        </Button>
+                      )}
                     </CardContent>
                   </Card>
                 ))
@@ -1166,13 +1262,33 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
               <Separator />
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider pt-2">Saved Reports ({savedReports.length})</p>
               {savedReports.map((r) => (
-                <Card key={r.id} className="border-border/50">
+                <Card key={r.id} className={`border-border/50 ${r.status === "signed" ? "border-emerald-400/30 bg-emerald-500/5" : ""}`}>
                   <CardContent className="p-3 flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-medium text-foreground">{r.title}</p>
-                      <p className="text-xs text-muted-foreground">{new Date(r.createdAt).toLocaleDateString()}</p>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium text-foreground truncate">{r.title}</p>
+                        <Badge variant={r.status === "signed" ? "default" : "secondary"} className="text-xs shrink-0">
+                          {r.status === "signed" ? "Signed" : "Draft"}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(r.createdAt).toLocaleDateString()}
+                        {r.generatedBy && ` · by ${r.generatedBy}`}
+                      </p>
                     </div>
-                    <Button variant="outline" size="sm" className="text-xs" onClick={() => { setReportTitle(r.title); setReportBody(r.body) }}>View</Button>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <Button variant="outline" size="sm" className="text-xs" onClick={() => { setReportTitle(r.title); setReportBody(r.body) }}>View</Button>
+                      {hasDeleteAccess && r.status !== "signed" && (
+                        <Button variant="outline" size="sm" className="text-xs gap-1 text-emerald-600 border-emerald-400/40" onClick={() => handleSignReport(r.id)}>
+                          <Signature size={13} weight="bold" /> Sign
+                        </Button>
+                      )}
+                      {hasDeleteAccess && (
+                        <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-600 hover:bg-red-50 h-8 w-8 p-0" onClick={() => handleDeleteReport(r.id)}>
+                          <Trash size={13} weight="bold" />
+                        </Button>
+                      )}
+                    </div>
                   </CardContent>
                 </Card>
               ))}
@@ -1192,12 +1308,15 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
               </p>
             </CardHeader>
             <CardContent className="space-y-4">
-              {savedReports.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-                  No reports to export yet. Generate a report in the Reports tab first.
-                </div>
-              ) : (
-                savedReports.map((r) => (
+              {(() => {
+                const signedReports = savedReports.filter(r => r.status === "signed")
+                return signedReports.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+                    Reports must be signed by an Owner/Admin before they can be exported.
+                    {savedReports.length > 0 && <span className="block mt-1 text-xs">{savedReports.length} draft report(s) pending signature in the Reports tab.</span>}
+                  </div>
+                ) : (
+                  signedReports.map((r) => (
                   <Card key={r.id} className="border-border/50">
                     <CardContent className="p-4">
                       <div className="mb-3">
@@ -1225,7 +1344,7 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
                     </CardContent>
                   </Card>
                 ))
-              )}
+              )})()}
               {orgLoaded && orgSettings.orgName && (
                 <div className="rounded-xl border border-emerald-400/20 bg-emerald-500/5 p-3">
                   <p className="text-xs text-emerald-700 dark:text-emerald-400 font-medium flex items-center gap-1.5">
@@ -1315,12 +1434,81 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
                   </div>
                 </div>
               )}
-              <Button onClick={handleSaveOrgSettings} disabled={orgSaving} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2">
+              <Button onClick={handleSaveOrgSettings} disabled={orgSaving || !hasDeleteAccess} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2">
                 {orgSaving ? <><ArrowClockwise size={16} weight="bold" className="animate-spin" />Saving…</> : <><FloppyDisk size={16} weight="bold" />Save Organization Settings</>}
               </Button>
+              {!hasDeleteAccess && <p className="text-xs text-amber-600 mt-2">Only Owner / Admin can modify organization settings</p>}
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* Tab: Team */}
+        {hasTeamAccess && (
+          <TabsContent value="team" className="mt-4 space-y-6">
+            <Card className="border-border/50">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-semibold flex items-center gap-2">
+                  <UserPlus size={18} weight="bold" className="text-emerald-500" />Add Team Member
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">Add users to your NGO workspace. They will receive platform credentials and module access.</p>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Input placeholder="Full name *" value={newMemberName} onChange={(e) => setNewMemberName(e.target.value)} />
+                  <Input placeholder="Email *" type="email" value={newMemberEmail} onChange={(e) => setNewMemberEmail(e.target.value)} />
+                  <Input placeholder="Password (min 6 chars) *" type="password" value={newMemberPass} onChange={(e) => setNewMemberPass(e.target.value)} />
+                  <select
+                    className="w-full text-sm rounded-lg border border-border bg-background px-3 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                    value={newMemberLevel}
+                    onChange={(e) => setNewMemberLevel(e.target.value as NGOAccessLevel)}
+                  >
+                    <option value="user">Read-Only</option>
+                    <option value="contributor">Contributor (can write)</option>
+                    <option value="owner">Owner (full access)</option>
+                  </select>
+                </div>
+                <Button onClick={handleAddMember} disabled={addingMember || !newMemberEmail || !newMemberName || !newMemberPass} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2">
+                  {addingMember ? <><ArrowClockwise size={16} weight="bold" className="animate-spin" />Adding…</> : <><UserPlus size={16} weight="bold" />Add Member</>}
+                </Button>
+              </CardContent>
+            </Card>
+
+            <div className="space-y-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Team Members ({teamMembers.length})</p>
+              {teamMembers.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+                  No team members yet. Add your first member above.
+                </div>
+              ) : (
+                teamMembers.map((member) => (
+                  <Card key={member.id} className="border-border/50">
+                    <CardContent className="p-4 flex items-center justify-between gap-4">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-foreground">{member.fullName}</p>
+                        <p className="text-xs text-muted-foreground">{member.email}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">Added {new Date(member.addedAt).toLocaleDateString()}</p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <select
+                          className="text-xs rounded-lg border border-border bg-background px-2 py-1.5 text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                          value={member.accessLevel}
+                          onChange={(e) => handleUpdateMemberAccess(member.id, e.target.value as NGOAccessLevel)}
+                        >
+                          <option value="user">Read-Only</option>
+                          <option value="contributor">Contributor</option>
+                          <option value="owner">Owner</option>
+                        </select>
+                        <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-600 hover:bg-red-50 h-8 w-8 p-0" onClick={() => handleRemoveMember(member.id)}>
+                          <Trash size={14} weight="bold" />
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))
+              )}
+            </div>
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   )
