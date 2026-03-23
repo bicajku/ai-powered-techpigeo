@@ -32,3 +32,4 @@ pids
 .devcontainer/
 
 .spark-workbench-id
+.vs/
