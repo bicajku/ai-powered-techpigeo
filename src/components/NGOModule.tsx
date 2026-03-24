@@ -49,6 +49,12 @@ import { REPORT_BRAND } from "@/lib/report-branding"
 import { getNGOAccessLevel, canWrite, canDelete, canManageTeam, getTeamMembers, addTeamMember, updateMemberAccess, removeMember } from "@/lib/ngo-team"
 import { UserProfile, NGOAccessLevel, NGOTeamMember } from "@/types"
 import mammoth from "mammoth"
+import * as pdfjsLib from "pdfjs-dist"
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/build/pdf.worker.min.mjs",
+  import.meta.url
+).toString()
 
 // --- Types ---
 
@@ -418,6 +424,15 @@ function parseNGOResult(raw: unknown): NGOResult {
       return heuristic
     }
 
+    // Last resort: treat entire text as mainContent so the user sees something
+    if (normalized.length > 100) {
+      return coerce({
+        header: "NGO Output",
+        mainContent: normalized,
+        ethicalWarnings: ["AI response was not valid JSON; raw text shown. Content may need manual review."],
+      })
+    }
+
     throw new Error("Failed to parse AI output as JSON")
   }
 }
@@ -738,17 +753,50 @@ export function NGOModule({ userId, user }: NGOModuleProps) {
       try {
         const arrayBuffer = await file.arrayBuffer()
         const extracted = await mammoth.extractRawText({ arrayBuffer })
-        return extracted.value || ""
-      } catch {
-        return ""
+        if (extracted.value && extracted.value.trim().length > 0) return extracted.value
+      } catch (e) {
+        console.warn("[NGOModule] mammoth docx extraction failed:", e)
       }
     }
 
-    try {
-      return await file.text()
-    } catch {
-      return ""
+    if (ext === "pdf") {
+      try {
+        const arrayBuffer = await file.arrayBuffer()
+        const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise
+        const pages: string[] = []
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i)
+          const textContent = await page.getTextContent()
+          const pageText = textContent.items
+            .map((item) => ("str" in item ? (item as { str: string }).str : ""))
+            .join(" ")
+          if (pageText.trim()) pages.push(pageText.trim())
+        }
+        const fullText = pages.join("\n\n")
+        if (fullText.trim().length > 0) return fullText
+      } catch (e) {
+        console.warn("[NGOModule] PDF extraction failed:", e)
+      }
     }
+
+    if (["txt", "md", "csv", "json", "xml", "html", "htm"].includes(ext)) {
+      try {
+        const text = await file.text()
+        if (text.trim().length > 0) return text
+      } catch (e) {
+        console.warn("[NGOModule] text extraction failed:", e)
+      }
+    }
+
+    // Last resort: try reading as text, but validate it looks like readable content
+    try {
+      const text = await file.text()
+      const printable = text.replace(/[\x20-\x7E\n\r\t]/g, "")
+      const ratio = text.length > 0 ? (text.length - printable.length) / text.length : 0
+      if (ratio > 0.85 && text.trim().length > 20) return text
+    } catch { /* not text-readable */ }
+
+    return ""
   }
 
   const extractProjectDetailsFromText = (text: string, fileName: string) => {
@@ -814,12 +862,18 @@ _This draft is prepared for donor/funding review and should be approved by organ
   const hasRequiredSections = (actionId: string, mainContent: string) => {
     const required = REQUIRED_ACTION_SECTIONS[actionId] || []
     if (required.length === 0) return true
-    return required.every((section) => new RegExp(section, "i").test(mainContent))
+    const low = mainContent.toLowerCase()
+    return required.every((section) => {
+      const words = section.toLowerCase().split(/\s+/)
+      // Require all words from the section name to appear near each other
+      return words.every((w) => low.includes(w))
+    })
   }
 
   const enhanceResultForDonorReadiness = async (candidate: NGOResult) => {
+    const contentLength = candidate.mainContent.trim().length
     const appearsIncomplete =
-      candidate.mainContent.trim().length < 1200 ||
+      contentLength < 1500 ||
       !hasRequiredSections(activeAction, candidate.mainContent)
 
     if (!appearsIncomplete) {
@@ -987,7 +1041,10 @@ Respond ONLY with valid JSON:
     if (!selectedProjectId) { toast.error("Select a project first."); return }
     const newFiles: ProjectFile[] = []
     for (const file of Array.from(files)) {
-      const content = await file.text().catch(() => "")
+      let content = await extractTextFromFile(file)
+      if (!content || content.trim().length === 0) {
+        content = `[File: ${file.name} — binary or unsupported format, ${(file.size / 1024).toFixed(1)} KB]`
+      }
       const ext = file.name.split(".").pop()?.toLowerCase() || ""
       const type: ProjectFile["type"] =
         ["doc", "docx", "pdf", "txt", "md"].includes(ext) ? "document" :
@@ -1188,22 +1245,18 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
 
   const getKBContext = (): string => {
     if (uploadedKBFiles.length === 0 && !kbContentSummary.trim()) return ""
-    const escapedContent = uploadedKBFiles.map(f => {
-      const escaped = f.content
-        .replace(/\\/g, "\\\\")
-        .replace(/"/g, '\\"')
-        .replace(/\n/g, "\\n")
-        .replace(/\r/g, "\\r")
-      return `File: ${f.name}\n${escaped}`
+    const fileContent = uploadedKBFiles.map(f => {
+      const cleaned = f.content
+        .replace(/\u0000/g, "")
+        .trim()
+      const truncated = cleaned.length > 6000
+        ? cleaned.substring(0, 6000) + "\n[... content truncated ...]" : cleaned
+      return `--- File: ${f.name} ---\n${truncated}`
     }).join("\n\n")
-    const escapedSummary = kbContentSummary
-      ? kbContentSummary
-          .replace(/\\/g, "\\\\")
-          .replace(/"/g, '\\"')
-          .replace(/\n/g, "\\n")
-          .replace(/\r/g, "\\r")
+    const summary = kbContentSummary
+      ? kbContentSummary.replace(/\u0000/g, "").trim()
       : ""
-    return `\n\nREFERENCE MATERIALS FROM KNOWLEDGE BASE:\n${escapedContent}${escapedSummary ? `\n\nPRIMARY FILE SUMMARY:\n${escapedSummary}` : ""}`
+    return `\n\nREFERENCE MATERIALS FROM KNOWLEDGE BASE:\n${fileContent}${summary ? `\n\nPRIMARY FILE SUMMARY:\n${summary}` : ""}`
   }
 
   // Access guard
