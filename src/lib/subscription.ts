@@ -132,8 +132,8 @@ export function getFeatureEntitlements(user: UserProfile): FeatureEntitlements {
   // Review access: admin always, paid plans with active sub & credits, or active trial with remaining submissions
   const canAccessReview = isAdmin || (isPaidPlan && isSubscriptionActive && credits > 0) || isTrialActive
 
-  // Humanize: admin always, paid plans with active sub & credits
-  const canUseHumanizer = isAdmin || (isPaidPlan && isSubscriptionActive && credits > 0)
+  // Humanize: admin always, paid plans with active sub & credits, or active trial with remaining submissions
+  const canUseHumanizer = isAdmin || (isPaidPlan && isSubscriptionActive && credits > 0) || isTrialActive
 
   // NGO SaaS: strictly admin OR enterprise + explicitly created by NGO admin (ngoTeamAdminId/ngoAccessLevel set)
   const canAccessNGOSaaS =

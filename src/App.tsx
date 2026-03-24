@@ -94,6 +94,23 @@ const CONCEPT_MODE_INSTRUCTION: Record<ConceptMode, string> = {
 }
 
 const AUTH_BOOTSTRAP_TIMEOUT_MS = 5000
+const APP_UI_STATE_KEY = "sentinel-ui-state-v1"
+
+type PersistedUIState = {
+  activeTab?: string
+  showLandingPage?: boolean
+}
+
+const loadPersistedUIState = (): PersistedUIState => {
+  if (typeof window === "undefined") return {}
+  try {
+    const raw = window.localStorage.getItem(APP_UI_STATE_KEY)
+    if (!raw) return {}
+    return JSON.parse(raw) as PersistedUIState
+  } catch {
+    return {}
+  }
+}
 
 function App() {
   const [user, setUser] = useState<UserProfile | null>(null)
@@ -153,9 +170,9 @@ function App() {
     const storedTheme = window.localStorage.getItem(BRAND_THEME_STORAGE_KEY)
     return isBrandThemeName(storedTheme) ? storedTheme : DEFAULT_BRAND_THEME
   })
-  const [activeTab, setActiveTab] = useState("generate")
+  const [activeTab, setActiveTab] = useState(() => loadPersistedUIState().activeTab || "generate")
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
-  const [showLandingPage, setShowLandingPage] = useState(false)
+  const [showLandingPage, setShowLandingPage] = useState(() => !!loadPersistedUIState().showLandingPage)
   const [adminAllStrategies, setAdminAllStrategies] = useState<SavedStrategy[]>([])
   const resultsRef = useRef<HTMLDivElement>(null)
 
@@ -261,6 +278,15 @@ function App() {
     window.localStorage.setItem(BRAND_THEME_STORAGE_KEY, brandTheme)
   }, [brandTheme])
 
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const state: PersistedUIState = {
+      activeTab,
+      showLandingPage,
+    }
+    window.localStorage.setItem(APP_UI_STATE_KEY, JSON.stringify(state))
+  }, [activeTab, showLandingPage])
+
   // Dismiss welcome banner after 15 seconds on initial display only
   useEffect(() => {
     if (showExpandedWelcome && hasShownWelcomeThisSession) {
@@ -283,6 +309,26 @@ function App() {
   const spendProgress = Math.min(100, Math.round(((monthlyStrategySpendCents || 0) / strategyPlanConfig.monthlyBudgetCents) * 100))
   const exportProgress = Math.min(100, Math.round(((monthlyExportCount || 0) / exportPlanConfig.monthlyExports) * 100))
   const savedProgress = Math.min(100, Math.round((((savedStrategies || []).length || 0) / strategyPlanConfig.maxSavedStrategies) * 100))
+
+  useEffect(() => {
+    if (!user) return
+
+    const allowedTabs = new Set<string>(["generate", "saved", "ideas", "plagiarism", "dashboard", "timeline"])
+
+    if (user.role === "admin") {
+      allowedTabs.add("sentinel-brain")
+      allowedTabs.add("admin")
+      allowedTabs.add("enterprise")
+    }
+
+    if (canAccessNGOSaaS) {
+      allowedTabs.add("ngo-saas")
+    }
+
+    if (!allowedTabs.has(activeTab)) {
+      setActiveTab("generate")
+    }
+  }, [activeTab, user, canAccessNGOSaaS])
 
   const quickPromptSuggestions = useMemo(() => {
     const current = description.trim().toLowerCase()

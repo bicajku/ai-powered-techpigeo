@@ -19,8 +19,24 @@ const safeSparkUser = async (): Promise<{ id: string; login: string; email?: str
 
 const USERS_STORAGE_KEY = "platform-users"
 const CURRENT_USER_KEY = "current-user-id"
+const CURRENT_USER_LOCAL_KEY = "current-user-id-local"
 const USER_CREDENTIALS_KEY = "user-credentials"
 const RESET_CODES_KEY = "password-reset-codes"
+
+const saveCurrentUserIdLocal = (userId: string) => {
+  if (typeof window === "undefined") return
+  window.localStorage.setItem(CURRENT_USER_LOCAL_KEY, userId)
+}
+
+const clearCurrentUserIdLocal = () => {
+  if (typeof window === "undefined") return
+  window.localStorage.removeItem(CURRENT_USER_LOCAL_KEY)
+}
+
+const getCurrentUserIdLocal = () => {
+  if (typeof window === "undefined") return null
+  return window.localStorage.getItem(CURRENT_USER_LOCAL_KEY)
+}
 
 interface StoredCredential {
   email: string
@@ -150,6 +166,7 @@ export const authService = {
       await kv.set(USER_CREDENTIALS_KEY, credentials)
       await kv.set(USERS_STORAGE_KEY, users)
       await kv.set(CURRENT_USER_KEY, userId)
+      saveCurrentUserIdLocal(userId)
 
       return { success: true, user: newUser }
     } catch (error) {
@@ -190,6 +207,7 @@ export const authService = {
       users[credential.userId] = normalizedUser
       await kv.set(USERS_STORAGE_KEY, users)
       await kv.set(CURRENT_USER_KEY, normalizedUser.id)
+      saveCurrentUserIdLocal(normalizedUser.id)
 
       return { success: true, user: normalizedUser }
     } catch (error) {
@@ -282,6 +300,7 @@ export const authService = {
       }
 
       await kv.set(CURRENT_USER_KEY, user.id)
+      saveCurrentUserIdLocal(user.id)
 
       return { success: true, user }
     } catch (error) {
@@ -294,15 +313,18 @@ export const authService = {
     // Non-blocking — failures here should never prevent the user from "logging out" in the UI
     try {
       await getSafeKVClient().delete(CURRENT_USER_KEY)
+      clearCurrentUserIdLocal()
     } catch {
       // Intentional: ignore KV delete failures on logout
+      clearCurrentUserIdLocal()
     }
   },
 
   async getCurrentUser(): Promise<UserProfile | null> {
     try {
       const kv = getSafeKVClient()
-      const currentUserId = await kv.get<string>(CURRENT_USER_KEY)
+      const kvCurrentUserId = await kv.get<string>(CURRENT_USER_KEY)
+      const currentUserId = kvCurrentUserId || getCurrentUserIdLocal()
       
       if (currentUserId) {
         const users = await kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
@@ -314,6 +336,11 @@ export const authService = {
           users[currentUserId] = normalized
           await kv.set(USERS_STORAGE_KEY, users)
         }
+
+        if (!kvCurrentUserId) {
+          await kv.set(CURRENT_USER_KEY, currentUserId)
+        }
+        saveCurrentUserIdLocal(currentUserId)
 
         return normalized
       }
@@ -333,6 +360,7 @@ export const authService = {
               await kv.set(USERS_STORAGE_KEY, users)
             }
             await kv.set(CURRENT_USER_KEY, normalized.id)
+            saveCurrentUserIdLocal(normalized.id)
             return normalized
           }
         }
