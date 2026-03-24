@@ -39,14 +39,38 @@ const bootstrap = async () => {
   // Attempt to load Spark SDK — non-fatal if it times out or is unavailable
   try {
     if (typeof window !== "undefined" && !(window as unknown as { spark?: unknown }).spark) {
-      await Promise.race([
-        import("@github/spark/spark"),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("Spark SDK import timed out")), 4000))
-      ])
+      // Only attempt to load Spark SDK if we're in a proper runtime environment
+      // Check both import.meta.env and process.env (if available)
+      const checkEnv = (key: string): boolean => {
+        try {
+          if (import.meta.env && import.meta.env[key]) return true
+          if (typeof process !== 'undefined' && process.env && process.env[key]) return true
+          return false
+        } catch {
+          return false
+        }
+      }
+      
+      const hasSparkEnv = checkEnv('GITHUB_RUNTIME_PERMANENT_NAME') || 
+                          checkEnv('VITE_GITHUB_RUNTIME_PERMANENT_NAME')
+      
+      if (hasSparkEnv) {
+        await Promise.race([
+          import("@github/spark/spark"),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("Spark SDK import timed out")), 4000))
+        ])
+      } else {
+        console.info("Spark runtime environment not detected, using local shim fallback")
+      }
     }
   } catch (e) {
     // Intentional fallback: shim provides safe defaults when Spark is unavailable
-    console.warn("Spark SDK import failed or timed out, continuing with shim:", e)
+    const errorMsg = e instanceof Error ? e.message : String(e)
+    if (errorMsg.includes('GITHUB_RUNTIME_PERMANENT_NAME')) {
+      console.info("Spark runtime not configured, using local shim fallback")
+    } else {
+      console.warn("Spark SDK import failed or timed out, continuing with shim:", e)
+    }
   }
 
   initializeSparkShim()
