@@ -313,7 +313,7 @@ function App() {
   useEffect(() => {
     if (!user) return
 
-    const allowedTabs = new Set<string>(["generate", "saved", "ideas", "plagiarism", "dashboard", "timeline"])
+    const allowedTabs = new Set<string>(["generate", "saved", "ideas", "plagiarism", "humanizer", "dashboard", "timeline"])
 
     if (user.role === "admin") {
       allowedTabs.add("sentinel-brain")
@@ -1319,13 +1319,6 @@ ${JSON.stringify(candidate)}`
                     <Lightbulb size={16} weight="bold" className="flex-shrink-0" />
                     <span className="hidden sm:inline">Strategy</span>
                   </TabsTrigger>
-                  <TabsTrigger value="saved" className="gap-1.5 text-xs md:text-sm px-3 md:px-4 py-2 md:py-2.5 whitespace-nowrap flex-shrink-0 rounded-lg hover:bg-accent/50 transition-colors data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                    <FolderOpen size={16} weight="bold" className="flex-shrink-0" />
-                    <span className="hidden sm:inline">Saved</span>
-                    <span className="inline md:hidden text-[10px] font-semibold bg-accent/30 px-1.5 py-0.5 rounded">
-                      {savedStrategies?.length || 0}
-                    </span>
-                  </TabsTrigger>
                   <TabsTrigger value="ideas" className="gap-1.5 text-xs md:text-sm px-3 md:px-4 py-2 md:py-2.5 whitespace-nowrap flex-shrink-0 rounded-lg hover:bg-accent/50 transition-colors data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
                     <Sparkle size={16} weight="bold" className="flex-shrink-0" />
                     <span className="hidden sm:inline">Ideas</span>
@@ -1338,13 +1331,17 @@ ${JSON.stringify(candidate)}`
                     )}
                     <span className="hidden sm:inline">Review</span>
                   </TabsTrigger>
+                  <TabsTrigger value="humanizer" className="gap-1.5 text-xs md:text-sm px-3 md:px-4 py-2 md:py-2.5 whitespace-nowrap flex-shrink-0 rounded-lg hover:bg-accent/50 transition-colors data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                    {entitlements?.canUseHumanizer || user.role === "admin" ? (
+                      <Sparkle size={16} weight="bold" className="flex-shrink-0" />
+                    ) : (
+                      <LockSimple size={16} weight="bold" className="text-muted-foreground flex-shrink-0" />
+                    )}
+                    <span className="hidden sm:inline">Humanizer</span>
+                  </TabsTrigger>
                   <TabsTrigger value="dashboard" className="gap-1.5 text-xs md:text-sm px-3 md:px-4 py-2 md:py-2.5 whitespace-nowrap flex-shrink-0 rounded-lg hover:bg-accent/50 transition-colors data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
                     <ChartBar size={16} weight="bold" className="flex-shrink-0" />
                     <span className="hidden sm:inline">Dashboard</span>
-                  </TabsTrigger>
-                  <TabsTrigger value="timeline" className="gap-1.5 text-xs md:text-sm px-3 md:px-4 py-2 md:py-2.5 whitespace-nowrap flex-shrink-0 rounded-lg hover:bg-accent/50 transition-colors data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                    <ClockCounterClockwise size={16} weight="bold" className="flex-shrink-0" />
-                    <span className="hidden sm:inline">Timeline</span>
                   </TabsTrigger>
                   {user.role === "admin" && (
                     <TabsTrigger value="sentinel-brain" className="gap-1.5 text-xs md:text-sm px-3 md:px-4 py-2 md:py-2.5 whitespace-normal flex-shrink-0 rounded-lg hover:bg-accent/50 transition-colors data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
@@ -1375,6 +1372,26 @@ ${JSON.stringify(candidate)}`
             </div>
 
             <TabsContent value="generate" className="space-y-8">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  variant={activeTab === "generate" ? "default" : "outline"}
+                  onClick={() => setActiveTab("generate")}
+                  className="gap-2"
+                >
+                  <Lightbulb size={14} weight="bold" />
+                  Strategy Workspace
+                </Button>
+                <Button
+                  size="sm"
+                  variant={activeTab === "saved" ? "default" : "outline"}
+                  onClick={() => setActiveTab("saved")}
+                  className="gap-2"
+                >
+                  <FolderOpen size={14} weight="bold" />
+                  Saved Strategies ({savedStrategies?.length || 0})
+                </Button>
+              </div>
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -2242,7 +2259,31 @@ ${JSON.stringify(candidate)}`
               <PlagiarismChecker user={user} />
             </TabsContent>
 
+            <TabsContent value="humanizer" className="space-y-6">
+              <PlagiarismChecker user={user} mode="humanizer" />
+            </TabsContent>
+
             <TabsContent value="dashboard" className="space-y-6">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  variant={activeTab === "dashboard" ? "default" : "outline"}
+                  onClick={() => setActiveTab("dashboard")}
+                  className="gap-2"
+                >
+                  <ChartBar size={14} weight="bold" />
+                  Dashboard Overview
+                </Button>
+                <Button
+                  size="sm"
+                  variant={activeTab === "timeline" ? "default" : "outline"}
+                  onClick={() => setActiveTab("timeline")}
+                  className="gap-2"
+                >
+                  <ClockCounterClockwise size={14} weight="bold" />
+                  Workflow Timeline
+                </Button>
+              </div>
               <Dashboard 
                 strategies={user.role === "admin" && adminAllStrategies.length > 0 ? adminAllStrategies : (savedStrategies || [])} 
                 promptMemory={promptMemory || []}
@@ -2251,6 +2292,26 @@ ${JSON.stringify(candidate)}`
             </TabsContent>
 
             <TabsContent value="saved" className="space-y-6">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  variant={activeTab === "generate" ? "outline" : "default"}
+                  onClick={() => setActiveTab("generate")}
+                  className="gap-2"
+                >
+                  <Lightbulb size={14} weight="bold" />
+                  Strategy Workspace
+                </Button>
+                <Button
+                  size="sm"
+                  variant={activeTab === "saved" ? "default" : "outline"}
+                  onClick={() => setActiveTab("saved")}
+                  className="gap-2"
+                >
+                  <FolderOpen size={14} weight="bold" />
+                  Saved Strategies ({savedStrategies?.length || 0})
+                </Button>
+              </div>
               {selectedForComparison.length > 0 && (
                 <motion.div
                   initial={{ opacity: 0, y: -10 }}
@@ -2294,6 +2355,26 @@ ${JSON.stringify(candidate)}`
             </TabsContent>
 
             <TabsContent value="timeline" className="space-y-6">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  variant={activeTab === "dashboard" ? "outline" : "default"}
+                  onClick={() => setActiveTab("dashboard")}
+                  className="gap-2"
+                >
+                  <ChartBar size={14} weight="bold" />
+                  Dashboard Overview
+                </Button>
+                <Button
+                  size="sm"
+                  variant={activeTab === "timeline" ? "default" : "outline"}
+                  onClick={() => setActiveTab("timeline")}
+                  className="gap-2"
+                >
+                  <ClockCounterClockwise size={14} weight="bold" />
+                  Workflow Timeline
+                </Button>
+              </div>
               <div className="bg-card/80 backdrop-blur-sm rounded-2xl shadow-lg border border-border/50 p-6 md:p-8 space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
@@ -2423,6 +2504,7 @@ ${JSON.stringify(candidate)}`
           isAdmin={user.role === "admin"}
           savedCount={savedStrategies?.length || 0}
           canAccessReview={entitlements?.canAccessReview || user.role === "admin"}
+          canUseHumanizer={entitlements?.canUseHumanizer || user.role === "admin"}
           canAccessNGOSaaS={canAccessNGOSaaS}
         />
         

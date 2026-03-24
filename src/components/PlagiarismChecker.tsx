@@ -48,10 +48,11 @@ const MAX_DOCUMENT_CHARS = 50000
 
 interface PlagiarismCheckerProps {
   user: UserProfile | null
+  mode?: "review" | "humanizer"
 }
 
 // Auth guard wrapper — keeps hooks unconditionally called in the inner component.
-export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
+export function PlagiarismChecker({ user, mode = "review" }: PlagiarismCheckerProps) {
   if (!user) {
     return (
       <Card className="border-destructive/40">
@@ -68,11 +69,11 @@ export function PlagiarismChecker({ user }: PlagiarismCheckerProps) {
     )
   }
 
-  return <PlagiarismCheckerInner user={user} />
+  return <PlagiarismCheckerInner user={user} mode={mode} />
 }
 
 // Inner component: always receives a non-null user so hooks are always called unconditionally.
-function PlagiarismCheckerInner({ user }: { user: UserProfile }) {
+function PlagiarismCheckerInner({ user, mode }: { user: UserProfile; mode: "review" | "humanizer" }) {
   const userId = user.id
   const [text, setText] = useState("")
   const [isChecking, setIsChecking] = useState(false)
@@ -1185,12 +1186,14 @@ Return ONLY a valid JSON object:
     return <XCircle size={20} className="text-red-600" weight="fill" />
   }
 
-  // Gate: show paywall for basic users without trial / with exhausted trial (admin bypasses)
-  if (user.role !== "admin" && !entitlements.canAccessReview) {
+  const requiresAccess = mode === "humanizer" ? !entitlements.canUseHumanizer : !entitlements.canAccessReview
+
+  // Gate: show paywall for users without access (admin bypasses)
+  if (user.role !== "admin" && requiresAccess) {
     return (
       <UpgradePaywall
         user={user}
-        feature="review"
+        feature={mode === "humanizer" ? "humanize" : "review"}
       />
     )
   }
@@ -1206,7 +1209,9 @@ Return ONLY a valid JSON object:
             <div>
               <CardTitle>Academic Review & Integrity Analyzer</CardTitle>
               <CardDescription>
-                Analyze thesis/article documents for similarity, AI-writing risk, and citation quality
+                {mode === "humanizer"
+                  ? "Rewrite text to be natural, authentic, and human-like while keeping original meaning"
+                  : "Analyze thesis/article documents for similarity, AI-writing risk, and citation quality"}
               </CardDescription>
             </div>
           </div>
@@ -1372,32 +1377,34 @@ Return ONLY a valid JSON object:
                   </Button>
                 )}
 
-                <Button
-                  onClick={checkPlagiarism}
-                  disabled={
-                    !text.trim() || 
-                    text.trim().length < 50 || 
-                    isChecking || 
-                    isUploading ||
-                    text.includes("data:application/") ||
-                    text.includes("base64,")
-                  }
-                  size="sm"
-                  className="gap-2 bg-primary hover:bg-primary/90"
-                >
-                  {isChecking ? (
-                    <>Analyzing...</>
-                  ) : (
-                    <>
-                      <MagnifyingGlass size={18} weight="duotone" />
-                      Run Integrity Check
-                    </>
-                  )}
-                </Button>
+                {mode !== "humanizer" && (
+                  <Button
+                    onClick={checkPlagiarism}
+                    disabled={
+                      !text.trim() ||
+                      text.trim().length < 50 ||
+                      isChecking ||
+                      isUploading ||
+                      text.includes("data:application/") ||
+                      text.includes("base64,")
+                    }
+                    size="sm"
+                    className="gap-2 bg-primary hover:bg-primary/90"
+                  >
+                    {isChecking ? (
+                      <>Analyzing...</>
+                    ) : (
+                      <>
+                        <MagnifyingGlass size={18} weight="duotone" />
+                        Run Integrity Check
+                      </>
+                    )}
+                  </Button>
+                )}
               </div>
             </div>
 
-            <div className="mt-4 p-3 border border-border rounded-lg space-y-3">
+            {mode !== "humanizer" && <div className="mt-4 p-3 border border-border rounded-lg space-y-3">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Scoring Filters</p>
               <p className="text-xs text-muted-foreground">
                 These controls emulate Turnitin-style exclusions and affect displayed similarity/integrity values.
@@ -1448,12 +1455,12 @@ Return ONLY a valid JSON object:
               <p className="text-xs text-muted-foreground">
                 Exports this month: {monthlyReviewExportCount || 0}/{exportPlanConfig.monthlyExports}
               </p>
-            </div>
+            </div>}
           </div>
         </CardContent>
       </Card>
 
-      <AnimatePresence>
+      {mode !== "humanizer" && <AnimatePresence>
         {isChecking && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -1476,9 +1483,9 @@ Return ONLY a valid JSON object:
             </Card>
           </motion.div>
         )}
-      </AnimatePresence>
+      </AnimatePresence>}
 
-      <AnimatePresence>
+      {mode !== "humanizer" && <AnimatePresence>
         {result && !isChecking && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -1912,7 +1919,7 @@ Return ONLY a valid JSON object:
             </Card>
           </motion.div>
         )}
-      </AnimatePresence>
+      </AnimatePresence>}
 
       <AnimatePresence>
         {humanizedResult && (

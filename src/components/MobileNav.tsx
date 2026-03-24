@@ -1,4 +1,4 @@
-import { Lightbulb, Sparkle, MagnifyingGlass, ChartBar, FolderOpen, ShieldCheck, ClockCounterClockwise, LockSimple, Brain, Target } from "@phosphor-icons/react"
+import { Lightbulb, Sparkle, MagnifyingGlass, ChartBar, ShieldCheck, LockSimple, Brain, Target } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
@@ -8,6 +8,7 @@ interface MobileNavProps {
   isAdmin: boolean
   savedCount: number
   canAccessReview?: boolean
+  canUseHumanizer?: boolean
   canAccessNGOSaaS?: boolean
 }
 
@@ -17,6 +18,7 @@ export function MobileNav({
   isAdmin,
   savedCount,
   canAccessReview = true,
+  canUseHumanizer = true,
   canAccessNGOSaaS = false,
 }: MobileNavProps) {
   const handleTabSelect = (tab: string) => {
@@ -26,11 +28,10 @@ export function MobileNav({
 
   const navItems = [
     { value: "generate", label: "Strategy", icon: Lightbulb },
-    { value: "saved", label: `Saved`, shortLabel: `${savedCount}`, icon: FolderOpen },
     { value: "ideas", label: "Ideas", icon: Sparkle },
     { value: "plagiarism", label: "Review", icon: canAccessReview ? MagnifyingGlass : LockSimple },
+    { value: "humanizer", label: "Humanizer", icon: canUseHumanizer ? Sparkle : LockSimple },
     { value: "dashboard", label: "Stats", icon: ChartBar },
-    { value: "timeline", label: "Timeline", icon: ClockCounterClockwise },
   ]
 
   if (isAdmin) {
@@ -49,7 +50,7 @@ export function MobileNav({
         {navItems.map((item) => {
           const Icon = item.icon
           const isActive = activeTab === item.value
-          const displayLabel = item.value === "saved" && item.shortLabel ? item.shortLabel : item.label
+          const displayLabel = item.label
           
           return (
             <Button
