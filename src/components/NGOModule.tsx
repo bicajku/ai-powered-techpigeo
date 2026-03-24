@@ -1135,10 +1135,15 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
         },
       })
       const body = typeof res.response === "string" ? res.response : JSON.stringify(res.response, null, 2)
+      const evidenceAppendix = await buildWebEvidenceAppendix(
+        [reportTitle, input, context, body].filter(Boolean).join("\n\n"),
+        `${activeAction}-report-evidence.txt`
+      )
+      const enrichedBody = `${body}${evidenceAppendix}`
       const latestOrgSettings = await kvGet<OrgSettings>(`${ORG_SETTINGS_KEY}-${userId}`)
-      const brandedBody = buildBrandedReportBody(reportTitle, body, latestOrgSettings || orgSettings)
+      const brandedBody = buildBrandedReportBody(reportTitle, enrichedBody, latestOrgSettings || orgSettings)
       setReportBody(brandedBody)
-      const newReport = { id: uuidv4(), title: reportTitle, body, createdAt: Date.now(), status: "draft" as const, generatedBy: user?.fullName || "Unknown" }
+      const newReport = { id: uuidv4(), title: reportTitle, body: enrichedBody, createdAt: Date.now(), status: "draft" as const, generatedBy: user?.fullName || "Unknown" }
       newReport.body = brandedBody
       const updated = [newReport, ...savedReports]
       setSavedReports(updated)
@@ -1328,6 +1333,36 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
       const msg = error instanceof Error ? error.message : "Web evidence retrieval failed"
       setWebEvidenceSummary(`Web evidence check failed: ${msg}`)
       return `\n\nWEB EVIDENCE CHECK FAILED: ${msg}`
+    }
+  }
+
+  const buildWebEvidenceAppendix = async (text: string, fileName: string): Promise<string> => {
+    if (!useWebEvidence) {
+      return ""
+    }
+
+    const queryText = text.trim()
+    if (queryText.length < 80) {
+      return ""
+    }
+
+    try {
+      const check = await performExternalSourceCheck({ text: queryText, fileName })
+      const topMatches = [...(check.matches || [])]
+        .sort((a, b) => (b.similarity || 0) - (a.similarity || 0))
+        .slice(0, 5)
+
+      if (topMatches.length === 0) {
+        return `\n\n## Source-backed References\nNo strong public-web source matches were found for this report context.\n` 
+      }
+
+      const references = topMatches
+        .map((match, index) => `${index + 1}. ${match.source} (similarity ${Math.round(match.similarity)}%, provider: ${match.provider || "unknown"}, repository: ${match.repository || "N/A"})`)
+        .join("\n")
+
+      return `\n\n## Source-backed References\n${references}\n` 
+    } catch {
+      return "\n\n## Source-backed References\nWeb evidence lookup failed during report generation.\n"
     }
   }
 
@@ -1550,13 +1585,13 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
 
               <AnimatePresence>
                 {result && !isLoading && (
-                  <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4 overflow-hidden">
+                  <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4 overflow-hidden w-full max-w-full">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div className="flex min-w-0 items-start gap-2">
                         <CheckCircle size={18} weight="fill" className="text-emerald-500" />
                         <h3 className="font-semibold text-foreground break-words">{result.header}</h3>
                       </div>
-                      <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end">
+                      <div className="flex w-full flex-wrap gap-2 justify-start">
                         <Button variant="default" size="sm" onClick={handleSaveGeneratedAsDraft} className="text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white flex-1 sm:flex-none">
                           <FloppyDisk size={14} />Save Draft
                         </Button>
@@ -1793,8 +1828,8 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
                   <CheckCircle size={16} weight="fill" className="text-emerald-500" />Generated: {reportTitle}
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <div className="prose prose-sm dark:prose-invert max-w-none text-sm leading-relaxed whitespace-pre-wrap">{reportBody}</div>
+              <CardContent className="overflow-hidden w-full max-w-full">
+                <div className="prose prose-sm dark:prose-invert max-w-none text-sm leading-relaxed whitespace-pre-wrap break-words overflow-x-auto">{reportBody}</div>
               </CardContent>
             </Card>
           )}
