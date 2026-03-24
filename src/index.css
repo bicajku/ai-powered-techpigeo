@@ -162,3 +162,52 @@
     transform: translateX(100%);
   }
 }
+@layer utilities {
+  .ngo-branded .text-emerald-500,
+  .ngo-branded .text-emerald-600,
+  .ngo-branded .text-emerald-700,
+  .ngo-branded .dark\:text-emerald-400 {
+    color: var(--ngo-primary, #10b981) !important;
+  }
+
+  .ngo-branded .bg-emerald-600,
+  .ngo-branded .hover\:bg-emerald-700:hover {
+    background-color: var(--ngo-primary, #059669) !important;
+    color: white;
+  }
+
+  .ngo-branded .bg-emerald-500\/5,
+  .ngo-branded .hover\:bg-emerald-500\/5:hover {
+    background-color: rgb(var(--ngo-primary-rgb, 16 185 129) / 0.05) !important;
+  }
+
+  .ngo-branded .bg-emerald-500\/10,
+  .ngo-branded .hover\:bg-emerald-500\/10:hover {
+    background-color: rgb(var(--ngo-primary-rgb, 16 185 129) / 0.1) !important;
+  }
+
+  .ngo-branded .bg-emerald-500\/20,
+  .ngo-branded .group:hover .group-hover\:bg-emerald-500\/10 {
+    background-color: rgb(var(--ngo-primary-rgb, 16 185 129) / 0.2) !important;
+  }
+
+  .ngo-branded .border-emerald-500,
+  .ngo-branded .border-emerald-500\/20,
+  .ngo-branded .border-emerald-500\/30,
+  .ngo-branded .border-emerald-500\/40,
+  .ngo-branded .border-emerald-400\/20,
+  .ngo-branded .border-emerald-400\/30,
+  .ngo-branded .border-emerald-400\/40,
+  .ngo-branded .hover\:border-emerald-400\/20:hover,
+  .ngo-branded .hover\:border-emerald-400\/30:hover {
+    border-color: rgb(var(--ngo-primary-rgb, 16 185 129) / 0.4) !important;
+  }
+
+  .ngo-branded .group:hover .group-hover\:text-emerald-500 {
+    color: var(--ngo-primary, #10b981) !important;
+  }
+
+  .ngo-branded .focus\:ring-emerald-500\/40:focus {
+    --tw-ring-color: rgb(var(--ngo-primary-rgb, 16 185 129) / 0.4) !important;
+  }
+}

@@ -105,6 +105,33 @@ interface OrgSettings {
   address: string
 }
 
+// --- Style Helpers ---
+const resolveHexToRgb = (hex: string) => {
+  const clean = hex.replace(/^#/, "")
+  if (clean.length === 6) {
+    return `${parseInt(clean.slice(0, 2), 16)} ${parseInt(clean.slice(2, 4), 16)} ${parseInt(clean.slice(4, 6), 16)}`
+  }
+  if (clean.length === 3) {
+    return `${parseInt(clean[0] + clean[0], 16)} ${parseInt(clean[1] + clean[1], 16)} ${parseInt(clean[2] + clean[2], 16)}`
+  }
+  return "16 185 129" // emerald-500 fallback
+}
+
+const getBrandedStyles = (org: OrgSettings | null, hasLoaded: boolean) => {
+  if (!hasLoaded || !org || (!org.primaryColor && !org.secondaryColor)) {
+    return {} // Default classes will just fall back nicely if no style overrides are present.
+  }
+  const p = org.primaryColor || "#10b981" // emerald-500 equivalent
+  const s = org.secondaryColor || "#34d399" // emerald-400 equivalent
+  
+  return {
+    "--ngo-primary": p,
+    "--ngo-primary-rgb": resolveHexToRgb(p),
+    "--ngo-secondary": s,
+    "--ngo-secondary-rgb": resolveHexToRgb(s),
+  } as React.CSSProperties
+}
+
 // --- Action Definitions ---
 
 const NGO_ACTIONS: NGOAction[] = [
@@ -1482,18 +1509,33 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
   const projectFilesForSelected = selectedProjectId
     ? projectFiles.filter((f) => f.projectId === selectedProjectId)
     : []
+  const brandedOrgName = orgLoaded && orgSettings.orgName.trim()
+    ? orgSettings.orgName.trim()
+    : "NGO-SAAS Enterprise Module"
+  const brandedTagline = orgLoaded && orgSettings.orgName.trim()
+    ? "Sentinel Social — Branded workspace for NGOs & nonprofits in Pakistan & AJK"
+    : "Sentinel Social — AI workspace for NGOs & nonprofits in Pakistan & AJK"
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="ngo-branded flex flex-col gap-6" style={getBrandedStyles(orgSettings, orgLoaded)}>
       {/* Header */}
       <div className="flex items-center gap-3">
         <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
-          <Users size={24} weight="bold" className="text-emerald-500" />
+          {orgLoaded && orgSettings.logoUrl.trim() ? (
+            <img
+              src={orgSettings.logoUrl}
+              alt={`${brandedOrgName} logo`}
+              className="h-6 w-6 rounded object-contain"
+              onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }}
+            />
+          ) : (
+            <Users size={24} weight="bold" className="text-emerald-500" />
+          )}
         </div>
         <div>
-          <h2 className="text-xl font-bold text-foreground">NGO-SAAS Enterprise Module</h2>
+          <h2 className="text-xl font-bold text-emerald-700 dark:text-emerald-400">{brandedOrgName}</h2>
           <p className="text-sm text-muted-foreground">
-            Sentinel Social — AI workspace for NGOs & nonprofits in Pakistan & AJK
+            {brandedTagline}
           </p>
         </div>
         {(geminiReady || copilotReady || sparkReady || neonReady) && (
