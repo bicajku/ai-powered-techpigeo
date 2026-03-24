@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { motion } from "framer-motion"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -82,6 +82,8 @@ export function AdminDashboard() {
   const [selectedStrategy, setSelectedStrategy] = useState<{ user: UserProfile; strategy: SavedStrategy } | null>(null)
   const [selectedReview, setSelectedReview] = useState<{ user: UserProfile; review: SavedReviewDocument } | null>(null)
   const [reviewActionTarget, setReviewActionTarget] = useState<{ userId: string; reviewId: string; action: "archive" | "unarchive" | "delete" } | null>(null)
+  const hasLoadedOnceRef = useRef(false)
+  const loadInFlightRef = useRef(false)
 
   const buildStats = (
     allUsers: UserProfile[],
@@ -114,7 +116,17 @@ export function AdminDashboard() {
     }
   }
 
-  const loadData = useCallback(async (showRefreshToast = false) => {
+  const loadData = useCallback(async (showRefreshToast = false, force = false) => {
+    if (loadInFlightRef.current) {
+      return
+    }
+
+    if (!force && !showRefreshToast && hasLoadedOnceRef.current) {
+      return
+    }
+
+    loadInFlightRef.current = true
+
     if (showRefreshToast) {
       setIsRefreshing(true)
       toast.info("Refreshing admin data...")
@@ -143,13 +155,15 @@ export function AdminDashboard() {
       console.error("Failed to load admin data:", error)
       toast.error("Failed to load admin data")
     } finally {
+      hasLoadedOnceRef.current = true
+      loadInFlightRef.current = false
       setIsLoading(false)
       setIsRefreshing(false)
     }
   }, [])
 
   useEffect(() => {
-    loadData()
+    void loadData(false, true)
   }, [loadData])
 
   const handleRoleChange = async (email: string, newRole: UserRole) => {
@@ -168,7 +182,7 @@ export function AdminDashboard() {
       const result = await adminService.updateUserRole(roleChangeTarget.email, roleChangeTarget.newRole)
       if (result.success) {
         toast.success("Role updated successfully")
-        await loadData()
+        await loadData(false, true)
       } else {
         toast.error(result.error || "Failed to update role")
       }
@@ -195,7 +209,7 @@ export function AdminDashboard() {
       const result = await adminService.deleteUser(deleteTarget)
       if (result.success) {
         toast.success("User deleted successfully")
-        await loadData()
+        await loadData(false, true)
       } else {
         toast.error(result.error || "Failed to delete user")
       }
@@ -260,7 +274,7 @@ export function AdminDashboard() {
         toast.success("Review unarchived successfully")
       }
 
-      await loadData()
+      await loadData(false, true)
     } catch (error) {
       console.error("Failed to perform review action:", error)
       toast.error(`Failed to ${reviewActionTarget.action} review`)
@@ -532,7 +546,7 @@ export function AdminDashboard() {
               <AdminSubscriptionPanel
                 users={users}
                 adminEmail={users.find(u => u.email === "admin")?.email || "admin"}
-                onDataChanged={() => loadData()}
+                onDataChanged={() => void loadData(false, true)}
               />
             </TabsContent>
 

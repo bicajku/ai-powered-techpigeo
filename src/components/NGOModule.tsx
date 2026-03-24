@@ -141,6 +141,36 @@ const NGO_ACTIONS: NGOAction[] = [
   },
 ]
 
+const REQUIRED_ACTION_SECTIONS: Record<string, string[]> = {
+  grant: [
+    "Executive Summary",
+    "Problem Statement",
+    "Proposed Solution",
+    "Sustainability Plan",
+    "Budget Narrative",
+  ],
+  impact: [
+    "Outputs vs Outcomes",
+    "LogFrame",
+    "Means of Verification",
+    "Assumptions",
+  ],
+  narrative: [
+    "Context",
+    "Beneficiary Journey",
+    "Transformation",
+  ],
+  outreach: [
+    "Plain Language Version",
+    "What This Means For You",
+  ],
+  email: [
+    "Cold Outreach",
+    "Follow-up",
+    "Thank You",
+  ],
+}
+
 // --- Storage keys ---
 
 const PROJECTS_KEY = "ngo-enterprise-projects"
@@ -306,21 +336,87 @@ function getPromptForAction(actionId: string, input: string): string {
 // --- Response Parser ---
 
 function parseNGOResult(raw: unknown): NGOResult {
-  if (typeof raw === "object" && raw !== null) return raw as NGOResult
+  const coerce = (candidate: Partial<NGOResult>): NGOResult => ({
+    header: typeof candidate.header === "string" && candidate.header.trim().length > 0
+      ? candidate.header
+      : "NGO Output",
+    mainContent: typeof candidate.mainContent === "string" ? candidate.mainContent : "",
+    sdgTags: Array.isArray(candidate.sdgTags) ? candidate.sdgTags.filter((x): x is string => typeof x === "string") : [],
+    ethicalWarnings: Array.isArray(candidate.ethicalWarnings) ? candidate.ethicalWarnings.filter((x): x is string => typeof x === "string") : [],
+    suggestedKPIs: Array.isArray(candidate.suggestedKPIs) ? candidate.suggestedKPIs.filter((x): x is string => typeof x === "string") : [],
+    emailVariants: Array.isArray(candidate.emailVariants)
+      ? candidate.emailVariants.filter((x): x is { type: string; subject: string; body: string } =>
+          typeof x === "object" &&
+          x !== null &&
+          typeof (x as { type?: unknown }).type === "string" &&
+          typeof (x as { subject?: unknown }).subject === "string" &&
+          typeof (x as { body?: unknown }).body === "string"
+        )
+      : undefined,
+  })
+
+  if (typeof raw === "object" && raw !== null) return coerce(raw as NGOResult)
   if (typeof raw !== "string") throw new Error("Unexpected response format")
+
+  const extractHeuristic = (input: string): NGOResult | null => {
+    const headerMatch = input.match(/"header"\s*:\s*"([\s\S]*?)"\s*,/)
+    const mainMatch = input.match(/"mainContent"\s*:\s*"([\s\S]*?)"\s*(,|})/)
+    if (!headerMatch && !mainMatch) return null
+
+    const decode = (value?: string) => {
+      if (!value) return ""
+      return value
+        .replace(/\\n/g, "\n")
+        .replace(/\\r/g, "\r")
+        .replace(/\\t/g, "\t")
+        .replace(/\\"/g, '"')
+        .replace(/\\\\/g, "\\")
+    }
+
+    return coerce({
+      header: decode(headerMatch?.[1]) || "NGO Output",
+      mainContent: decode(mainMatch?.[1]),
+      ethicalWarnings: ["Recovered partially malformed AI response."],
+    })
+  }
+
   let cleaned = raw.trim()
   if (cleaned.startsWith("```json")) cleaned = cleaned.replace(/^```json\s*/, "").replace(/```\s*$/, "")
   else if (cleaned.startsWith("```")) cleaned = cleaned.replace(/^```\s*/, "").replace(/```\s*$/, "")
-  const normalized = cleaned.trim()
+
+  const normalized = cleaned
+    .trim()
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/\u0000/g, "")
+
   try {
-    return JSON.parse(normalized) as NGOResult
+    return coerce(JSON.parse(normalized) as NGOResult)
   } catch {
     const start = normalized.indexOf("{")
     const end = normalized.lastIndexOf("}")
     if (start !== -1 && end !== -1 && end > start) {
       const sliced = normalized.substring(start, end + 1)
-      return JSON.parse(sliced) as NGOResult
+      try {
+        return coerce(JSON.parse(sliced) as NGOResult)
+      } catch {
+        const repaired = sliced
+          .replace(/,\s*}/g, "}")
+          .replace(/,\s*]/g, "]")
+        try {
+          return coerce(JSON.parse(repaired) as NGOResult)
+        } catch {
+          const heuristic = extractHeuristic(repaired)
+          if (heuristic) return heuristic
+        }
+      }
     }
+
+    const heuristic = extractHeuristic(normalized)
+    if (heuristic) {
+      return heuristic
+    }
+
     throw new Error("Failed to parse AI output as JSON")
   }
 }
@@ -573,7 +669,8 @@ export function NGOModule({ userId, user }: NGOModuleProps) {
     }
 
     const title = `${currentAction.label} - ${new Date().toLocaleDateString()}`
-    const body = result.mainContent
+    const latestOrgSettings = await kvGet<OrgSettings>(`${ORG_SETTINGS_KEY}-${userId}`)
+    const body = buildBrandedReportBody(title, result.mainContent, latestOrgSettings || orgSettings)
     const newReport = {
       id: uuidv4(),
       title,
@@ -633,6 +730,94 @@ export function NGOModule({ userId, user }: NGOModuleProps) {
     setActiveAction(actionId); setInput(""); setResult(null); setError(null)
   }
 
+  const buildBrandedReportBody = (title: string, content: string, branding: OrgSettings | null) => {
+    const brand = getBrandForExport(branding)
+    return `# ${title}
+
+**Organization:** ${brand.name}
+${brand.contact ? `**Contact:** ${brand.contact}` : ""}
+**Prepared:** ${new Date().toLocaleDateString()}
+**Generated via:** Sentinel Social NGO-SAAS
+
+---
+
+${content}
+
+---
+
+_This draft is prepared for donor/funding review and should be approved by organization leadership before external submission._`
+  }
+
+  const hasRequiredSections = (actionId: string, mainContent: string) => {
+    const required = REQUIRED_ACTION_SECTIONS[actionId] || []
+    if (required.length === 0) return true
+    return required.every((section) => new RegExp(section, "i").test(mainContent))
+  }
+
+  const enhanceResultForDonorReadiness = async (candidate: NGOResult) => {
+    const appearsIncomplete =
+      candidate.mainContent.trim().length < 1200 ||
+      !hasRequiredSections(activeAction, candidate.mainContent)
+
+    if (!appearsIncomplete) {
+      return candidate
+    }
+
+    const requiredSections = REQUIRED_ACTION_SECTIONS[activeAction] || []
+    const improvePrompt = `${PAKISTAN_AJK_CONTEXT}
+
+You are a senior NGO proposal editor. Improve the response into a complete, donor-ready output.
+
+Action: ${currentAction.label}
+User input:
+${input}
+
+Existing AI draft:
+${JSON.stringify(candidate, null, 2)}
+
+Requirements:
+- Ensure a complete, executable response with all key sections filled.
+- Required sections: ${requiredSections.join(", ") || "N/A"}
+- Maintain factual caution and ethical safeguards.
+- Keep PII anonymization where relevant.
+- Produce actionable KPIs and practical recommendations.
+
+Respond ONLY with valid JSON:
+{
+  "header": "...",
+  "mainContent": "...",
+  "sdgTags": ["..."],
+  "ethicalWarnings": ["..."],
+  "suggestedKPIs": ["..."],
+  "emailVariants": [{"type":"...","subject":"...","body":"..."}]
+}`
+
+    try {
+      const improved = await sentinelQuery(improvePrompt, {
+        module: "ngo_module",
+        userId: typeof user?.id === "number" ? user.id : undefined,
+        skipCache: true,
+        useConsensus: true,
+        sparkFallback: async () => {
+          if (typeof spark !== "undefined" && typeof spark.llm === "function") {
+            return await spark.llm(improvePrompt, "gpt-4o", false) as string
+          }
+          throw new Error("Spark fallback unavailable")
+        },
+      })
+      const improvedParsed = parseNGOResult(improved.response)
+      return {
+        ...improvedParsed,
+        ethicalWarnings: [...(improvedParsed.ethicalWarnings || []), "Donor-readiness enhancement pass applied."],
+      }
+    } catch {
+      return {
+        ...candidate,
+        ethicalWarnings: [...(candidate.ethicalWarnings || []), "Enhancement pass skipped due to AI parsing limits; review content before donor submission."],
+      }
+    }
+  }
+
   const handleGenerate = async () => {
     if (!user) { toast.error("Please sign in to use the NGO module."); return }
     if (!canAccessNGOModule) { toast.error("NGO-SAAS is available for Enterprise plan and Super Admin only."); return }
@@ -675,6 +860,7 @@ export function NGOModule({ userId, user }: NGOModuleProps) {
           suggestedKPIs: [],
         }
       }
+      parsed = await enhanceResultForDonorReadiness(parsed)
       setResult(parsed)
       if (neonReady) {
         await logQuery({
@@ -776,8 +962,11 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
         },
       })
       const body = typeof res.response === "string" ? res.response : JSON.stringify(res.response, null, 2)
-      setReportBody(body)
+      const latestOrgSettings = await kvGet<OrgSettings>(`${ORG_SETTINGS_KEY}-${userId}`)
+      const brandedBody = buildBrandedReportBody(reportTitle, body, latestOrgSettings || orgSettings)
+      setReportBody(brandedBody)
       const newReport = { id: uuidv4(), title: reportTitle, body, createdAt: Date.now(), status: "draft" as const, generatedBy: user?.fullName || "Unknown" }
+      newReport.body = brandedBody
       const updated = [newReport, ...savedReports]
       setSavedReports(updated)
       await kvSet(`ngo-reports-${userId}`, updated)
