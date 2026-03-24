@@ -1427,7 +1427,7 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
         </TabsList>
 
         {/* Tab: AI Actions */}
-        <TabsContent value="ai-actions" className="mt-4">
+        <TabsContent value="ai-actions" className="mt-4 overflow-hidden">
           <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-6">
             <div className="flex flex-col gap-2">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1 mb-1">5 Core Actions</p>
@@ -1459,7 +1459,7 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
               </div>
             </div>
 
-            <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-4 min-w-0">
               <Card className="border-border/50 shadow-sm">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base font-semibold flex items-center gap-2">
@@ -1513,7 +1513,7 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
                         <Textarea
                           value={kbContentSummary}
                           readOnly
-                          className="min-h-[120px] text-xs font-mono bg-background/70"
+                          className="min-h-[120px] text-xs font-mono bg-background/70 break-words whitespace-pre-wrap"
                         />
                       </div>
                     )}
@@ -1585,26 +1585,26 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
 
               <AnimatePresence>
                 {result && !isLoading && (
-                  <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4 overflow-hidden w-full max-w-full">
+                  <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4 overflow-hidden w-full max-w-full min-w-0">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div className="flex min-w-0 items-start gap-2">
                         <CheckCircle size={18} weight="fill" className="text-emerald-500" />
                         <h3 className="font-semibold text-foreground break-words">{result.header}</h3>
                       </div>
                       <div className="flex w-full flex-wrap gap-2 justify-start">
-                        <Button variant="default" size="sm" onClick={handleSaveGeneratedAsDraft} className="text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white flex-1 sm:flex-none">
+                        <Button variant="default" size="sm" onClick={handleSaveGeneratedAsDraft} className="text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white">
                           <FloppyDisk size={14} />Save Draft
                         </Button>
-                        <Button variant="outline" size="sm" onClick={() => copyToClipboard(result.mainContent)} className="text-xs gap-1.5 flex-1 sm:flex-none">
+                        <Button variant="outline" size="sm" onClick={() => copyToClipboard(result.mainContent)} className="text-xs gap-1.5">
                           <CheckCircle size={14} />Copy
                         </Button>
-                        <Button variant="outline" size="sm" onClick={() => exportAsPDF(result.header, result.mainContent, orgSettings)} className="text-xs gap-1.5 flex-1 sm:flex-none">
+                        <Button variant="outline" size="sm" onClick={() => exportAsPDF(result.header, result.mainContent, orgSettings)} className="text-xs gap-1.5">
                           <Download size={14} />PDF
                         </Button>
-                        <Button variant="outline" size="sm" onClick={() => exportAsWord(result.header, result.mainContent, orgSettings)} className="text-xs gap-1.5 flex-1 sm:flex-none">
+                        <Button variant="outline" size="sm" onClick={() => exportAsWord(result.header, result.mainContent, orgSettings)} className="text-xs gap-1.5">
                           <Download size={14} />Word
                         </Button>
-                        <Button variant="outline" size="sm" onClick={() => exportAsExcel(result.header, [[result.mainContent]], orgSettings)} className="text-xs gap-1.5 flex-1 sm:flex-none">
+                        <Button variant="outline" size="sm" onClick={() => exportAsExcel(result.header, [[result.mainContent]], orgSettings)} className="text-xs gap-1.5">
                           <Download size={14} />Excel
                         </Button>
                       </div>
@@ -1628,8 +1628,8 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
                         </CardContent>
                       </Card>
                     )}
-                    <Card className="border-border/50">
-                      <CardContent className="p-5">
+                    <Card className="border-border/50 w-full max-w-full overflow-hidden">
+                      <CardContent className="p-5 w-full max-w-full overflow-hidden">
                         <div className="prose prose-sm dark:prose-invert max-w-none text-sm leading-relaxed whitespace-pre-wrap break-words overflow-x-auto">
                           {result.mainContent}
                         </div>
