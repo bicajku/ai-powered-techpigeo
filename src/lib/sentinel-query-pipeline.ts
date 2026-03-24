@@ -32,6 +32,7 @@ export async function sentinelQuery(
   }
 ): Promise<PipelineResult> {
   const providers: QueryProvider[] = []
+  const providerErrors: string[] = []
   let brainHits = 0
   const brainContext: string[] = []
   const neonReady = isNeonConfigured()
@@ -162,6 +163,7 @@ Create a unified, humanized response that intelligently combines the best of all
         }
       } catch (err) {
         console.warn("Consensus generation failed, falling through:", err)
+        providerErrors.push(`consensus: ${err instanceof Error ? err.message : String(err)}`)
       }
     }
   }
@@ -196,6 +198,7 @@ Create a unified, humanized response that intelligently combines the best of all
       }
     } catch (err) {
       console.warn("Copilot (preferred) generation failed, falling through:", err)
+      providerErrors.push(`copilot(preferred): ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 
@@ -227,6 +230,7 @@ Create a unified, humanized response that intelligently combines the best of all
       }
     } catch (err) {
       console.warn("Gemini generation failed:", err)
+      providerErrors.push(`gemini: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 
@@ -257,6 +261,7 @@ Create a unified, humanized response that intelligently combines the best of all
       }
     } catch (err) {
       console.warn("Copilot generation failed:", err)
+      providerErrors.push(`copilot: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 
@@ -283,6 +288,7 @@ Create a unified, humanized response that intelligently combines the best of all
       }
     } catch (err) {
       console.warn("Spark fallback failed:", err)
+      providerErrors.push(`spark: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 
@@ -297,7 +303,17 @@ Create a unified, humanized response that intelligently combines the best of all
     }
   }
 
-  throw new Error("All providers failed. Please check your API configuration.")
+  const configHint = [
+    `geminiConfigured=${geminiReady}`,
+    `copilotConfigured=${copilotReady}`,
+    `sparkFallbackProvided=${Boolean(options?.sparkFallback)}`,
+  ].join(", ")
+
+  const detail = providerErrors.length > 0
+    ? ` Failures: ${providerErrors.join(" | ")}`
+    : ""
+
+  throw new Error(`All providers failed. Please check your API configuration. (${configHint}).${detail}`)
 }
 
 // --- Document Ingestion ---
