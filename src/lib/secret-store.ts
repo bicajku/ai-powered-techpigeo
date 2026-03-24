@@ -9,9 +9,22 @@
  * On boot: call hydrateSecretsFromKV() to restore secrets after URL rotation.
  */
 
-const SALT = "sentinel-secret-store-v1"
+import { getEnvConfig } from "./env-config"
+
 const KEY_LENGTH = 256
 const IV_LENGTH = 12
+
+/**
+ * Get the encryption salt from env config or use default.
+ */
+function getSalt(): string {
+  try {
+    const config = getEnvConfig()
+    return config.secretSalt
+  } catch {
+    return "sentinel-secret-store-v1"
+  }
+}
 
 /** Keys that are managed by this module and should be synced to KV. */
 const MANAGED_SECRET_KEYS = [
@@ -45,7 +58,8 @@ function isBrowser(): boolean {
 async function deriveKey(): Promise<CryptoKey> {
   // Fixed project-scoped salt — no location.origin so the same key works
   // across different Codespaces URLs.
-  const material = `${SALT}:${navigator.userAgent}:sentinel-ai-techpigeon`
+  const salt = getSalt()
+  const material = `${salt}:${navigator.userAgent}:sentinel-ai-techpigeon`
   const raw = new TextEncoder().encode(material)
   const hash = await crypto.subtle.digest("SHA-256", raw)
 

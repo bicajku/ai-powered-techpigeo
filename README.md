@@ -21,11 +21,33 @@ Welcome to the **AI-Powered Techpigeon Assistant** — your intelligent marketin
 # Install dependencies
 npm install
 
+# Configure environment variables
+cp .env.example .env.local
+# Edit .env.local and add your API keys
+
 # Start development server
 npm run dev
 
 # Build for production
 npm run build
+```
+
+### Environment Configuration
+
+The application requires environment variables for full functionality. See [ENV_CONFIG.md](ENV_CONFIG.md) for detailed setup instructions.
+
+**Required for core features:**
+- `VITE_NEON_DATABASE_URL` - PostgreSQL database connection
+- `VITE_GEMINI_API_KEY` - Google Gemini API key
+
+**Optional enhancements:**
+- `VITE_GITHUB_COPILOT_TOKEN` - GitHub Copilot integration
+- Feature flags for enabling/disabling modules
+- Rate limit configuration
+
+Run with debug mode to see configuration status:
+```bash
+VITE_SPARK_DEBUG=true npm run dev
 ```
 
 ## 🛠 Features
