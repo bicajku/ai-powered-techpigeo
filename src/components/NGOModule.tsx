@@ -4,6 +4,7 @@ import type { Icon } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -46,6 +47,7 @@ import { isGeminiConfigured } from "@/lib/gemini-client"
 import { isCopilotConfigured } from "@/lib/copilot-client"
 import { logQuery } from "@/lib/sentinel-brain"
 import { REPORT_BRAND } from "@/lib/report-branding"
+import { performExternalSourceCheck, getExternalSourceIntegrationSummary } from "@/lib/external-source-check"
 import { getNGOAccessLevel, canWrite, canDelete, canManageTeam, getTeamMembers, addTeamMember, updateMemberAccess, removeMember } from "@/lib/ngo-team"
 import { UserProfile, NGOAccessLevel, NGOTeamMember } from "@/types"
 import mammoth from "mammoth"
@@ -560,6 +562,8 @@ export function NGOModule({ userId, user }: NGOModuleProps) {
   const [uploadedKBFiles, setUploadedKBFiles] = useState<ProjectFile[]>([])
   const [kbContentSummary, setKbContentSummary] = useState("")
   const [uploadingKBFile, setUploadingKBFile] = useState(false)
+  const [useWebEvidence, setUseWebEvidence] = useState(false)
+  const [webEvidenceSummary, setWebEvidenceSummary] = useState("")
   const kbFileInputRef = useRef<HTMLInputElement>(null)
 
   const entitlements = user ? getFeatureEntitlements(user) : null
@@ -585,6 +589,7 @@ export function NGOModule({ userId, user }: NGOModuleProps) {
   const geminiReady = isGeminiConfigured()
   const copilotReady = isCopilotConfigured()
   const sparkReady = typeof spark !== "undefined" && typeof spark.llm === "function"
+  const webEvidenceIntegration = getExternalSourceIntegrationSummary()
 
   // Load helpers
 
@@ -717,7 +722,7 @@ export function NGOModule({ userId, user }: NGOModuleProps) {
   // Persist NGO Module State
   useEffect(() => {
     const loadNGOState = async () => {
-      const saved = await kvGet<{ activeAction: string; input: string; uploadedKBFiles: ProjectFile[]; kbContentSummary?: string }>(
+      const saved = await kvGet<{ activeAction: string; input: string; uploadedKBFiles: ProjectFile[]; kbContentSummary?: string; useWebEvidence?: boolean }>(
         `ngo-module-state-${userId}`
       )
       if (saved) {
@@ -725,6 +730,7 @@ export function NGOModule({ userId, user }: NGOModuleProps) {
         setInput(saved.input)
         setUploadedKBFiles(saved.uploadedKBFiles)
         setKbContentSummary(saved.kbContentSummary || "")
+        setUseWebEvidence(Boolean(saved.useWebEvidence))
       }
     }
     loadNGOState()
@@ -737,13 +743,14 @@ export function NGOModule({ userId, user }: NGOModuleProps) {
         input,
         uploadedKBFiles,
         kbContentSummary,
+        useWebEvidence,
       })
     }
     saveNGOState()
-  }, [activeAction, input, uploadedKBFiles, kbContentSummary, userId])
+  }, [activeAction, input, uploadedKBFiles, kbContentSummary, useWebEvidence, userId])
 
   const handleActionChange = (actionId: string) => {
-    setActiveAction(actionId); setInput(""); setResult(null); setError(null)
+    setActiveAction(actionId); setInput(""); setResult(null); setError(null); setWebEvidenceSummary("")
   }
 
   const extractTextFromFile = async (file: File): Promise<string> => {
@@ -957,6 +964,7 @@ Respond ONLY with valid JSON:
       }
       let prompt = getPromptForAction(activeAction, input)
       prompt += getKBContext()
+      prompt += await getWebEvidenceContext()
 
       let policy = ""
       if (activeAction === "grant") {
@@ -1163,7 +1171,7 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
     else { toast.success("Copied to clipboard!") }
   }
 
-  const clearAll = () => { setInput(""); setResult(null); setError(null) }
+  const clearAll = () => { setInput(""); setResult(null); setError(null); setWebEvidenceSummary("") }
 
   // Knowledge Base file handlers
 
@@ -1277,6 +1285,52 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
     return `\n\nREFERENCE MATERIALS FROM KNOWLEDGE BASE:\n${fileContent}${summary ? `\n\nPRIMARY FILE SUMMARY:\n${summary}` : ""}`
   }
 
+  const getWebEvidenceContext = async (): Promise<string> => {
+    if (!useWebEvidence) {
+      setWebEvidenceSummary("")
+      return ""
+    }
+
+    const queryCorpus = [
+      input,
+      kbContentSummary,
+      uploadedKBFiles.map((file) => `${file.name}\n${file.content.slice(0, 1000)}`).join("\n\n"),
+    ].filter(Boolean).join("\n\n")
+
+    if (queryCorpus.trim().length < 80) {
+      setWebEvidenceSummary("Web evidence skipped: not enough narrative text to build representative queries.")
+      return ""
+    }
+
+    try {
+      const check = await performExternalSourceCheck({
+        text: queryCorpus,
+        fileName: `${activeAction}-web-evidence.txt`,
+      })
+
+      const topMatches = [...(check.matches || [])]
+        .sort((a, b) => (b.similarity || 0) - (a.similarity || 0))
+        .slice(0, 5)
+
+      if (topMatches.length === 0) {
+        setWebEvidenceSummary(`${check.summary} No strong public-web sources found.`)
+        return `\n\nWEB EVIDENCE CHECK:\n${check.summary}\nWarnings: ${(check.warnings || []).join(" | ") || "None"}`
+      }
+
+      const evidenceLines = topMatches.map((match, index) =>
+        `[Source ${index + 1}] ${match.source} (similarity ${Math.round(match.similarity)}%, provider: ${match.provider || "unknown"}, repo: ${match.repository || "N/A"})`
+      ).join("\n")
+
+      setWebEvidenceSummary(`${check.summary}\n${evidenceLines}`)
+
+      return `\n\nWEB EVIDENCE (PUBLIC SOURCES):\n${evidenceLines}\n\nINSTRUCTION: Use these sources only as supporting context. If cited, cite as [Source X] and avoid unverifiable claims.`
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "Web evidence retrieval failed"
+      setWebEvidenceSummary(`Web evidence check failed: ${msg}`)
+      return `\n\nWEB EVIDENCE CHECK FAILED: ${msg}`
+    }
+  }
+
   // Access guard
 
   if (!canAccessNGOModule) {
@@ -1382,6 +1436,22 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
                 <CardContent className="space-y-4">
                   <div className="border-b border-border/50 pb-4">
                     <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Knowledge Base Files (Optional)</label>
+                    <div className="mb-3 rounded-lg border border-border/50 bg-muted/30 px-3 py-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <label className="flex items-center gap-2 text-xs font-medium text-foreground cursor-pointer">
+                          <Checkbox checked={useWebEvidence} onCheckedChange={(checked) => setUseWebEvidence(Boolean(checked))} />
+                          Enable Web Evidence (public sources)
+                        </label>
+                        <span className={`text-[11px] ${webEvidenceIntegration.publicWebEnabled ? "text-emerald-600" : "text-amber-600"}`}>
+                          {webEvidenceIntegration.publicWebEnabled
+                            ? "Public web integration enabled"
+                            : "Set VITE_ENABLE_PUBLIC_WEB_SIMILARITY=true to enable"}
+                        </span>
+                      </div>
+                      {webEvidenceSummary && (
+                        <p className="mt-2 text-[11px] text-muted-foreground whitespace-pre-wrap break-words">{webEvidenceSummary}</p>
+                      )}
+                    </div>
                     <div className="flex items-center gap-2 mb-3">
                       <Button
                         type="button"
@@ -1480,26 +1550,26 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
 
               <AnimatePresence>
                 {result && !isLoading && (
-                  <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-center gap-2">
+                  <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4 overflow-hidden">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="flex min-w-0 items-start gap-2">
                         <CheckCircle size={18} weight="fill" className="text-emerald-500" />
-                        <h3 className="font-semibold text-foreground">{result.header}</h3>
+                        <h3 className="font-semibold text-foreground break-words">{result.header}</h3>
                       </div>
-                      <div className="flex flex-wrap gap-2 shrink-0">
-                        <Button variant="default" size="sm" onClick={handleSaveGeneratedAsDraft} className="text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white">
+                      <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end">
+                        <Button variant="default" size="sm" onClick={handleSaveGeneratedAsDraft} className="text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white flex-1 sm:flex-none">
                           <FloppyDisk size={14} />Save Draft
                         </Button>
-                        <Button variant="outline" size="sm" onClick={() => copyToClipboard(result.mainContent)} className="text-xs gap-1.5">
+                        <Button variant="outline" size="sm" onClick={() => copyToClipboard(result.mainContent)} className="text-xs gap-1.5 flex-1 sm:flex-none">
                           <CheckCircle size={14} />Copy
                         </Button>
-                        <Button variant="outline" size="sm" onClick={() => exportAsPDF(result.header, result.mainContent, orgSettings)} className="text-xs gap-1.5">
+                        <Button variant="outline" size="sm" onClick={() => exportAsPDF(result.header, result.mainContent, orgSettings)} className="text-xs gap-1.5 flex-1 sm:flex-none">
                           <Download size={14} />PDF
                         </Button>
-                        <Button variant="outline" size="sm" onClick={() => exportAsWord(result.header, result.mainContent, orgSettings)} className="text-xs gap-1.5">
+                        <Button variant="outline" size="sm" onClick={() => exportAsWord(result.header, result.mainContent, orgSettings)} className="text-xs gap-1.5 flex-1 sm:flex-none">
                           <Download size={14} />Word
                         </Button>
-                        <Button variant="outline" size="sm" onClick={() => exportAsExcel(result.header, [[result.mainContent]], orgSettings)} className="text-xs gap-1.5">
+                        <Button variant="outline" size="sm" onClick={() => exportAsExcel(result.header, [[result.mainContent]], orgSettings)} className="text-xs gap-1.5 flex-1 sm:flex-none">
                           <Download size={14} />Excel
                         </Button>
                       </div>
@@ -1517,7 +1587,7 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
                           <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 flex items-center gap-1.5 mb-2"><Warning size={14} weight="fill" />Ethical Flags & PII Notes</p>
                           <ul className="space-y-1">
                             {result.ethicalWarnings.map((w, i) => (
-                              <li key={i} className="text-xs text-amber-800 dark:text-amber-300 flex items-start gap-1.5"><span className="text-amber-500 mt-0.5">•</span>{w}</li>
+                              <li key={i} className="text-xs text-amber-800 dark:text-amber-300 flex items-start gap-1.5 break-words"><span className="text-amber-500 mt-0.5">•</span>{w}</li>
                             ))}
                           </ul>
                         </CardContent>
@@ -1525,7 +1595,7 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
                     )}
                     <Card className="border-border/50">
                       <CardContent className="p-5">
-                        <div className="prose prose-sm dark:prose-invert max-w-none text-sm leading-relaxed" style={{ whiteSpace: "pre-wrap" }}>
+                        <div className="prose prose-sm dark:prose-invert max-w-none text-sm leading-relaxed whitespace-pre-wrap break-words overflow-x-auto">
                           {result.mainContent}
                         </div>
                       </CardContent>
