@@ -279,6 +279,9 @@ CRITICAL: Return ONLY valid JSON with no markdown, no code blocks, no explanator
           const res = await sentinelQuery(strPrompt, {
             module: "idea-generation",
             userId: user?.id ? parseInt(user.id) || undefined : undefined,
+            enableQualityGate: true,
+            userInputForQualityGate: ideaInput,
+            qualityGateProfile: "balanced",
             useConsensus: true,
             sparkFallback: async () => {
               if (typeof spark !== "undefined" && typeof spark.llm === "function") {
@@ -287,6 +290,10 @@ CRITICAL: Return ONLY valid JSON with no markdown, no code blocks, no explanator
               throw new Error("Spark fallback unavailable")
             }
           })
+          if (res.status === "needs_clarification") {
+            toast.error(res.response || "Please clarify your idea before generation.")
+            return
+          }
           response = cleanJsonResponse(res.response)
         } catch {
           if (typeof spark !== "undefined" && typeof spark.llm === "function") {
@@ -366,6 +373,9 @@ CRITICAL: Return ONLY valid JSON with no markdown formatting.`
           const res = await sentinelQuery(strPrompt, {
             module: "idea-generation-canvas",
             userId: user?.id ? parseInt(user.id) || undefined : undefined,
+            enableQualityGate: true,
+            userInputForQualityGate: cookedIdea.refinedIdea,
+            qualityGateProfile: "balanced",
             useConsensus: true,
             sparkFallback: async () => {
               if (typeof spark !== "undefined" && typeof spark.llm === "function") {
@@ -374,6 +384,10 @@ CRITICAL: Return ONLY valid JSON with no markdown formatting.`
               throw new Error("Spark fallback unavailable")
             }
           })
+          if (res.status === "needs_clarification") {
+            toast.error(res.response || "Please provide clearer idea details for canvas generation.")
+            return
+          }
           response = cleanJsonResponse(res.response)
         } catch {
           if (typeof spark !== "undefined" && typeof spark.llm === "function") {
@@ -466,6 +480,9 @@ CRITICAL: Return ONLY valid JSON with no markdown.`
           const res = await sentinelQuery(strPrompt, {
             module: "idea-generation-pitchdeck",
             userId: user?.id ? parseInt(user.id) || undefined : undefined,
+            enableQualityGate: true,
+            userInputForQualityGate: cookedIdea.refinedIdea,
+            qualityGateProfile: "balanced",
             useConsensus: true,
             sparkFallback: async () => {
               if (typeof spark !== "undefined" && typeof spark.llm === "function") {
@@ -474,6 +491,10 @@ CRITICAL: Return ONLY valid JSON with no markdown.`
               throw new Error("Spark fallback unavailable")
             }
           })
+          if (res.status === "needs_clarification") {
+            toast.error(res.response || "Please provide clearer idea details for pitch deck generation.")
+            return
+          }
           response = cleanJsonResponse(res.response)
         } catch {
           if (typeof spark !== "undefined" && typeof spark.llm === "function") {

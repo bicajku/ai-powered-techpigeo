@@ -107,6 +107,63 @@ CREATE TABLE IF NOT EXISTS platform_connectors (
     created_at        TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
+-- ─── 7. chat_threads ───────────────────────────────────────────────────────────
+-- Conversational threads for multi-turn RAG chat.
+
+CREATE TABLE IF NOT EXISTS chat_threads (
+    id           BIGSERIAL    PRIMARY KEY,
+    user_id      INTEGER,
+    module       TEXT         NOT NULL DEFAULT 'general',
+    title        TEXT         NOT NULL DEFAULT 'New Chat',
+    status       TEXT         NOT NULL DEFAULT 'active',   -- active | archived
+    created_at   TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at   TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_threads_user_updated
+  ON chat_threads (user_id, updated_at DESC);
+
+-- ─── 8. chat_messages ──────────────────────────────────────────────────────────
+-- Stores user/assistant messages linked to a thread.
+
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id               BIGSERIAL    PRIMARY KEY,
+    thread_id        BIGINT       NOT NULL REFERENCES chat_threads(id) ON DELETE CASCADE,
+    role             TEXT         NOT NULL,                -- user | assistant | system
+    content          TEXT         NOT NULL,
+    provider         TEXT,
+    model_used       TEXT,
+    providers_used   TEXT[],
+    brain_hits       INTEGER      NOT NULL DEFAULT 0,
+    metadata         JSONB,
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_messages_thread_created
+  ON chat_messages (thread_id, created_at ASC);
+
+-- ─── 9. retrieval_traces ───────────────────────────────────────────────────────
+-- Per-response retrieval transparency and debugging traces.
+
+CREATE TABLE IF NOT EXISTS retrieval_traces (
+    id                  BIGSERIAL    PRIMARY KEY,
+    thread_id           BIGINT       REFERENCES chat_threads(id) ON DELETE SET NULL,
+    message_id          BIGINT       REFERENCES chat_messages(id) ON DELETE SET NULL,
+    query_text          TEXT         NOT NULL,
+    module              TEXT,
+    provider            TEXT,
+    model_used          TEXT,
+    selected_chunks     JSONB        NOT NULL DEFAULT '[]'::jsonb,
+    total_candidates    INTEGER      NOT NULL DEFAULT 0,
+    avg_similarity      DOUBLE PRECISION,
+    retrieval_latency_ms INTEGER,
+    generation_latency_ms INTEGER,
+    created_at          TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_retrieval_traces_thread_created
+  ON retrieval_traces (thread_id, created_at DESC);
+
 -- =============================================================================
 -- End of schema
 -- =============================================================================

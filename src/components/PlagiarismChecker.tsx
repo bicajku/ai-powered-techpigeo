@@ -1148,6 +1148,9 @@ Return ONLY a valid JSON object:
           const res = await sentinelQuery(strPrompt, {
             module: "humanizer",
             userId: user?.id ? parseInt(user.id) || undefined : undefined,
+            enableQualityGate: true,
+            userInputForQualityGate: text,
+            qualityGateProfile: "lenient",
             sparkFallback: async () => {
               if (typeof spark !== "undefined" && typeof spark.llm === "function") {
                 return (await spark.llm(strPrompt, "gpt-4o", false)) as string
@@ -1155,6 +1158,10 @@ Return ONLY a valid JSON object:
               throw new Error("Spark fallback unavailable")
             }
           })
+          if (res.status === "needs_clarification") {
+            toast.error(res.response || "Please provide clearer text for humanization.")
+            return
+          }
           response = typeof res.response === 'string' ? res.response : JSON.stringify(res.response)
         } catch {
           if (typeof spark !== "undefined" && typeof spark.llm === "function") {

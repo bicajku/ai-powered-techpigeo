@@ -7,8 +7,10 @@ import {
   logQuery,
 } from "./sentinel-brain"
 import { isNeonConfigured } from "./neon-client"
+import { getEnvConfig } from "./env-config"
+import { platformLlm } from "./platform-client"
 
-export type QueryProvider = "gemini" | "copilot" | "spark" | "brain" | "cache"
+export type QueryProvider = "gemini" | "copilot" | "spark" | "backend" | "brain" | "cache"
 
 export interface PipelineResult {
   response: string
@@ -17,6 +19,9 @@ export interface PipelineResult {
   brainContext: string[]
   cached: boolean
   model?: string
+  status?: "ok" | "needs_clarification"
+  clarificationQuestions?: string[]
+  qualityScore?: number
 }
 
 export async function sentinelQuery(
@@ -29,6 +34,9 @@ export async function sentinelQuery(
     preferCopilot?: boolean
     useConsensus?: boolean // Enables multi-model generation and synthesis
     sparkFallback?: () => Promise<string>
+    userInputForQualityGate?: string
+    enableQualityGate?: boolean
+    qualityGateProfile?: "strict" | "balanced" | "lenient"
   }
 ): Promise<PipelineResult> {
   const providers: QueryProvider[] = []
@@ -36,8 +44,33 @@ export async function sentinelQuery(
   let brainHits = 0
   const brainContext: string[] = []
   const neonReady = isNeonConfigured()
-  const geminiReady = isGeminiConfigured()
-  const copilotReady = isCopilotConfigured()
+  const geminiReadyRaw = isGeminiConfigured()
+  const copilotReadyRaw = isCopilotConfigured()
+  const envConfig = getEnvConfig()
+  const backendMode = envConfig.useBackendLlm
+  const geminiReady = backendMode ? false : geminiReadyRaw
+  const copilotReady = backendMode ? false : copilotReadyRaw
+
+  // Step 0: Input quality gate (default enabled for NGO module)
+  const shouldRunQualityGate =
+    options?.enableQualityGate ?? options?.module === "ngo_module"
+  if (shouldRunQualityGate) {
+    const candidateInput = options?.userInputForQualityGate?.trim() || queryText.trim()
+    const quality = validatePromptQuality(candidateInput, options?.qualityGateProfile ?? "balanced")
+    if (!quality.accepted) {
+      return {
+        response: quality.message,
+        providers: [],
+        brainHits: 0,
+        brainContext: [],
+        cached: false,
+        model: undefined,
+        status: "needs_clarification",
+        clarificationQuestions: quality.questions,
+        qualityScore: quality.score,
+      }
+    }
+  }
 
   // Step 1: Check generation cache
   if (neonReady && !options?.skipCache) {
@@ -58,6 +91,7 @@ export async function sentinelQuery(
           brainContext: [],
           cached: true,
           model: cached.model_used ?? undefined,
+          status: "ok",
         }
       }
     } catch (err) {
@@ -89,6 +123,37 @@ export async function sentinelQuery(
   }
 
   // Step 3: Generate
+  if (backendMode) {
+    try {
+      const backendPrompt = brainContextStr
+        ? `Use the following knowledge base context to inform your response. If the context is relevant, incorporate it. If not, rely on your own knowledge.\n\n--- KNOWLEDGE BASE ---\n${brainContextStr}\n--- END KNOWLEDGE BASE ---\n\nUser query: ${queryText}`
+        : queryText
+
+      const raw = await platformLlm(backendPrompt, "gpt-4o", false)
+      const response = typeof raw === "string" ? raw : JSON.stringify(raw)
+      if (!response || response.trim().length === 0) {
+        throw new Error("Backend LLM returned empty response")
+      }
+      providers.push("backend")
+
+      if (neonReady) {
+        void safeCacheAndLog(queryText, response, providers, brainHits, { ...options, model: "backend-llm" })
+      }
+
+      return {
+        response,
+        providers,
+        brainHits,
+        brainContext,
+        cached: false,
+        model: "backend-llm",
+        status: "ok",
+      }
+    } catch (err) {
+      console.warn("Backend LLM generation failed:", err)
+      providerErrors.push(`backend: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
   
   if (options?.useConsensus) {
     if (geminiReady || copilotReady) {
@@ -159,6 +224,7 @@ Create a unified, humanized response that intelligently combines the best of all
             brainContext,
             cached: false,
             model: modelTag,
+            status: "ok",
           }
         }
       } catch (err) {
@@ -195,6 +261,7 @@ Create a unified, humanized response that intelligently combines the best of all
         brainContext,
         cached: false,
         model: "copilot-gpt-4o",
+        status: "ok",
       }
     } catch (err) {
       console.warn("Copilot (preferred) generation failed, falling through:", err)
@@ -227,6 +294,7 @@ Create a unified, humanized response that intelligently combines the best of all
         brainContext,
         cached: false,
         model: "gemini-2.5-flash",
+        status: "ok",
       }
     } catch (err) {
       console.warn("Gemini generation failed:", err)
@@ -258,6 +326,7 @@ Create a unified, humanized response that intelligently combines the best of all
         brainContext,
         cached: false,
         model: "copilot-gpt-4o",
+        status: "ok",
       }
     } catch (err) {
       console.warn("Copilot generation failed:", err)
@@ -285,12 +354,15 @@ Create a unified, humanized response that intelligently combines the best of all
         brainContext,
         cached: false,
         model: "spark-llm",
+        status: "ok",
       }
     } catch (err) {
       console.warn("Spark fallback failed:", err)
       providerErrors.push(`spark: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
+
+  // Step 4b removed: backend mode executes as primary path above
 
   // Step 5: Last resort — return brain context directly if available
   if (brainContext.length > 0) {
@@ -300,6 +372,7 @@ Create a unified, humanized response that intelligently combines the best of all
       brainHits,
       brainContext,
       cached: false,
+      status: "ok",
     }
   }
 
@@ -314,6 +387,56 @@ Create a unified, humanized response that intelligently combines the best of all
     : ""
 
   throw new Error(`All providers failed. Please check your API configuration. (${configHint}).${detail}`)
+}
+
+function validatePromptQuality(
+  input: string,
+  profile: "strict" | "balanced" | "lenient" = "balanced"
+): {
+  accepted: boolean
+  score: number
+  message: string
+  questions: string[]
+} {
+  const text = input.trim()
+  const words = text.split(/\s+/).filter(Boolean)
+  const alphaTokens = words.filter((w) => /[a-zA-Z]/.test(w))
+  const cleanWords = alphaTokens.map((w) => w.replace(/[^a-zA-Z]/g, "").toLowerCase()).filter(Boolean)
+  const unique = new Set(cleanWords)
+  const vowelRichWords = cleanWords.filter((w) => /[aeiou]/.test(w))
+  const longRuns = (text.match(/([a-zA-Z])\1{3,}/g) || []).length
+
+  let score = 1
+  if (text.length < 35) score -= 0.35
+  if (cleanWords.length < 6) score -= 0.25
+  if (cleanWords.length > 0 && unique.size / cleanWords.length < 0.45) score -= 0.2
+  if (cleanWords.length > 0 && vowelRichWords.length / cleanWords.length < 0.35) score -= 0.25
+  if (longRuns > 0) score -= 0.2
+  if (!/[.?!]/.test(text)) score -= 0.08
+
+  const thresholdByProfile = {
+    strict: 0.7,
+    balanced: 0.55,
+    lenient: 0.42,
+  } as const
+
+  const accepted = score >= thresholdByProfile[profile]
+  const message = accepted
+    ? ""
+    : "Input is unclear for a reliable donor-quality output. Please provide a clearer project description first."
+
+  return {
+    accepted,
+    score: Math.max(0, Math.min(1, Number(score.toFixed(2)))),
+    message,
+    questions: [
+      "What is the project goal in one clear sentence?",
+      "Who are the target beneficiaries and where is the intervention located?",
+      "What donor or funding stream are you targeting?",
+      "What timeline and budget range do you expect?",
+      "What measurable outcomes should this proposal deliver?",
+    ],
+  }
 }
 
 // --- Document Ingestion ---

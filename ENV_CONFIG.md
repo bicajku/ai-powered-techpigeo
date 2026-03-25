@@ -64,6 +64,28 @@ VITE_ENABLE_PLAGIARISM_CHECKER=true
 VITE_ENABLE_HUMANIZER=true
 ```
 
+### Platform Migration Flags (Spark Exit)
+
+Use these flags for staged migration away from Spark runtime:
+
+```bash
+VITE_BACKEND_API_BASE_URL=http://127.0.0.1:8787
+VITE_USE_BACKEND_LLM=false
+VITE_USE_BACKEND_STORAGE=false
+VITE_USE_BACKEND_AUTH=false
+VITE_BACKEND_API_KEY=
+```
+
+- `VITE_USE_BACKEND_LLM=true` routes LLM calls via backend endpoint `/api/llm/generate`.
+- Keep storage/auth flags disabled until their migration phases are implemented.
+- `VITE_USE_BACKEND_AUTH=true` adds `x-backend-api-key` header for backend auth guard.
+- `VITE_BACKEND_API_KEY` should match backend `BACKEND_API_KEY`.
+
+Phase 3 adds backend provider diagnostics endpoint:
+
+- `GET /api/providers/status`
+- used by Admin Dashboard for non-secret provider readiness visibility.
+
 ### Rate Limits
 
 Customize monthly budget limits per plan tier:

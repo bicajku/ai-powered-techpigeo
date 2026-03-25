@@ -45,6 +45,13 @@ export interface EnvConfig {
   // External Integrations
   sentryDsn: string | null
   analyticsId: string | null
+
+  // Platform Migration
+  backendApiBaseUrl: string | null
+  useBackendLlm: boolean
+  useBackendStorage: boolean
+  useBackendAuth: boolean
+  backendApiKey: string | null
 }
 
 /**
@@ -135,6 +142,13 @@ export function loadEnvConfig(): EnvConfig {
     // External Integrations
     sentryDsn: getEnvString("VITE_SENTRY_DSN"),
     analyticsId: getEnvString("VITE_ANALYTICS_ID"),
+
+    // Platform Migration
+    backendApiBaseUrl: getEnvString("VITE_BACKEND_API_BASE_URL"),
+    useBackendLlm: getEnvBoolean("VITE_USE_BACKEND_LLM", false),
+    useBackendStorage: getEnvBoolean("VITE_USE_BACKEND_STORAGE", false),
+    useBackendAuth: getEnvBoolean("VITE_USE_BACKEND_AUTH", false),
+    backendApiKey: getEnvString("VITE_BACKEND_API_KEY"),
   }
   
   return config
@@ -220,6 +234,12 @@ export function logEnvConfigSummary(): void {
   console.log("Branding:")
   console.log("  - Default Theme:", config.defaultBrandTheme)
   console.log("  - Theme Switching:", config.allowThemeSwitching ? "✓ Enabled" : "✗ Disabled")
+  console.log("Migration:")
+  console.log("  - Backend API:", config.backendApiBaseUrl || "✗ Not configured")
+  console.log("  - Backend LLM:", config.useBackendLlm ? "✓ Enabled" : "✗ Disabled")
+  console.log("  - Backend Storage:", config.useBackendStorage ? "✓ Enabled" : "✗ Disabled")
+  console.log("  - Backend Auth:", config.useBackendAuth ? "✓ Enabled" : "✗ Disabled")
+  console.log("  - Backend API Key:", config.backendApiKey ? "✓ Configured" : "✗ Not configured")
   console.groupEnd()
   
   // Validate and show any issues

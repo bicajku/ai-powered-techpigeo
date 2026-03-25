@@ -1,5 +1,6 @@
 import { NGOAccessLevel, NGOTeamMember, UserProfile } from "@/types"
 import { ensureUserSubscription, getDefaultSubscription } from "@/lib/subscription"
+import { getPlatformKV } from "@/lib/platform-client"
 
 const USERS_STORAGE_KEY = "platform-users"
 const USER_CREDENTIALS_KEY = "user-credentials"
@@ -21,8 +22,9 @@ async function simpleHash(text: string): Promise<string> {
 }
 
 export async function getTeamMembers(adminId: string): Promise<NGOTeamMember[]> {
+  const kv = getPlatformKV()
   try {
-    const data = await spark.kv.get<NGOTeamMember[]>(`${TEAM_MEMBERS_KEY}-${adminId}`)
+    const data = await kv.get<NGOTeamMember[]>(`${TEAM_MEMBERS_KEY}-${adminId}`)
     return data || []
   } catch {
     try {
@@ -33,8 +35,9 @@ export async function getTeamMembers(adminId: string): Promise<NGOTeamMember[]> 
 }
 
 async function saveTeamMembers(adminId: string, members: NGOTeamMember[]): Promise<void> {
+  const kv = getPlatformKV()
   try {
-    await spark.kv.set(`${TEAM_MEMBERS_KEY}-${adminId}`, members)
+    await kv.set(`${TEAM_MEMBERS_KEY}-${adminId}`, members)
   } catch { /* ignore */ }
   try {
     localStorage.setItem(`${TEAM_MEMBERS_KEY}-${adminId}`, JSON.stringify(members))
@@ -59,7 +62,8 @@ export async function addTeamMember(
     const normalizedEmail = email.toLowerCase().trim()
 
     // Check main user policy: admin must be enterprise or admin role
-    const users = (await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
+    const kv = getPlatformKV()
+    const users = (await kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
     const admin = users[adminId]
     if (!admin) return { success: false, error: "Admin user not found" }
 
@@ -71,7 +75,7 @@ export async function addTeamMember(
     }
 
     // Check if email already exists as a credential
-    const credentials = (await spark.kv.get<Record<string, StoredCredential>>(USER_CREDENTIALS_KEY)) || {}
+    const credentials = (await kv.get<Record<string, StoredCredential>>(USER_CREDENTIALS_KEY)) || {}
     if (credentials[normalizedEmail]) {
       // User already exists — just grant NGO access instead of creating new account
       const existingCred = credentials[normalizedEmail]
@@ -88,7 +92,7 @@ export async function addTeamMember(
             updatedAt: Date.now(),
           },
         }
-        await spark.kv.set(USERS_STORAGE_KEY, users)
+        await kv.set(USERS_STORAGE_KEY, users)
 
         const member: NGOTeamMember = {
           id: existingCred.userId,
@@ -135,8 +139,8 @@ export async function addTeamMember(
 
     users[userId] = newUser
 
-    await spark.kv.set(USER_CREDENTIALS_KEY, credentials)
-    await spark.kv.set(USERS_STORAGE_KEY, users)
+    await kv.set(USER_CREDENTIALS_KEY, credentials)
+    await kv.set(USERS_STORAGE_KEY, users)
 
     const member: NGOTeamMember = {
       id: userId,
@@ -163,6 +167,7 @@ export async function updateMemberAccess(
   newLevel: NGOAccessLevel
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    const kv = getPlatformKV()
     const team = await getTeamMembers(adminId)
     const memberIndex = team.findIndex(m => m.id === memberId)
     if (memberIndex === -1) return { success: false, error: "Member not found" }
@@ -171,7 +176,7 @@ export async function updateMemberAccess(
     await saveTeamMembers(adminId, team)
 
     // Update the user's subscription as well
-    const users = (await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
+    const users = (await kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
     const memberUser = users[memberId]
     if (memberUser) {
       const sub = memberUser.subscription || getDefaultSubscription()
@@ -179,7 +184,7 @@ export async function updateMemberAccess(
         ...memberUser,
         subscription: { ...sub, ngoAccessLevel: newLevel, updatedAt: Date.now() },
       }
-      await spark.kv.set(USERS_STORAGE_KEY, users)
+      await kv.set(USERS_STORAGE_KEY, users)
     }
 
     return { success: true }
@@ -194,6 +199,7 @@ export async function removeMember(
   memberId: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    const kv = getPlatformKV()
     const team = await getTeamMembers(adminId)
     const updated = team.filter(m => m.id !== memberId)
     if (updated.length === team.length) return { success: false, error: "Member not found" }
@@ -201,7 +207,7 @@ export async function removeMember(
     await saveTeamMembers(adminId, updated)
 
     // Revoke NGO access on the user's subscription
-    const users = (await spark.kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
+    const users = (await kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
     const memberUser = users[memberId]
     if (memberUser) {
       const sub = memberUser.subscription || getDefaultSubscription()
@@ -215,7 +221,7 @@ export async function removeMember(
           updatedAt: Date.now(),
         },
       }
-      await spark.kv.set(USERS_STORAGE_KEY, users)
+      await kv.set(USERS_STORAGE_KEY, users)
     }
 
     return { success: true }

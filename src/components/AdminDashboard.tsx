@@ -62,6 +62,8 @@ import { InviteManager } from "@/components/InviteManager"
 import { BudgetConfigManager } from "@/components/BudgetConfigManager"
 import { AdminSubscriptionPanel } from "@/components/AdminSubscriptionPanel"
 import { getSafeKVClient } from "@/lib/spark-shim"
+import { fetchBackendProviderStatus, type BackendProviderStatus } from "@/lib/platform-client"
+import { getEnvConfig } from "@/lib/env-config"
 
 export function AdminDashboard() {
   const [users, setUsers] = useState<UserProfile[]>([])
@@ -82,8 +84,32 @@ export function AdminDashboard() {
   const [selectedStrategy, setSelectedStrategy] = useState<{ user: UserProfile; strategy: SavedStrategy } | null>(null)
   const [selectedReview, setSelectedReview] = useState<{ user: UserProfile; review: SavedReviewDocument } | null>(null)
   const [reviewActionTarget, setReviewActionTarget] = useState<{ userId: string; reviewId: string; action: "archive" | "unarchive" | "delete" } | null>(null)
+  const [providerStatus, setProviderStatus] = useState<BackendProviderStatus | null>(null)
+  const [providerStatusError, setProviderStatusError] = useState<string | null>(null)
+  const [providerStatusLoading, setProviderStatusLoading] = useState(false)
   const hasLoadedOnceRef = useRef(false)
   const loadInFlightRef = useRef(false)
+  const envConfig = getEnvConfig()
+
+  const loadProviderStatus = useCallback(async () => {
+    if (!envConfig.backendApiBaseUrl) {
+      setProviderStatus(null)
+      setProviderStatusError("Backend API URL is not configured")
+      return
+    }
+
+    setProviderStatusLoading(true)
+    setProviderStatusError(null)
+    try {
+      const status = await fetchBackendProviderStatus()
+      setProviderStatus(status)
+    } catch (error) {
+      setProviderStatus(null)
+      setProviderStatusError(error instanceof Error ? error.message : "Failed to load backend provider status")
+    } finally {
+      setProviderStatusLoading(false)
+    }
+  }, [envConfig.backendApiBaseUrl])
 
   const buildStats = (
     allUsers: UserProfile[],
@@ -165,6 +191,10 @@ export function AdminDashboard() {
   useEffect(() => {
     void loadData(false, true)
   }, [loadData])
+
+  useEffect(() => {
+    void loadProviderStatus()
+  }, [loadProviderStatus])
 
   const handleRoleChange = async (email: string, newRole: UserRole) => {
     if (email === "admin") {
@@ -377,7 +407,10 @@ export function AdminDashboard() {
               Admin Dashboard
             </h2>
             <Button
-              onClick={() => loadData(true)}
+              onClick={() => {
+                void loadData(true)
+                void loadProviderStatus()
+              }}
               disabled={isRefreshing}
               variant="outline"
               size="sm"
@@ -502,6 +535,54 @@ export function AdminDashboard() {
             </Card>
           </motion.div>
         </div>
+
+        <Card className="border-border/50">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base font-semibold flex items-center justify-between gap-3 flex-wrap">
+              <span className="flex items-center gap-2"><Key size={16} weight="duotone" />Backend Provider Status</span>
+              <Badge variant={providerStatus?.ok ? "default" : "secondary"}>{providerStatus?.ok ? "Connected" : "Not connected"}</Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <div className="rounded-lg border border-border/60 p-3 min-w-0">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Backend API</p>
+                <p className="font-medium break-all">{envConfig.backendApiBaseUrl || "Not set"}</p>
+              </div>
+              <div className="rounded-lg border border-border/60 p-3 min-w-0">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Runtime</p>
+                <p className="font-medium">{providerStatus?.runtime?.nodeVersion || "Unknown"}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <div className="rounded-lg border border-border/60 p-3 min-w-0">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Copilot</p>
+                  <Badge variant={providerStatus?.providers?.copilot?.configured ? "default" : "secondary"}>
+                    {providerStatus?.providers?.copilot?.configured ? "Configured" : "Missing"}
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground mt-2 break-all">Source: {providerStatus?.providers?.copilot?.authSource || "None"}</p>
+              </div>
+              <div className="rounded-lg border border-border/60 p-3 min-w-0">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Gemini</p>
+                  <Badge variant={providerStatus?.providers?.gemini?.configured ? "default" : "secondary"}>
+                    {providerStatus?.providers?.gemini?.configured ? "Configured" : "Missing"}
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground mt-2 break-all">Source: {providerStatus?.providers?.gemini?.authSource || "None"}</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              Fallback order: {(providerStatus?.fallbackOrder || []).join(" -> ") || "Not available"}
+            </p>
+            {providerStatusLoading && <p className="text-xs text-muted-foreground">Loading provider status...</p>}
+            {providerStatusError && <p className="text-xs text-red-600 break-all">{providerStatusError}</p>}
+          </CardContent>
+        </Card>
 
         <motion.div
           initial={{ opacity: 0, y: 20 }}

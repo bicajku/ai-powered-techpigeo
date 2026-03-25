@@ -6,6 +6,7 @@
  */
 
 import { getNeonClient, isNeonConfigured } from "@/lib/neon-client"
+import { getPlatformKV } from "@/lib/platform-client"
 import { SENTINEL_KV_KEYS, AUDIT_LOG_KV_LIMIT } from "../config"
 import type {
   SentinelUser,
@@ -21,24 +22,14 @@ import type { NGODocument, NGOOutput, ProjectSummary, NGOReport } from "../types
 
 // ─────────────────────────── Helpers ─────────────────────────────
 
-type KVStore = typeof spark.kv
+type KVStore = {
+  get<T>(key: string): Promise<T | undefined>
+  set<T>(key: string, value: T): Promise<void>
+  delete(key: string): Promise<void>
+}
 
 function getKV(): KVStore {
-  if (typeof spark !== "undefined" && spark.kv) return spark.kv
-  // localStorage shim for non-Spark environments
-  return {
-    get: async <T>(key: string) => {
-      const v = localStorage.getItem(key)
-      return v ? (JSON.parse(v) as T) : null
-    },
-    set: async <T>(key: string, value: T) => {
-      localStorage.setItem(key, JSON.stringify(value))
-    },
-    delete: async (key: string) => {
-      localStorage.removeItem(key)
-    },
-    list: async () => [],
-  } as unknown as KVStore
+  return getPlatformKV()
 }
 
 // ─────────────────────────── KV Operations ───────────────────────

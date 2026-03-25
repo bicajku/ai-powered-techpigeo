@@ -67,6 +67,7 @@ interface NGOResult {
   ethicalWarnings: string[]
   suggestedKPIs: string[]
   emailVariants?: { type: string; subject: string; body: string }[]
+  clarificationQuestions?: string[]
 }
 
 interface NGOAction {
@@ -736,6 +737,12 @@ export function NGOModule({ userId, user }: NGOModuleProps) {
   const [addingMember, setAddingMember] = useState(false)
 
   const currentAction = NGO_ACTIONS.find((a) => a.id === activeAction) ?? NGO_ACTIONS[0]
+  const currentQualityGateProfile: "strict" | "balanced" | "lenient" =
+    activeAction === "impact"
+      ? "strict"
+      : activeAction === "email"
+        ? "lenient"
+        : "balanced"
   const neonReady = isNeonConfigured()
   const geminiReady = isGeminiConfigured()
   const copilotReady = isCopilotConfigured()
@@ -1137,6 +1144,8 @@ Respond ONLY with valid JSON:
       const res = await sentinelQuery(prompt, {
         module: "ngo_module",
         userId: typeof user.id === "number" ? user.id : undefined,
+        userInputForQualityGate: input,
+        qualityGateProfile: currentQualityGateProfile,
         skipCache: true,
         useConsensus: false,
         sparkFallback: async () => {
@@ -1146,6 +1155,24 @@ Respond ONLY with valid JSON:
           throw new Error("Spark fallback unavailable")
         },
       })
+
+      if (res.status === "needs_clarification") {
+        const guidance = res.clarificationQuestions ?? []
+        setResult({
+          header: "Clarification Needed",
+          mainContent: "I need a clearer project brief before generating a donor-ready output.",
+          sdgTags: [],
+          ethicalWarnings: [
+            "Input quality was too low for reliable generation.",
+            "Please answer the clarification questions below and try again.",
+          ],
+          suggestedKPIs: [],
+          clarificationQuestions: guidance,
+        })
+        toast.message("Clarification needed before generation")
+        return
+      }
+
       let parsed: NGOResult
       try {
         parsed = parseNGOResult(res.response)
@@ -1283,6 +1310,8 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
       const res = await sentinelQuery(prompt, {
         module: "ngo_module",
         userId: typeof user.id === "number" ? user.id : undefined,
+        userInputForQualityGate: `${reportTitle} ${input}`,
+        qualityGateProfile: currentQualityGateProfile,
         skipCache: false,
         sparkFallback: async () => {
           if (typeof spark !== "undefined" && typeof spark.llm === "function") {
@@ -1291,6 +1320,10 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
           throw new Error("Spark fallback unavailable")
         },
       })
+      if (res.status === "needs_clarification") {
+        toast.error(res.response || "Please clarify report intent and project details before generation.")
+        return
+      }
       const body = typeof res.response === "string" ? res.response : JSON.stringify(res.response, null, 2)
       const evidenceAppendix = await buildWebEvidenceAppendix(
         [reportTitle, input, context, body].filter(Boolean).join("\n\n"),
@@ -1720,6 +1753,18 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
                     <Button onClick={handleGenerate} disabled={isLoading || input.trim().length < 30} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2">
                       {isLoading ? <><ArrowClockwise size={16} weight="bold" className="animate-spin" />Generating…</> : <><Sparkle size={16} weight="fill" />Generate with Sentinel AI</>}
                     </Button>
+                    <Badge
+                      variant="outline"
+                      className={`text-[11px] uppercase tracking-wider ${
+                        currentQualityGateProfile === "strict"
+                          ? "border-red-400/40 text-red-700 dark:text-red-300"
+                          : currentQualityGateProfile === "lenient"
+                            ? "border-emerald-400/40 text-emerald-700 dark:text-emerald-300"
+                            : "border-amber-400/40 text-amber-700 dark:text-amber-300"
+                      }`}
+                    >
+                      Quality Gate: {currentQualityGateProfile}
+                    </Badge>
                     {(result || error) && (
                       <Button variant="ghost" size="sm" onClick={clearAll} className="text-muted-foreground">
                         <ArrowClockwise size={14} weight="bold" className="mr-1.5" />Clear
@@ -1795,6 +1840,18 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
                           <ul className="space-y-1">
                             {result.ethicalWarnings.map((w, i) => (
                               <li key={i} className="text-xs text-amber-800 dark:text-amber-300 flex items-start gap-1.5 break-words"><span className="text-amber-500 mt-0.5">•</span>{w}</li>
+                            ))}
+                          </ul>
+                        </CardContent>
+                      </Card>
+                    )}
+                    {result.clarificationQuestions && result.clarificationQuestions.length > 0 && (
+                      <Card className="border-blue-400/30 bg-blue-500/5">
+                        <CardContent className="p-4">
+                          <p className="text-xs font-semibold text-blue-700 dark:text-blue-400 mb-2">Clarification Questions</p>
+                          <ul className="space-y-1">
+                            {result.clarificationQuestions.map((q, i) => (
+                              <li key={i} className="text-xs text-blue-800 dark:text-blue-300 flex items-start gap-1.5 break-words"><span className="text-blue-500 mt-0.5">•</span>{q}</li>
                             ))}
                           </ul>
                         </CardContent>

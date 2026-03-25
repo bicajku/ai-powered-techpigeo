@@ -157,6 +157,9 @@ Keep all string values short (1-2 sentences max). Limit highlights to 3 items, a
         try {
           const res = await sentinelQuery(strPrompt, {
             module: "plagiarism-check",
+            enableQualityGate: true,
+            userInputForQualityGate: text,
+            qualityGateProfile: "strict",
             sparkFallback: async () => {
               if (typeof spark !== "undefined" && typeof spark.llm === "function") {
                 return (await spark.llm(strPrompt, "gpt-4o", false)) as string
@@ -164,6 +167,9 @@ Keep all string values short (1-2 sentences max). Limit highlights to 3 items, a
               throw new Error("Spark fallback unavailable")
             }
           })
+          if (res.status === "needs_clarification") {
+            throw new Error(res.response || "Input is unclear for reliable integrity analysis.")
+          }
           response = typeof res.response === 'string' ? res.response : JSON.stringify(res.response)
         } catch {
           if (typeof spark !== "undefined" && typeof spark.llm === "function") {
