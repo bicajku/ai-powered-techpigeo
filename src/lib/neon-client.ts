@@ -67,11 +67,11 @@ export async function setNeonDbUrl(url: string): Promise<void> {
 }
 
 export function isNeonConfigured(): boolean {
-  if (typeof secretStore.hasSecret === "function") {
-    return secretStore.hasSecret(NEON_DB_URL_KEY)
-  }
-  // M6 fix: No longer check plaintext localStorage for DB URL
-  return false
+  // In the secure backend-proxy architecture, the database is configured 
+  // via environment variables on the backend (Heroku Config Vars).
+  // The frontend can assume it's configured and rely on backend API errors
+  // if it's not.
+  return true
 }
 
 /**
