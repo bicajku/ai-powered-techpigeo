@@ -261,7 +261,7 @@ function validateCsrf(req, method, reqPathname) {
   if (method === "GET" || method === "HEAD" || method === "OPTIONS") return true
 
   // Exempt paths (login/register/health)
-  if (CSRF_EXEMPT_PATHS.has(path)) return true
+  if (CSRF_EXEMPT_PATHS.has(reqPathname)) return true
 
   const cookieToken = parseCsrfCookie(req)
   const headerToken = req.headers[CSRF_HEADER_NAME]
