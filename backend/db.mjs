@@ -1073,6 +1073,17 @@ function normalizeOrgModSub(row) {
  */
 export async function executeProxyQuery(query, params = []) {
   const sql = getSql()
-  const result = await sql(query, params)
-  return result
+  // The frontend passes a Postgres parameterized string: "SELECT * FROM t WHERE id = $1"
+  // Neon's tagged template literal function no longer accepts (string, array) directly.
+  // We can use the exposed `.query` method (or cast it).
+  // Error message said: "For a conventional function call with value placeholders ($1, $2, etc.), use sql.query(...)"
+  
+  if (typeof sql.query === 'function') {
+    return await sql.query(query, params)
+  } else {
+    // If not available, we have to fake the template strings array
+    // Since it's parameterized with $1, $2, this is hacky. But `sql.query` should exist.
+    // As a fallback, we just call it as tagged template with single string.
+    return await sql([query], ...params)
+  }
 }
