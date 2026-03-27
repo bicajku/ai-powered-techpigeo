@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
-import { Plus, ChatsCircle, User, Robot, ClockCounterClockwise, LinkSimple, X, Lightning, Bell, Question, UserCircle, Gift, Trash } from "@phosphor-icons/react"
+import { Plus, ChatsCircle, User, Robot, ClockCounterClockwise, LinkSimple, X, Lightning, Bell, Question, UserCircle, Gift, Trash, PencilSimple } from "@phosphor-icons/react"
 import {
   createChatThread,
   deleteChatThread,
+  updateChatThread,
   listChatThreads,
   listChatMessages,
   listRetrievalTraceByMessageId,
@@ -52,6 +53,7 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
   const [isLoadingThreads, setIsLoadingThreads] = useState(true)
   const [isCreatingThread, setIsCreatingThread] = useState(false)
   const [isSending, setIsSending] = useState(false)
+  const composerRef = useRef<HTMLTextAreaElement | null>(null)
 
   const starterPrompts = useMemo(
     () => [
@@ -258,6 +260,36 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
     }
   }
 
+  const handleRenameThread = async (threadId: number, currentTitle: string) => {
+    const nextTitleRaw = window.prompt("Rename thread", currentTitle)
+    if (!nextTitleRaw) return
+
+    const nextTitle = nextTitleRaw.trim()
+    if (!nextTitle || nextTitle === currentTitle) return
+
+    try {
+      const updated = await updateChatThread(threadId, { title: nextTitle })
+      if (!updated) {
+        toast.error("Failed to rename thread")
+        return
+      }
+      setThreads((current) => current.map((thread) => (thread.id === threadId ? { ...thread, title: nextTitle } : thread)))
+      toast.success("Thread renamed")
+    } catch (err) {
+      console.error("Failed to rename thread:", err)
+      toast.error("Failed to rename thread")
+    }
+  }
+
+  const handleEditMessage = (message: ChatMessage) => {
+    setInput(message.content)
+    requestAnimationFrame(() => {
+      composerRef.current?.focus()
+      composerRef.current?.setSelectionRange(composerRef.current.value.length, composerRef.current.value.length)
+    })
+    toast.info("Message loaded. Edit and send.")
+  }
+
   const selectedTrace = selectedAssistantMessageId
     ? tracesByMessage[selectedAssistantMessageId] ?? null
     : null
@@ -439,15 +471,26 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
                         <p className="text-sm font-medium text-foreground truncate">{thread.title}</p>
                         <p className="text-[11px] text-muted-foreground truncate">{thread.module}</p>
                       </button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-7 w-7 shrink-0 opacity-100"
-                        onClick={() => void handleDeleteThread(thread.id)}
-                        title="Delete thread"
-                      >
-                        <Trash size={13} />
-                      </Button>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Button
+                          size="icon"
+                          variant="outline"
+                          className="h-7 w-7"
+                          onClick={() => void handleRenameThread(thread.id, thread.title)}
+                          title="Rename thread"
+                        >
+                          <PencilSimple size={13} />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="outline"
+                          className="h-7 w-7 text-destructive border-destructive/30 hover:text-destructive"
+                          onClick={() => void handleDeleteThread(thread.id)}
+                          title="Delete thread"
+                        >
+                          <Trash size={13} />
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -577,6 +620,17 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
                           </div>
                           <span className="font-semibold text-foreground">{isAssistant ? "Techpigeon AI" : "You"}</span>
                           <span className="text-muted-foreground ml-auto">{new Date(message.created_at).toLocaleTimeString()}</span>
+                          {!isAssistant && (
+                            <Button
+                              size="icon"
+                              variant="outline"
+                              className="h-7 w-7"
+                              onClick={() => handleEditMessage(message)}
+                              title="Edit this message"
+                            >
+                              <PencilSimple size={13} />
+                            </Button>
+                          )}
                         </div>
                         <div dir="auto" className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
                           {message.content}
@@ -623,6 +677,7 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
                 </div>
                 <div className="relative shadow-sm rounded-xl">
                   <Textarea
+                    ref={composerRef}
                     placeholder="Type your message..."
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
@@ -707,9 +762,24 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
                       <p className="text-sm font-medium text-foreground truncate">{thread.title}</p>
                       <p className="text-[11px] text-muted-foreground truncate">{thread.module}</p>
                     </button>
-                    <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={() => void handleDeleteThread(thread.id)}>
-                      <Trash size={13} />
-                    </Button>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        className="h-7 w-7"
+                        onClick={() => void handleRenameThread(thread.id, thread.title)}
+                      >
+                        <PencilSimple size={13} />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        className="h-7 w-7 text-destructive border-destructive/30 hover:text-destructive"
+                        onClick={() => void handleDeleteThread(thread.id)}
+                      >
+                        <Trash size={13} />
+                      </Button>
+                    </div>
                   </div>
                 </div>
               ))}
