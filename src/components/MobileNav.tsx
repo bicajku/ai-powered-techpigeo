@@ -1,4 +1,5 @@
-import { Lightbulb, Sparkle, MagnifyingGlass, ChartBar, ShieldCheck, LockSimple, Brain, Target } from "@phosphor-icons/react"
+import { useState } from "react"
+import { Lightbulb, Sparkle, MagnifyingGlass, ChartBar, ShieldCheck, LockSimple, Brain, Target, List, X } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
@@ -23,8 +24,11 @@ export function MobileNav({
   canAccessNGOSaaS = false,
   canAccessRagChat = false,
 }: MobileNavProps) {
+  const [isOpen, setIsOpen] = useState(false)
+
   const handleTabSelect = (tab: string) => {
     onTabChange(tab)
+    setIsOpen(false)
     window.scrollTo({ top: 0, behavior: "smooth" })
   }
 
@@ -48,8 +52,18 @@ export function MobileNav({
   }
 
   return (
-    <div className="md:hidden px-2 pb-[max(env(safe-area-inset-bottom),0px)]">
-      <nav className="grid grid-cols-4 sm:grid-cols-5 gap-1 p-2 bg-card/95 backdrop-blur-sm border border-border shadow-lg rounded-2xl mt-3 mb-2">
+    <div className="md:hidden fixed bottom-3 right-3 z-50">
+      {isOpen && (
+        <button
+          type="button"
+          aria-label="Close mobile navigation"
+          onClick={() => setIsOpen(false)}
+          className="fixed inset-0 bg-background/35 backdrop-blur-[1px]"
+        />
+      )}
+
+      {isOpen && (
+        <nav className="absolute bottom-14 right-0 w-[min(420px,calc(100vw-1rem))] grid grid-cols-4 sm:grid-cols-5 gap-1 p-2 bg-card/95 backdrop-blur-sm border border-border shadow-lg rounded-2xl">
         {navItems.map((item) => {
           const Icon = item.icon
           const isActive = activeTab === item.value
@@ -71,7 +85,18 @@ export function MobileNav({
             </Button>
           )
         })}
-      </nav>
+        </nav>
+      )}
+
+      <Button
+        type="button"
+        aria-label={isOpen ? "Close menu" : "Open menu"}
+        onClick={() => setIsOpen((v) => !v)}
+        className="h-12 px-4 rounded-full shadow-lg border border-border/70"
+      >
+        {isOpen ? <X size={18} weight="bold" className="mr-2" /> : <List size={18} weight="bold" className="mr-2" />}
+        Menu
+      </Button>
     </div>
   )
 }
