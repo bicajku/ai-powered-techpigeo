@@ -80,6 +80,7 @@ export async function sentinelQuery(
     threadId?: number
     persistConversation?: boolean
     webSearch?: boolean
+    userMessageMetadata?: Record<string, unknown>
   }
 ): Promise<PipelineResult> {
   const providers: QueryProvider[] = []
@@ -129,6 +130,7 @@ export async function sentinelQuery(
         content: queryText,
         metadata: {
           module: options?.module ?? null,
+          ...(options?.userMessageMetadata ?? {}),
         },
       })
       userMessageId = userMsg.id

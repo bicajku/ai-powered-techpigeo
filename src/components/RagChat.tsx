@@ -53,6 +53,7 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
   const [isLoadingThreads, setIsLoadingThreads] = useState(true)
   const [isCreatingThread, setIsCreatingThread] = useState(false)
   const [isSending, setIsSending] = useState(false)
+  const [editingMessageId, setEditingMessageId] = useState<number | null>(null)
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
 
   const starterPrompts = useMemo(
@@ -211,6 +212,12 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
         persistConversation: true,
         qualityGateProfile: "lenient",
         enableQualityGate: false,
+        userMessageMetadata: editingMessageId
+          ? {
+              edited_from_message_id: editingMessageId,
+              edited_at: new Date().toISOString(),
+            }
+          : undefined,
       })
 
       if (result.status === "needs_clarification") {
@@ -219,6 +226,7 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
 
       await loadThreadData(threadId)
       await loadThreads()
+      setEditingMessageId(null)
     } catch (err) {
       console.error("Failed to send message:", err)
       toast.error("Failed to send message")
@@ -283,6 +291,7 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
 
   const handleEditMessage = (message: ChatMessage) => {
     setInput(message.content)
+    setEditingMessageId(message.id)
     requestAnimationFrame(() => {
       composerRef.current?.focus()
       composerRef.current?.setSelectionRange(composerRef.current.value.length, composerRef.current.value.length)
@@ -663,6 +672,19 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
               </ScrollArea>
 
               <div className="mt-auto pt-4 shrink-0">
+                {editingMessageId && (
+                  <div className="mb-2 flex items-center justify-between rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
+                    <span>Edited from previous message</span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 px-2 text-xs"
+                      onClick={() => setEditingMessageId(null)}
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                )}
                 <div className="mb-3 flex flex-wrap gap-2">
                   {composerSuggestions.map((prompt) => (
                     <button
