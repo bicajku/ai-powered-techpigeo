@@ -95,13 +95,13 @@ export async function sentinelQuery(
   const geminiReadyRaw = isGeminiConfigured()
   const copilotReadyRaw = isCopilotConfigured()
   const envConfig = getEnvConfig()
-  const backendMode = envConfig.useBackendLlm
+  const moduleName = options?.module || "global"
+  const backendMode = envConfig.useBackendLlm || moduleName === "rag_chat" || moduleName === "ngo_module"
   const geminiReady = backendMode ? false : geminiReadyRaw
   const copilotReady = backendMode ? false : copilotReadyRaw
   const threadId = options?.threadId
   const shouldPersistConversation =
     neonReady && Boolean(threadId) && (options?.persistConversation ?? true)
-  const moduleName = options?.module || "global"
   const routing = await getRoutingForModule(moduleName)
   const enabled = routing.enabledProviders || DEFAULT_ROUTING.enabledProviders
   const providerOrder = Array.isArray(routing.providerOrder) && routing.providerOrder.length > 0

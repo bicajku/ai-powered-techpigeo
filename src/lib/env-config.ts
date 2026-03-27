@@ -231,7 +231,7 @@ export function logEnvConfigSummary(): void {
   console.log("  - NGO Module:", config.enableNGOModule ? "✓ Enabled" : "✗ Disabled")
   console.log("  - Plagiarism Checker:", config.enablePlagiarismChecker ? "✓ Enabled" : "✗ Disabled")
   console.log("  - Humanizer:", config.enableHumanizer ? "✓ Enabled" : "✗ Disabled")
-  console.log("  - RAG Chat:", config.enableRagChat ? "✓ Enabled" : "✗ Disabled")
+  console.log("  - AI Chat:", config.enableRagChat ? "✓ Enabled" : "✗ Disabled")
   console.log("Rate Limits:")
   console.log("  - Basic Plan: $" + (config.basicPlanBudgetCents / 100).toFixed(2))
   console.log("  - Pro Plan: $" + (config.proPlanBudgetCents / 100).toFixed(2))

@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Login Test</title>
+</head>
+<body>
+  <h1>Backend Login Test</h1>
+  <button onclick="testLogin()">Test Direct Backend</button>
+  <button onclick="testViteProxy()">Test Via Vite Proxy</button>
+  <pre id="output"></pre>
+  
+  <script>
+    async function testLogin() {
+      const output = document.getElementById('output');
+      output.textContent = 'Testing direct backend login...';
+      try {
+        const res = await fetch('http://127.0.0.1:8787/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: 'commander@sentinel.dev',
+            password: 'admin123!'
+          }),
+          credentials: 'include'
+        });
+        const data = await res.json();
+        output.textContent = `Status: ${res.status}\n` + JSON.stringify(data, null, 2);
+      } catch (err) {
+        output.textContent = `Error: ${err.message}`;
+      }
+    }
+    
+    async function testViteProxy() {
+      const output = document.getElementById('output');
+      output.textContent = 'Testing via Vite proxy (/api)...';
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: 'commander@sentinel.dev',
+            password: 'admin123!'
+          }),
+          credentials: 'include'
+        });
+        const data = await res.json();
+        output.textContent = `Status: ${res.status}\n` + JSON.stringify(data, null, 2);
+      } catch (err) {
+        output.textContent = `Error: ${err.message}`;
+      }
+    }
+  </script>
+</body>
+</html>

@@ -16,7 +16,7 @@ import {
 
 const MODULES = [
   { value: "global", label: "Global" },
-  { value: "rag_chat", label: "RAG Chat" },
+  { value: "rag_chat", label: "AI Chat" },
   { value: "ngo_module", label: "NGO SaaS" },
   { value: "idea-generation", label: "Ideas" },
   { value: "humanizer", label: "Humanizer" },

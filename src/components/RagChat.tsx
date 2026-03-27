@@ -19,11 +19,12 @@ import { toast } from "sonner"
 
 interface RagChatProps {
   userId: string
+  isAdmin?: boolean
 }
 
 type TraceByMessage = Record<number, RetrievalTrace>
 
-export function RagChat({ userId }: RagChatProps) {
+export function RagChat({ userId, isAdmin = false }: RagChatProps) {
   const dbUserId = useMemo(() => {
     const numericUserId = Number(userId)
     if (Number.isFinite(numericUserId)) {
@@ -352,21 +353,23 @@ export function RagChat({ userId }: RagChatProps) {
       <section className="bg-card/80 backdrop-blur-sm rounded-2xl border border-border/50 p-4">
         <div className="flex items-center justify-between mb-3">
           <div>
-            <h3 className="text-base font-semibold text-foreground">{activeThread?.title ?? "RAG Chat"}</h3>
-            <p className="text-xs text-muted-foreground">Threaded chat with retrieval traces</p>
+            <h3 className="text-base font-semibold text-foreground">{activeThread?.title ?? "AI Chat"}</h3>
+            <p className="text-xs text-muted-foreground">Intelligent threaded conversations powered by AI</p>
           </div>
-          <Button
-            size="sm"
-            variant="outline"
-            className="xl:hidden"
-            onClick={() => setMobileTraceOpen(true)}
-            disabled={!selectedTrace}
-          >
-            Open Trace Drawer
-          </Button>
+          {isAdmin && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="xl:hidden"
+              onClick={() => setMobileTraceOpen(true)}
+              disabled={!selectedTrace}
+            >
+              Open Trace Drawer
+            </Button>
+          )}
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-[1fr_340px] gap-3">
+        <div className={cn("grid grid-cols-1 gap-3", isAdmin && "xl:grid-cols-[1fr_340px]")}>
           <ScrollArea className="h-[420px] pr-2">
             <div className="space-y-3">
               {messages.length === 0 && (
@@ -407,7 +410,7 @@ export function RagChat({ userId }: RagChatProps) {
                     </div>
                     <p className="text-sm text-foreground whitespace-pre-wrap">{message.content}</p>
 
-                    {isAssistant && trace && (
+                    {isAdmin && isAssistant && trace && (
                       <div className="mt-2 rounded-md border border-border/50 bg-background/60 p-2 text-[11px] text-muted-foreground space-y-2">
                         <div className="flex flex-wrap items-center gap-3">
                           <span className="inline-flex items-center gap-1"><LinkSimple size={12} /> chunks: {Array.isArray(trace.selected_chunks) ? trace.selected_chunks.length : 0}</span>
@@ -433,38 +436,42 @@ export function RagChat({ userId }: RagChatProps) {
             </div>
           </ScrollArea>
 
-          <aside className="hidden xl:block h-[420px] rounded-xl border border-border/60 bg-background/40 overflow-hidden">
-            <div className="h-full flex flex-col">
-              <div className="flex items-center justify-between px-3 py-2 border-b border-border/60">
-                <div>
-                  <p className="text-sm font-semibold text-foreground">Trace Drawer</p>
-                  <p className="text-[11px] text-muted-foreground">Selected assistant response metadata</p>
+          {isAdmin && (
+            <aside className="hidden xl:block h-[420px] rounded-xl border border-border/60 bg-background/40 overflow-hidden">
+              <div className="h-full flex flex-col">
+                <div className="flex items-center justify-between px-3 py-2 border-b border-border/60">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">Trace Drawer</p>
+                    <p className="text-[11px] text-muted-foreground">Selected assistant response metadata</p>
+                  </div>
+                  {selectedAssistantMessageId && (
+                    <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setSelectedAssistantMessageId(null)}>
+                      <X size={12} />
+                    </Button>
+                  )}
                 </div>
-                {selectedAssistantMessageId && (
-                  <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setSelectedAssistantMessageId(null)}>
-                    <X size={12} />
-                  </Button>
-                )}
-              </div>
 
-              <ScrollArea className="flex-1 p-3">
-                {renderTraceContent()}
-              </ScrollArea>
-            </div>
-          </aside>
+                <ScrollArea className="flex-1 p-3">
+                  {renderTraceContent()}
+                </ScrollArea>
+              </div>
+            </aside>
+          )}
         </div>
 
-        <Sheet open={mobileTraceOpen} onOpenChange={setMobileTraceOpen}>
-          <SheetContent side="right" className="xl:hidden w-full sm:max-w-md p-0">
-            <SheetHeader className="border-b border-border/60">
-              <SheetTitle>Trace Drawer</SheetTitle>
-              <SheetDescription>Selected assistant response metadata</SheetDescription>
-            </SheetHeader>
-            <ScrollArea className="h-[calc(100vh-96px)] p-3">
-              {renderTraceContent()}
-            </ScrollArea>
-          </SheetContent>
-        </Sheet>
+        {isAdmin && (
+          <Sheet open={mobileTraceOpen} onOpenChange={setMobileTraceOpen}>
+            <SheetContent side="right" className="xl:hidden w-full sm:max-w-md p-0">
+              <SheetHeader className="border-b border-border/60">
+                <SheetTitle>Trace Drawer</SheetTitle>
+                <SheetDescription>Selected assistant response metadata</SheetDescription>
+              </SheetHeader>
+              <ScrollArea className="h-[calc(100vh-96px)] p-3">
+                {renderTraceContent()}
+              </ScrollArea>
+            </SheetContent>
+          </Sheet>
+        )}
 
         <div className="mt-4 space-y-2">
           <Textarea
