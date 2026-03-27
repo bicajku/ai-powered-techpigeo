@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
-import { Plus, ChatsCircle, User, Robot, ClockCounterClockwise, LinkSimple, X } from "@phosphor-icons/react"
+import { Plus, ChatsCircle, User, Robot, ClockCounterClockwise, LinkSimple, X, Lightning } from "@phosphor-icons/react"
 import {
   createChatThread,
   listChatThreads,
@@ -298,196 +298,269 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
     )
   }
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault()
+      void handleSend()
+    }
+  }
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4">
-      <aside className="bg-card/80 backdrop-blur-sm rounded-2xl border border-border/50 p-3">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-            <ChatsCircle size={18} weight="duotone" />
-            Threads
-          </h3>
-          <Button size="sm" variant="outline" onClick={handleCreateThread} disabled={isCreatingThread}>
-            <Plus size={14} />
-          </Button>
-        </div>
-
-        <ScrollArea className="h-[360px] pr-2">
-          <div className="space-y-2">
-            {isLoadingThreads && <p className="text-xs text-muted-foreground">Loading threads...</p>}
-
-            {!isLoadingThreads && threads.length === 0 && (
-              <div className="space-y-2">
-                <p className="text-xs text-muted-foreground">No chats yet. Create your first thread.</p>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  className="w-full"
-                  onClick={handleCreateThread}
-                  disabled={isCreatingThread}
-                >
-                  {isCreatingThread ? "Creating..." : "Start First Thread"}
-                </Button>
-              </div>
-            )}
-
-            {threads.map((thread) => (
-              <button
-                key={thread.id}
-                type="button"
-                onClick={() => setActiveThreadId(thread.id)}
-                className={cn(
-                  "w-full text-left rounded-lg border px-3 py-2 transition-colors",
-                  activeThreadId === thread.id
-                    ? "border-primary bg-primary/10"
-                    : "border-border/50 hover:bg-secondary/30"
-                )}
-              >
-                <p className="text-sm font-medium text-foreground truncate">{thread.title}</p>
-                <p className="text-[11px] text-muted-foreground truncate">{thread.module}</p>
-              </button>
-            ))}
-          </div>
-        </ScrollArea>
-      </aside>
-
-      <section className="bg-card/80 backdrop-blur-sm rounded-2xl border border-border/50 p-4">
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <h3 className="text-base font-semibold text-foreground">{activeThread?.title ?? "AI Chat"}</h3>
-            <p className="text-xs text-muted-foreground">Intelligent threaded conversations powered by AI</p>
-          </div>
-          {isAdmin && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="xl:hidden"
-              onClick={() => setMobileTraceOpen(true)}
-              disabled={!selectedTrace}
-            >
-              Open Trace Drawer
+    <div className={cn("grid gap-4 h-full", (messages.length > 0 || threads.length > 0) ? "grid-cols-1 lg:grid-cols-[280px_1fr]" : "grid-cols-1")}>
+      {(messages.length > 0 || threads.length > 0) && (
+        <aside className="bg-card/80 backdrop-blur-sm rounded-2xl border border-border/50 p-3">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <ChatsCircle size={18} weight="duotone" />
+              Threads
+            </h3>
+            <Button size="sm" variant="outline" onClick={handleCreateThread} disabled={isCreatingThread}>
+              <Plus size={14} />
             </Button>
-          )}
-        </div>
+          </div>
 
-        <div className={cn("grid grid-cols-1 gap-3", isAdmin && "xl:grid-cols-[1fr_340px]")}>
-          <ScrollArea className="h-[420px] pr-2">
-            <div className="space-y-3">
-              {messages.length === 0 && (
-                <div className="rounded-lg border border-dashed border-border/60 p-4 text-sm text-muted-foreground space-y-3">
-                  <div>
-                    <p className="text-foreground font-semibold">Welcome from Techpigeon AI</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Start with one of these examples, or type your own question to begin.
-                    </p>
-                  </div>
-                  <div className="grid grid-cols-1 gap-2">
-                    {starterPrompts.map((prompt) => (
-                      <Button
-                        key={prompt}
-                        type="button"
-                        variant="outline"
-                        className="justify-start text-left h-auto whitespace-normal"
-                        onClick={() => setInput(prompt)}
-                        disabled={isSending}
-                      >
-                        {prompt}
-                      </Button>
-                    ))}
-                  </div>
+          <ScrollArea className="h-[calc(100vh-280px)] min-h-[360px] pr-2">
+            <div className="space-y-2">
+              {isLoadingThreads && <p className="text-xs text-muted-foreground">Loading threads...</p>}
+
+              {!isLoadingThreads && threads.length === 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">No chats yet. Create your first thread.</p>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="w-full"
+                    onClick={handleCreateThread}
+                    disabled={isCreatingThread}
+                  >
+                    {isCreatingThread ? "Creating..." : "Start First Thread"}
+                  </Button>
                 </div>
               )}
 
-              {messages.map((message) => {
-                const isAssistant = message.role === "assistant"
-                const trace = tracesByMessage[message.id]
-                const isSelected = selectedAssistantMessageId === message.id
-                return (
-                  <div key={message.id} className={cn("rounded-xl border p-3", isAssistant ? "border-primary/30 bg-primary/5" : "border-border/60 bg-secondary/20")}>
-                    <div className="flex items-center gap-2 text-xs mb-2">
-                      {isAssistant ? <Robot size={14} /> : <User size={14} />}
-                      <span className="font-medium text-foreground">{isAssistant ? "Assistant" : "You"}</span>
-                      <span className="text-muted-foreground">{new Date(message.created_at).toLocaleTimeString()}</span>
-                    </div>
-                    <p className="text-sm text-foreground whitespace-pre-wrap">{message.content}</p>
-
-                    {isAdmin && isAssistant && trace && (
-                      <div className="mt-2 rounded-md border border-border/50 bg-background/60 p-2 text-[11px] text-muted-foreground space-y-2">
-                        <div className="flex flex-wrap items-center gap-3">
-                          <span className="inline-flex items-center gap-1"><LinkSimple size={12} /> chunks: {Array.isArray(trace.selected_chunks) ? trace.selected_chunks.length : 0}</span>
-                          <span>candidates: {trace.total_candidates}</span>
-                          {trace.avg_similarity !== null && <span>avg sim: {trace.avg_similarity.toFixed(3)}</span>}
-                        </div>
-
-                        <div className="flex justify-end">
-                          <Button
-                            size="sm"
-                            variant={isSelected ? "default" : "ghost"}
-                            className="h-7 px-2 text-[11px]"
-                            onClick={() => openTraceForMessage(message.id)}
-                          >
-                            {isSelected ? "Trace selected" : "Open trace"}
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
+              {threads.map((thread) => (
+                <button
+                  key={thread.id}
+                  type="button"
+                  onClick={() => setActiveThreadId(thread.id)}
+                  className={cn(
+                    "w-full text-left rounded-lg border px-3 py-2 transition-colors",
+                    activeThreadId === thread.id
+                      ? "border-primary bg-primary/10"
+                      : "border-border/50 hover:bg-secondary/30"
+                  )}
+                >
+                  <p className="text-sm font-medium text-foreground truncate">{thread.title}</p>
+                  <p className="text-[11px] text-muted-foreground truncate">{thread.module}</p>
+                </button>
+              ))}
             </div>
           </ScrollArea>
+        </aside>
+      )}
 
-          {isAdmin && (
-            <aside className="hidden xl:block h-[420px] rounded-xl border border-border/60 bg-background/40 overflow-hidden">
-              <div className="h-full flex flex-col">
-                <div className="flex items-center justify-between px-3 py-2 border-b border-border/60">
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">Trace Drawer</p>
-                    <p className="text-[11px] text-muted-foreground">Selected assistant response metadata</p>
-                  </div>
-                  {selectedAssistantMessageId && (
-                    <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setSelectedAssistantMessageId(null)}>
-                      <X size={12} />
-                    </Button>
-                  )}
-                </div>
-
-                <ScrollArea className="flex-1 p-3">
-                  {renderTraceContent()}
-                </ScrollArea>
-              </div>
-            </aside>
-          )}
-        </div>
-
-        {isAdmin && (
-          <Sheet open={mobileTraceOpen} onOpenChange={setMobileTraceOpen}>
-            <SheetContent side="right" className="xl:hidden w-full sm:max-w-md p-0">
-              <SheetHeader className="border-b border-border/60">
-                <SheetTitle>Trace Drawer</SheetTitle>
-                <SheetDescription>Selected assistant response metadata</SheetDescription>
-              </SheetHeader>
-              <ScrollArea className="h-[calc(100vh-96px)] p-3">
-                {renderTraceContent()}
-              </ScrollArea>
-            </SheetContent>
-          </Sheet>
+      <section className={cn("bg-card/80 backdrop-blur-sm rounded-2xl border border-border/50 p-4 flex flex-col", messages.length === 0 ? "min-h-[calc(100vh-160px)] items-center justify-center border-none bg-transparent shadow-none" : "min-h-[calc(100vh-200px)]")}>
+        {messages.length > 0 && (
+          <div className="flex items-center justify-between mb-3 w-full shrink-0">
+            <div>
+              <h3 className="text-base font-semibold text-foreground">{activeThread?.title ?? "AI Chat"}</h3>
+              <p className="text-xs text-muted-foreground">Intelligent threaded conversations powered by AI</p>
+            </div>
+            {isAdmin && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="xl:hidden"
+                onClick={() => setMobileTraceOpen(true)}
+                disabled={!selectedTrace}
+              >
+                Open Trace Drawer
+              </Button>
+            )}
+          </div>
         )}
 
-        <div className="mt-4 space-y-2">
-          <Textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder={activeThreadId ? "Ask a question..." : "Create a thread first"}
-            className="min-h-20"
-            disabled={!activeThreadId || isSending}
-          />
-          <div className="flex justify-end">
-            <Button onClick={handleSend} disabled={!activeThreadId || isSending || input.trim().length === 0}>
-              {isSending ? "Sending..." : "Send"}
-            </Button>
+        {messages.length === 0 ? (
+          <div className="w-full max-w-3xl flex flex-col items-center justify-center animate-in fade-in zoom-in duration-500">
+            <h1 className="text-3xl md:text-4xl font-semibold text-foreground mb-8 text-center">
+              Welcome, how can Techpigeon AI help you?
+            </h1>
+            
+            <div className="w-full relative mb-12 shadow-sm rounded-xl">
+              <Textarea
+                placeholder="Where can I..."
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                className="min-h-[120px] resize-none pb-12 text-base rounded-xl border-border/60 bg-background/60 focus-visible:ring-primary shadow-inner"
+              />
+              <div className="absolute bottom-3 right-3 flex items-center gap-2">
+                <div className="h-8 w-8 rounded-full bg-green-600/20 text-green-600 flex items-center justify-center">
+                  <Robot size={18} weight="fill" />
+                </div>
+                <Button
+                  onClick={handleSend}
+                  disabled={!input.trim() || isSending || (!activeThreadId && !isCreatingThread && threads.length > 0)}
+                  size="icon"
+                  className="rounded-full h-10 w-10 shrink-0"
+                >
+                  <ChatsCircle size={18} weight="fill" />
+                </Button>
+              </div>
+            </div>
+
+            <div className="w-full">
+              <div className="flex items-center gap-2 text-muted-foreground mb-4">
+                <Lightning size={18} weight="duotone" />
+                <h2 className="text-sm font-medium">Suggested prompts</h2>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {[
+                  {
+                    title: "Can I schedule tasks to run daily?",
+                    desc: "Automate recurring data collection with our scheduling tools."
+                  },
+                  {
+                    title: "How to connect my AI agent with MCP",
+                    desc: "Step-by-step guide to integrate your AI agent with the MCP server"
+                  },
+                  {
+                    title: "What is the platform's free tier?",
+                    desc: "Learn details about available free tier limits and features"
+                  },
+                  {
+                    title: "How do I track my usage and billing?",
+                    desc: "Monitor your API calls, traffic, and costs in real time."
+                  },
+                  {
+                    title: "I want to extract data from external sites",
+                    desc: "Scrape product listings, prices, and reviews reliably."
+                  },
+                  {
+                    title: "Where can I find my API key credentials?",
+                    desc: "Quickly locate your API key and proxy zone details to get started."
+                  }
+                ].map((prompt, i) => (
+                  <button
+                    key={i}
+                    onClick={() => {
+                      setInput(prompt.title);
+                    }}
+                    className="flex flex-col text-left p-4 rounded-xl border border-border/50 bg-card/40 hover:bg-card hover:border-primary/50 transition-all group"
+                  >
+                    <span className="text-sm font-medium text-foreground mb-1 group-hover:text-primary transition-colors">{prompt.title}</span>
+                    <span className="text-[13px] text-muted-foreground">{prompt.desc}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className={cn("grid grid-cols-1 gap-3 w-full flex-1 min-h-0", isAdmin && "xl:grid-cols-[1fr_340px]")}>
+            <div className="flex flex-col h-full min-h-[400px]">
+              <ScrollArea className="flex-1 pr-4 -mr-4 h-full">
+                <div className="space-y-4 pb-4">
+                  {messages.map((message) => {
+                    const isAssistant = message.role === "assistant"
+                    const trace = tracesByMessage[message.id]
+                    const isSelected = selectedAssistantMessageId === message.id
+                    return (
+                      <div key={message.id} className={cn("rounded-2xl border p-4", isAssistant ? "border-primary/30 bg-primary/5" : "border-border/60 bg-secondary/20")}>
+                        <div className="flex items-center gap-2 text-xs mb-3">
+                          <div className={cn("h-6 w-6 rounded-full flex items-center justify-center", isAssistant ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground")}>
+                            {isAssistant ? <Robot size={14} weight="fill" /> : <User size={14} weight="fill" />}
+                          </div>
+                          <span className="font-semibold text-foreground">{isAssistant ? "Techpigeon AI" : "You"}</span>
+                          <span className="text-muted-foreground ml-auto">{new Date(message.created_at).toLocaleTimeString()}</span>
+                        </div>
+                        <div className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
+                          {message.content}
+                        </div>
+
+                        {isAdmin && isAssistant && trace && (
+                          <div className="mt-4 rounded-xl border border-border/50 bg-background/80 p-3 text-xs text-muted-foreground space-y-2">
+                            <div className="flex flex-wrap items-center gap-4">
+                              <span className="inline-flex items-center gap-1 font-medium"><LinkSimple size={14} /> Chunks: {Array.isArray(trace.selected_chunks) ? trace.selected_chunks.length : 0}</span>
+                              <span>Candidates: {trace.total_candidates}</span>
+                              {trace.avg_similarity !== null && <span>Avg Sim: {trace.avg_similarity.toFixed(3)}</span>}
+                            </div>
+
+                            <div className="flex justify-end">
+                              <Button
+                                size="sm"
+                                variant={isSelected ? "default" : "secondary"}
+                                className="h-8 px-3 text-xs rounded-lg"
+                                onClick={() => openTraceForMessage(message.id)}
+                              >
+                                {isSelected ? "Trace selected" : "Open trace"}
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </ScrollArea>
+
+              <div className="mt-auto pt-4 shrink-0">
+                <div className="relative shadow-sm rounded-xl">
+                  <Textarea
+                    placeholder="Type your message..."
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    className="min-h-[60px] max-h-[200px] pr-14 resize-none rounded-xl border-border/60 bg-background/80 focus-visible:ring-primary focus-visible:bg-background transition-colors"
+                  />
+                  <Button
+                    onClick={handleSend}
+                    disabled={!input.trim() || isSending || (!activeThreadId && !isCreatingThread && threads.length > 0)}
+                    size="icon"
+                    className="absolute bottom-2 right-2 rounded-lg h-8 w-8 shrink-0"
+                  >
+                    <ChatsCircle size={16} weight="fill" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            {isAdmin && (
+              <aside className="hidden xl:block h-full rounded-2xl border border-border/60 bg-background/40 overflow-hidden">
+                <div className="h-full flex flex-col">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-border/60 bg-card/40">
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">Trace Drawer</p>
+                      <p className="text-[11px] text-muted-foreground">Selected response metadata</p>
+                    </div>
+                    {selectedAssistantMessageId && (
+                      <Button size="sm" variant="ghost" className="h-8 w-8 p-0 rounded-full" onClick={() => setSelectedAssistantMessageId(null)}>
+                        <X size={14} />
+                      </Button>
+                    )}
+                  </div>
+                  <div className="flex-1 overflow-hidden p-3">
+                    {renderTraceContent()}
+                  </div>
+                </div>
+              </aside>
+            )}
+          </div>
+        )}
       </section>
+
+      {isAdmin && (
+        <Sheet open={mobileTraceOpen} onOpenChange={setMobileTraceOpen}>
+          <SheetContent side="right" className="xl:hidden w-full sm:max-w-md p-0">
+            <SheetHeader className="border-b border-border/60 p-4">
+              <SheetTitle>Trace Drawer</SheetTitle>
+              <SheetDescription>Selected assistant response metadata</SheetDescription>
+            </SheetHeader>
+            <ScrollArea className="h-[calc(100vh-96px)] p-3">
+              {renderTraceContent()}
+            </ScrollArea>
+          </SheetContent>
+        </Sheet>
+      )}
     </div>
   )
 }

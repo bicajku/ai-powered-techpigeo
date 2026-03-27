@@ -79,13 +79,31 @@ export async function scoreHumanizerMeters(input: string): Promise<HumanizerMete
       "Content-Type": "application/json",
     }
 
-    if (config.useBackendAuth && config.backendApiKey) {
+    // Prefer Sentinel JWT over legacy API key
+    const sentinelToken = typeof window !== "undefined"
+      ? (localStorage.getItem("sentinel-auth-token") || localStorage.getItem("sentinel_token"))
+      : null
+    if (sentinelToken) {
+      headers["Authorization"] = `Bearer ${sentinelToken}`
+    } else if (config.useBackendAuth && config.backendApiKey) {
       headers["x-api-key"] = config.backendApiKey
+    }
+
+    // CSRF token from cookie
+    if (typeof document !== "undefined") {
+      const csrfMatch = document.cookie
+        .split(";")
+        .map((c) => c.trim())
+        .find((c) => c.startsWith("__csrf="))
+      if (csrfMatch) {
+        headers["X-CSRF-Token"] = csrfMatch.slice("__csrf=".length)
+      }
     }
 
     const response = await fetch(endpoint, {
       method: "POST",
       headers,
+      credentials: "include",
       body: JSON.stringify({ text: input }),
     })
 

@@ -65,6 +65,26 @@ export default defineConfig({
       '@': resolve(projectRoot, 'src')
     }
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Vendor: React core
+          'vendor-react': ['react', 'react-dom'],
+          // Vendor: animation
+          'vendor-motion': ['framer-motion'],
+          // Vendor: document processing (used by PlagiarismChecker, NGOModule)
+          'vendor-doc-processing': ['pdfjs-dist', 'mammoth'],
+          // Vendor: OCR (used by PlagiarismChecker only)
+          'vendor-tesseract': ['tesseract.js'],
+          // Vendor: PDF export (used on-demand)
+          'vendor-pdf-export': ['jspdf'],
+          // Vendor: HTML-to-canvas (used on-demand for PDF export)
+          'vendor-html2canvas': ['html2canvas'],
+        },
+      },
+    },
+  },
   server: {
     proxy: {
       '/api': {

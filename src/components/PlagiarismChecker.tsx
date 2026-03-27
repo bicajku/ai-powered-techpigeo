@@ -22,8 +22,6 @@ import {
 import { motion, AnimatePresence } from "framer-motion"
 import { toast } from "sonner"
 import { sentinelQuery } from "@/lib/sentinel-query-pipeline"
-import { isNeonConfigured } from "@/lib/neon-client"
-import { isGeminiConfigured } from "@/lib/gemini-client"
 import { DocumentFingerprintRecord, PlagiarismResult, DocumentReviewResult, ExternalSourceCheckResult, HumanizedResult, SavedReviewDocument, UserProfile } from "@/types"
 import { useSafeKV } from "@/hooks/useSafeKV"
 import { SaveReviewDialog } from "@/components/SaveReviewDialog"
@@ -1228,13 +1226,7 @@ function PlagiarismCheckerInner({ user, mode }: { user: UserProfile; mode: "revi
     setIsHumanizing(true)
 
     try {
-      if (typeof spark === "undefined" || typeof spark.llmPrompt === "undefined" || typeof spark.llm !== "function") {
-        toast.error("Spark is not available. Please refresh the page.")
-        setIsHumanizing(false)
-        return
-      }
-
-      const prompt = spark.llmPrompt`You are an expert text humanizer. Rewrite the following text to sound more natural, authentic, and human-written while preserving the core meaning and information.
+      const strPrompt = `You are an expert text humanizer. Rewrite the following text to sound more natural, authentic, and human-written while preserving the core meaning and information.
 
 Original text:
 ${text}
@@ -1266,36 +1258,22 @@ Return ONLY a valid JSON object:
 }`
 
       let response: unknown
-      const strPrompt = prompt as string
-      if (isNeonConfigured() || isGeminiConfigured()) {
-        try {
-          const res = await sentinelQuery(strPrompt, {
-            module: "humanizer",
-            userId: user?.id ? parseInt(user.id) || undefined : undefined,
-            enableQualityGate: true,
-            userInputForQualityGate: text,
-            qualityGateProfile: "lenient",
-            sparkFallback: async () => {
-              if (typeof spark !== "undefined" && typeof spark.llm === "function") {
-                return (await spark.llm(strPrompt, "gpt-4o", false)) as string
-              }
-              throw new Error("Spark fallback unavailable")
-            }
-          })
-          if (res.status === "needs_clarification") {
-            toast.error(res.response || "Please provide clearer text for humanization.")
-            return
-          }
-          response = typeof res.response === 'string' ? res.response : JSON.stringify(res.response)
-        } catch {
-          if (typeof spark !== "undefined" && typeof spark.llm === "function") {
-            response = await spark.llm(strPrompt, "gpt-4o", true)
-          } else {
-            throw new Error("AI service unavailable")
-          }
+      try {
+        const res = await sentinelQuery(strPrompt, {
+          module: "humanizer",
+          userId: user?.id ? parseInt(user.id) || undefined : undefined,
+          enableQualityGate: true,
+          userInputForQualityGate: text,
+          qualityGateProfile: "lenient",
+        })
+        if (res.status === "needs_clarification") {
+          toast.error(res.response || "Please provide clearer text for humanization.")
+          return
         }
-      } else {
-        response = await spark.llm(strPrompt, "gpt-4o", true)
+        response = typeof res.response === 'string' ? res.response : JSON.stringify(res.response)
+      } catch (err) {
+        console.error("Humanizer sentinelQuery failed:", err)
+        throw new Error("AI service unavailable. Please try again.")
       }
 
       let parsed: Record<string, unknown>
@@ -1722,22 +1700,24 @@ Return ONLY a valid JSON object:
                   </Button>
                 )}
 
-                <Button
-                  onClick={humanizeText}
-                  disabled={!text.trim() || isHumanizing || isChecking || (entitlements.isPaidPlan && proCredits < estimateHumanizerCredits(countWords(text)))}
-                  variant="outline"
-                  size="sm"
-                  className="gap-2"
-                >
-                  <LockKey size={16} weight="duotone" />
-                  {isHumanizing
-                    ? "Humanizing..."
-                    : entitlements.isPaidPlan
-                      ? `Humanize (${estimateHumanizerCredits(countWords(text))} credit(s), balance: ${proCredits})`
-                      : "Humanize (Pro/Team)"}
-                </Button>
+                {mode === "humanizer" && (
+                  <Button
+                    onClick={humanizeText}
+                    disabled={!text.trim() || isHumanizing || isChecking || (entitlements.isPaidPlan && proCredits < estimateHumanizerCredits(countWords(text)))}
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                  >
+                    <LockKey size={16} weight="duotone" />
+                    {isHumanizing
+                      ? "Humanizing..."
+                      : entitlements.isPaidPlan
+                        ? `Humanize (${estimateHumanizerCredits(countWords(text))} credit(s), balance: ${proCredits})`
+                        : "Humanize (Pro/Team)"}
+                  </Button>
+                )}
 
-                {!entitlements.isPaidPlan && user.role !== "admin" && (
+                {mode === "humanizer" && !entitlements.isPaidPlan && user.role !== "admin" && (
                   <div className="flex gap-1">
                     <Button onClick={handleUpgradeToPro} variant="secondary" size="sm">
                       Upgrade to Pro
@@ -1748,7 +1728,7 @@ Return ONLY a valid JSON object:
                   </div>
                 )}
 
-                {entitlements.isPaidPlan && proCredits <= 0 && (
+                {mode === "humanizer" && entitlements.isPaidPlan && proCredits <= 0 && (
                   <Button onClick={handleBuyCredits} variant="secondary" size="sm">
                     Buy Credits
                   </Button>

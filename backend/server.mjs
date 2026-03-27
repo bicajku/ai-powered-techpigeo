@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url"
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
+import { handleMcpRequest } from "./mcp-server.mjs";
 import { generateWithFallback, getProviderStatus } from "./llm-service.mjs"
 import {
   signToken,
@@ -2103,6 +2104,10 @@ const server = http.createServer(async (req, res) => {
   console.log(`[HTTP] ${method} ${reqPathname}`)
 
   // ── CORS preflight ──
+  // ── MCP Server Routes ──
+  const isMcp = await handleMcpRequest(req, res, method, reqPathname);
+  if (isMcp) return;
+
   if (method === "OPTIONS") {
     return sendJson(res, 200, { ok: true }, req)
   }

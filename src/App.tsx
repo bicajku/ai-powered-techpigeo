@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
 import { Sparkle, Lightbulb, ChatsCircle, Palette, Target, ArrowClockwise, FloppyDisk, FolderOpen, Code, Desktop, Database, DeviceMobile, ListChecks, ChartBar, ShieldCheck, MagnifyingGlass, CaretUpDown, Check, BookOpen, ClockCounterClockwise, ArrowsHorizontal, LockSimple, Lightning, Brain } from "@phosphor-icons/react"
@@ -7,24 +7,12 @@ import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { ResultCard } from "@/components/ResultCard"
 import { LoadingState } from "@/components/LoadingState"
 import { EmptyState } from "@/components/EmptyState"
-import { SavedStrategies } from "@/components/SavedStrategies"
-import { ComparisonView } from "@/components/ComparisonView"
 import { SaveStrategyDialog } from "@/components/SaveStrategyDialog"
-import { StrategyTemplatesBrowser } from "@/components/StrategyTemplatesBrowser"
 import { UserMenu } from "@/components/UserMenu"
-import { Dashboard } from "@/components/Dashboard"
-import { AdminDashboard } from "@/components/AdminDashboard"
-import { EnterpriseAdmin } from "@/components/EnterpriseAdmin"
-import { LandingPage } from "@/components/LandingPage"
-import { SentinelBrain } from "@/components/SentinelBrain"
 import { WelcomeBanner } from "@/components/WelcomeBanner"
 import { TopNotchBanner } from "@/components/TopNotchBanner"
 import { Footer } from "@/components/Footer"
-import { PlagiarismChecker } from "@/components/PlagiarismChecker"
-import { IdeaGeneration } from "@/components/IdeaGeneration"
-import { NGOModule } from "@/components/NGOModule"
 import { MobileNav } from "@/components/MobileNav"
-import { RagChat } from "@/components/RagChat"
 import faviconImg from "@/assets/images/sentinel-sas-logo.svg"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -42,11 +30,23 @@ import { sentinelQuery } from "@/lib/sentinel-query-pipeline"
 import { isNeonConfigured } from "@/lib/neon-client"
 import { isGeminiConfigured } from "@/lib/gemini-client"
 import { getFeatureEntitlements, requestUpgrade } from "@/lib/subscription"
-import { exportStrategyAsPDF } from "@/lib/pdf-export"
-import { exportStrategyAsWord } from "@/lib/document-export"
 import { estimateGenerationCostCents, estimatePromptTokens, getCurrentMonthKey, getExportPlanConfig, getStrategyPlanConfig, loadBudgetLimits } from "@/lib/strategy-governance"
 import { adminService } from "@/lib/admin"
 import { getEnvConfig } from "@/lib/env-config"
+
+// Lazy-loaded tab components (code splitting)
+const LandingPage = lazy(() => import("@/components/LandingPage").then(m => ({ default: m.LandingPage })))
+const SentinelBrain = lazy(() => import("@/components/SentinelBrain").then(m => ({ default: m.SentinelBrain })))
+const NGOModule = lazy(() => import("@/components/NGOModule").then(m => ({ default: m.NGOModule })))
+const PlagiarismChecker = lazy(() => import("@/components/PlagiarismChecker").then(m => ({ default: m.PlagiarismChecker })))
+const IdeaGeneration = lazy(() => import("@/components/IdeaGeneration").then(m => ({ default: m.IdeaGeneration })))
+const RagChat = lazy(() => import("@/components/RagChat").then(m => ({ default: m.RagChat })))
+const Dashboard = lazy(() => import("@/components/Dashboard").then(m => ({ default: m.Dashboard })))
+const AdminDashboard = lazy(() => import("@/components/AdminDashboard").then(m => ({ default: m.AdminDashboard })))
+const EnterpriseAdmin = lazy(() => import("@/components/EnterpriseAdmin").then(m => ({ default: m.EnterpriseAdmin })))
+const SavedStrategies = lazy(() => import("@/components/SavedStrategies").then(m => ({ default: m.SavedStrategies })))
+const ComparisonView = lazy(() => import("@/components/ComparisonView").then(m => ({ default: m.ComparisonView })))
+const StrategyTemplatesBrowser = lazy(() => import("@/components/StrategyTemplatesBrowser").then(m => ({ default: m.StrategyTemplatesBrowser })))
 
 interface PromptMemoryItem {
   prompt: string
@@ -97,6 +97,8 @@ const CONCEPT_MODE_INSTRUCTION: Record<ConceptMode, string> = {
 
 const AUTH_BOOTSTRAP_TIMEOUT_MS = 5000
 const APP_UI_STATE_KEY = "sentinel-ui-state-v1"
+
+const getDefaultSignedInTab = (ragChatEnabled: boolean) => (ragChatEnabled ? "rag-chat" : "generate")
 
 type PersistedUIState = {
   activeTab?: string
@@ -174,7 +176,7 @@ function App() {
   })
   const [activeTab, setActiveTab] = useState(() => loadPersistedUIState().activeTab || "generate")
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
-  const [showLandingPage, setShowLandingPage] = useState(() => !!loadPersistedUIState().showLandingPage)
+  const [showLandingPage, setShowLandingPage] = useState(false)
   const [adminAllStrategies, setAdminAllStrategies] = useState<SavedStrategy[]>([])
   const resultsRef = useRef<HTMLDivElement>(null)
 
@@ -236,6 +238,8 @@ function App() {
         setUser(currentUser)
         if (currentUser) {
           setUserIdForKV(currentUser.id)
+          setShowLandingPage(false)
+          setActiveTab(getDefaultSignedInTab(getEnvConfig().enableRagChat))
           setHasShownWelcomeThisSession((alreadyShown) => {
             if (!alreadyShown) {
               setShowExpandedWelcome(true)
@@ -1034,10 +1038,11 @@ ${JSON.stringify(candidate)}`
     return true
   }
 
-  const handleExportStrategyPdf = (strategy: SavedStrategy) => {
+  const handleExportStrategyPdf = async (strategy: SavedStrategy) => {
     if (!reserveExportQuota()) return
 
     try {
+      const { exportStrategyAsPDF } = await import("@/lib/pdf-export")
       exportStrategyAsPDF(strategy)
       setMonthlyExportCount((count) => (count || 0) + 1)
       toast.success("Strategy exported as PDF")
@@ -1056,6 +1061,7 @@ ${JSON.stringify(candidate)}`
     if (!reserveExportQuota()) return
 
     try {
+      const { exportStrategyAsWord } = await import("@/lib/document-export")
       await exportStrategyAsWord(strategy)
       setMonthlyExportCount((count) => (count || 0) + 1)
       toast.success("Strategy exported to Word successfully!")
@@ -1187,6 +1193,8 @@ ${JSON.stringify(candidate)}`
   const handleAuthSuccess = (authUser: UserProfile) => {
     setUser(authUser)
     setUserIdForKV(authUser.id)
+    setShowLandingPage(false)
+    setActiveTab(getDefaultSignedInTab(getEnvConfig().enableRagChat))
     setHasShownWelcomeThisSession((alreadyShown) => {
       if (!alreadyShown) {
         setShowExpandedWelcome(true)
@@ -1250,24 +1258,28 @@ ${JSON.stringify(candidate)}`
 
   if (!user) {
     return (
-      <LandingPage
-        onLogin={() => {}}
-        onSignup={() => {}}
-        onAuthSuccess={handleAuthSuccess}
-      />
+      <Suspense fallback={<div className="flex items-center justify-center h-screen"><p className="text-muted-foreground">Loading...</p></div>}>
+        <LandingPage
+          onLogin={() => {}}
+          onSignup={() => {}}
+          onAuthSuccess={handleAuthSuccess}
+        />
+      </Suspense>
     )
   }
 
   if (showLandingPage) {
     return (
-      <LandingPage
-        onLogin={() => {}}
-        onSignup={() => {}}
-        onAuthSuccess={handleAuthSuccess}
-        user={user}
-        onBackToDashboard={() => setShowLandingPage(false)}
-        onNavigate={(tab) => { setActiveTab(tab); setShowLandingPage(false) }}
-      />
+      <Suspense fallback={<div className="flex items-center justify-center h-screen"><p className="text-muted-foreground">Loading...</p></div>}>
+        <LandingPage
+          onLogin={() => {}}
+          onSignup={() => {}}
+          onAuthSuccess={handleAuthSuccess}
+          user={user}
+          onBackToDashboard={() => setShowLandingPage(false)}
+          onNavigate={(tab) => { setActiveTab(tab); setShowLandingPage(false) }}
+        />
+      </Suspense>
     )
   }
 
@@ -1292,21 +1304,25 @@ ${JSON.stringify(candidate)}`
         onOpenChange={setShowSaveDialog}
         onSave={handleSaveStrategy}
       />
-      <StrategyTemplatesBrowser
-        open={showTemplatesBrowser}
-        onOpenChange={setShowTemplatesBrowser}
-        onSelectTemplate={(description, conceptMode) => {
-          setDescription(description)
-          setConceptMode(conceptMode)
-          toast.success("Template applied! Customize the prompt and generate your strategy.")
-        }}
-      />
+      <Suspense fallback={null}>
+        <StrategyTemplatesBrowser
+          open={showTemplatesBrowser}
+          onOpenChange={setShowTemplatesBrowser}
+          onSelectTemplate={(description, conceptMode) => {
+            setDescription(description)
+            setConceptMode(conceptMode)
+            toast.success("Template applied! Customize the prompt and generate your strategy.")
+          }}
+        />
+      </Suspense>
       <AnimatePresence>
         {showComparison && (
-          <ComparisonView
-            strategies={comparisonStrategies}
-            onClose={() => setShowComparison(false)}
-          />
+          <Suspense fallback={null}>
+            <ComparisonView
+              strategies={comparisonStrategies}
+              onClose={() => setShowComparison(false)}
+            />
+          </Suspense>
         )}
       </AnimatePresence>
       <div className="min-h-screen bg-gradient-to-br from-background via-secondary/20 to-background relative overflow-hidden font-sans pb-24 md:pb-0">
@@ -2314,25 +2330,35 @@ ${JSON.stringify(candidate)}`
             </TabsContent>
 
             <TabsContent value="ideas" className="space-y-6">
-              <IdeaGeneration userId={user.id} user={user} />
+              <Suspense fallback={<LoadingState />}>
+                <IdeaGeneration userId={user.id} user={user} />
+              </Suspense>
             </TabsContent>
 
             {ragChatEnabled && (
               <TabsContent value="rag-chat" className="space-y-6">
-                <RagChat userId={user.id} isAdmin={user.role === "admin"} />
+                <Suspense fallback={<LoadingState />}>
+                  <RagChat userId={user.id} isAdmin={user.role === "admin"} />
+                </Suspense>
               </TabsContent>
             )}
 
             <TabsContent value="ngo-saas" className="space-y-6">
-              <NGOModule userId={user.id} user={user} />
+              <Suspense fallback={<LoadingState />}>
+                <NGOModule userId={user.id} user={user} />
+              </Suspense>
             </TabsContent>
 
             <TabsContent value="plagiarism" className="space-y-6">
-              {canUseReviewModule ? <PlagiarismChecker user={user} /> : <UpgradePaywall user={user} feature="review" />}
+              <Suspense fallback={<LoadingState />}>
+                {canUseReviewModule ? <PlagiarismChecker user={user} /> : <UpgradePaywall user={user} feature="review" />}
+              </Suspense>
             </TabsContent>
 
             <TabsContent value="humanizer" className="space-y-6">
-              {canUseHumanizerModule ? <PlagiarismChecker user={user} mode="humanizer" /> : <UpgradePaywall user={user} feature="humanizer" />}
+              <Suspense fallback={<LoadingState />}>
+                {canUseHumanizerModule ? <PlagiarismChecker user={user} mode="humanizer" /> : <UpgradePaywall user={user} feature="humanize" />}
+              </Suspense>
             </TabsContent>
 
             <TabsContent value="dashboard" className="space-y-6">
@@ -2356,11 +2382,13 @@ ${JSON.stringify(candidate)}`
                   Workflow Timeline
                 </Button>
               </div>
-              <Dashboard 
-                strategies={user.role === "admin" && adminAllStrategies.length > 0 ? adminAllStrategies : (savedStrategies || [])} 
-                promptMemory={promptMemory || []}
-                isAdmin={user.role === "admin"}
-              />
+              <Suspense fallback={<LoadingState />}>
+                <Dashboard 
+                  strategies={user.role === "admin" && adminAllStrategies.length > 0 ? adminAllStrategies : (savedStrategies || [])} 
+                  promptMemory={promptMemory || []}
+                  isAdmin={user.role === "admin"}
+                />
+              </Suspense>
             </TabsContent>
 
             <TabsContent value="saved" className="space-y-6">
@@ -2414,16 +2442,18 @@ ${JSON.stringify(candidate)}`
                 </motion.div>
               )}
               
-              <SavedStrategies
-                strategies={user.role === "admin" && adminAllStrategies.length > 0 ? adminAllStrategies : (savedStrategies || [])}
-                onDelete={handleDeleteStrategy}
-                onView={handleViewStrategy}
-                onCompare={handleToggleCompare}
-                onExportPdf={handleExportStrategyPdf}
-                onExportWord={handleExportStrategyWord}
-                canExportWord={exportPlanConfig.allowWordExport}
-                selectedForComparison={selectedForComparison}
-              />
+              <Suspense fallback={<LoadingState />}>
+                <SavedStrategies
+                  strategies={user.role === "admin" && adminAllStrategies.length > 0 ? adminAllStrategies : (savedStrategies || [])}
+                  onDelete={handleDeleteStrategy}
+                  onView={handleViewStrategy}
+                  onCompare={handleToggleCompare}
+                  onExportPdf={handleExportStrategyPdf}
+                  onExportWord={handleExportStrategyWord}
+                  canExportWord={exportPlanConfig.allowWordExport}
+                  selectedForComparison={selectedForComparison}
+                />
+              </Suspense>
             </TabsContent>
 
             <TabsContent value="timeline" className="space-y-6">
@@ -2552,19 +2582,25 @@ ${JSON.stringify(candidate)}`
 
             {user.role === "admin" && (
               <TabsContent value="sentinel-brain" className="space-y-6">
-                <SentinelBrain />
+                <Suspense fallback={<LoadingState />}>
+                  <SentinelBrain />
+                </Suspense>
               </TabsContent>
             )}
 
             {user.role === "admin" && (
               <TabsContent value="admin" className="space-y-6">
-                <AdminDashboard />
+                <Suspense fallback={<LoadingState />}>
+                  <AdminDashboard />
+                </Suspense>
               </TabsContent>
             )}
 
             {user.role === "admin" && (
               <TabsContent value="enterprise" className="space-y-6">
-                <EnterpriseAdmin user={user} organizationId={user.id} />
+                <Suspense fallback={<LoadingState />}>
+                  <EnterpriseAdmin user={user} organizationId={user.id} />
+                </Suspense>
               </TabsContent>
             )}
           </Tabs>

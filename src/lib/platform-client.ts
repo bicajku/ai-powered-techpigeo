@@ -92,6 +92,7 @@ async function callBackendLlm(request: BackendLlmRequest): Promise<unknown> {
   const response = await fetch(`${baseUrl}/api/llm/generate`, {
     method: "POST",
     headers,
+    credentials: "include",
     body: JSON.stringify(request),
   })
 

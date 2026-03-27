@@ -96,9 +96,9 @@ export async function sentinelQuery(
   const copilotReadyRaw = isCopilotConfigured()
   const envConfig = getEnvConfig()
   const moduleName = options?.module || "global"
-  const backendMode = envConfig.useBackendLlm || moduleName === "rag_chat" || moduleName === "ngo_module"
-  const geminiReady = backendMode ? false : geminiReadyRaw
-  const copilotReady = backendMode ? false : copilotReadyRaw
+  const backendMode = envConfig.useBackendLlm || moduleName === "rag_chat" || moduleName === "ngo_module" || moduleName === "humanizer"
+  const geminiReady = geminiReadyRaw
+  const copilotReady = copilotReadyRaw
   const threadId = options?.threadId
   const shouldPersistConversation =
     neonReady && Boolean(threadId) && (options?.persistConversation ?? true)
