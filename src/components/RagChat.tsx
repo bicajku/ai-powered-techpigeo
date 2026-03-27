@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
-import { Plus, ChatsCircle, User, Robot, ClockCounterClockwise, LinkSimple, X, Lightning, Bell, Question, UserCircle, Gift, Trash, PencilSimple } from "@phosphor-icons/react"
+import { Plus, ChatsCircle, User, Robot, ClockCounterClockwise, LinkSimple, X, Lightning, Bell, Question, UserCircle, Gift, Trash, PencilSimple, ArrowUp, ArrowDown } from "@phosphor-icons/react"
 import {
   createChatThread,
   deleteChatThread,
@@ -44,6 +44,16 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
   const [isSending, setIsSending] = useState(false)
   const [editingMessageId, setEditingMessageId] = useState<number | null>(null)
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
+  const chatScrollRef = useRef<HTMLDivElement | null>(null)
+
+  const scrollToTop = () => {
+    chatScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" })
+  }
+  const scrollToBottom = () => {
+    if (chatScrollRef.current) {
+      chatScrollRef.current.scrollTo({ top: chatScrollRef.current.scrollHeight, behavior: "smooth" })
+    }
+  }
 
   const starterPrompts = useMemo(
     () => [
@@ -117,6 +127,8 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
       const messageRows = await listChatMessages(threadId, 200)
 
       setMessages(messageRows)
+      // Auto-scroll to bottom when loading a thread
+      setTimeout(scrollToBottom, 100)
 
       const traceMap: TraceByMessage = {}
       const assistantMessages = messageRows.filter((msg) => msg.role === "assistant")
@@ -216,6 +228,8 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
       await loadThreadData(threadId)
       await loadThreads()
       setEditingMessageId(null)
+      // Auto-scroll to bottom after new message
+      setTimeout(scrollToBottom, 100)
     } catch (err) {
       console.error("Failed to send message:", err)
       toast.error("Failed to send message")
@@ -468,7 +482,7 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
                       >
                         <p className="text-xs font-medium text-foreground truncate">{thread.title}</p>
                       </button>
-                      <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center gap-0.5 shrink-0">
                         <Button
                           size="icon"
                           variant="ghost"
@@ -602,8 +616,13 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
           </div>
         ) : (
           <div className={cn("grid grid-cols-1 gap-3 w-full flex-1 min-h-0", showDesktopTrace && "xl:grid-cols-[1fr_340px]")}>
-            <div className="flex flex-col h-full min-h-[400px]">
-              <ScrollArea className="flex-1 pr-1 md:pr-4 md:-mr-4 h-full scroll-smooth">
+            <div className="flex flex-col h-full min-h-[400px] relative">
+              <ScrollArea className="flex-1 pr-1 md:pr-4 md:-mr-4 h-full scroll-smooth" ref={(node) => {
+                if (node) {
+                  const viewport = node.querySelector("[data-radix-scroll-area-viewport]") as HTMLDivElement | null
+                  chatScrollRef.current = viewport
+                }
+              }}>
                 <div className="space-y-4 pb-4">
                   {messages.map((message) => {
                     const isAssistant = message.role === "assistant"
@@ -658,6 +677,28 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
                   })}
                 </div>
               </ScrollArea>
+
+              {/* Scroll navigation buttons */}
+              <div className="absolute right-6 top-2 flex flex-col gap-1 z-10">
+                <Button
+                  size="icon"
+                  variant="outline"
+                  className="h-7 w-7 rounded-full bg-background/90 backdrop-blur-sm shadow-sm border-border/60"
+                  onClick={scrollToTop}
+                  title="Scroll to top"
+                >
+                  <ArrowUp size={14} />
+                </Button>
+                <Button
+                  size="icon"
+                  variant="outline"
+                  className="h-7 w-7 rounded-full bg-background/90 backdrop-blur-sm shadow-sm border-border/60"
+                  onClick={scrollToBottom}
+                  title="Scroll to bottom"
+                >
+                  <ArrowDown size={14} />
+                </Button>
+              </div>
 
               <div className="mt-auto pt-4 shrink-0">
                 {editingMessageId && (
