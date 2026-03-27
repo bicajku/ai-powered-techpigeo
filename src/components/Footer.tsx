@@ -1,5 +1,6 @@
 import { MapPin, Phone, EnvelopeSimple, Globe } from "@phosphor-icons/react"
 import novussparksLogo from "@/assets/images/novussparks-icon.svg"
+import techpigeonLogo from "@/assets/images/techpigeon-logo.png"
 
 export function Footer() {
   return (
@@ -87,9 +88,13 @@ export function Footer() {
           </a>
         </div>
         
-        <div className="text-center">
+        <div className="text-center space-y-2">
           <p className="text-sm text-muted-foreground">
             &copy; {new Date().getFullYear()} NovusSparks. All rights reserved.
+          </p>
+          <p className="text-xs text-muted-foreground flex items-center justify-center gap-1.5">
+            <img src={techpigeonLogo} alt="" className="w-4 h-4 inline-block" />
+            Powered by <a href="https://www.techpigeon.com.pk" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-medium">Techpigeon</a>
           </p>
         </div>
       </div>

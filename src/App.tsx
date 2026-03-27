@@ -14,6 +14,7 @@ import { TopNotchBanner } from "@/components/TopNotchBanner"
 import { Footer } from "@/components/Footer"
 import { MobileNav } from "@/components/MobileNav"
 import faviconImg from "@/assets/images/novussparks-icon.svg"
+import techpigeonLogo from "@/assets/images/techpigeon-logo.png"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
@@ -1378,8 +1379,8 @@ ${JSON.stringify(candidate)}`
               Enterprise-grade AI platform for intelligent strategies, knowledge management, and multi-tenant business insights
             </p>
             <p className="text-xs sm:text-sm text-muted-foreground mt-2 text-center md:text-left flex items-center justify-center md:justify-start gap-1.5">
-               <img src={faviconImg} alt="" className="w-4 h-4 inline-block" />
-              Powered by <a href="https://www.novussparks.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-medium">NovusSparks</a>
+               <img src={techpigeonLogo} alt="" className="w-4 h-4 inline-block" />
+              Powered by <a href="https://www.techpigeon.com.pk" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-medium">Techpigeon</a>
             </p>
           </motion.header>
 

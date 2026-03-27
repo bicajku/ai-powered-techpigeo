@@ -6,6 +6,7 @@ import { AuthForm } from "@/components/AuthForm"
 import { Sparkle, Target, Lightbulb, ShieldCheck, Quotes, Brain, ChartBar, Presentation, Rocket, Users, Lightning, ArrowRight, CheckCircle, ArrowLeft, UserCircle, CursorClick, Bank, Heartbeat, Buildings, HandHeart, RocketLaunch, TreeStructure, ArrowsOut, TerminalWindow, Shield, HardDrives } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
 import faviconImg from "@/assets/images/novussparks-icon.svg"
+import techpigeonLogo from "@/assets/images/techpigeon-logo.png"
 
 import { UserProfile } from "@/types"
 
@@ -621,9 +622,16 @@ export function LandingPage({ onAuthSuccess, user, onBackToDashboard, onNavigate
       {/* === Footer === */}
       <footer className="relative z-10 border-t border-white/[0.06] py-6 px-4 sm:px-6">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-[10px] sm:text-xs text-gray-600">
-          <div className="flex items-center gap-2">
-            <img src={faviconImg} alt="" className="w-4 h-4 opacity-40" />
-            <span className="text-slate-50">&copy; {new Date().getFullYear()} NovusSparks AI. All rights reserved.</span>
+          <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-4">
+            <div className="flex items-center gap-2">
+              <img src={faviconImg} alt="" className="w-4 h-4 opacity-40" />
+              <span className="text-slate-50">&copy; {new Date().getFullYear()} NovusSparks AI. All rights reserved.</span>
+            </div>
+            <span className="hidden sm:inline text-gray-700">|</span>
+            <div className="flex items-center gap-1.5 text-gray-400">
+              <img src={techpigeonLogo} alt="" className="w-3.5 h-3.5 opacity-60" />
+              Powered by <a href="https://www.techpigeon.com.pk" target="_blank" rel="noopener noreferrer" className="hover:underline font-medium text-gray-300">Techpigeon</a>
+            </div>
           </div>
           <div className="flex items-center gap-4">
             {user ? (

@@ -432,7 +432,7 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
           </div>
 
           <ScrollArea className="h-[calc(100vh-280px)] min-h-[360px] pr-2 scroll-smooth">
-            <div className="space-y-2">
+            <div className="space-y-1">
               {isLoadingThreads && <p className="text-xs text-muted-foreground">Loading threads...</p>}
 
               {!isLoadingThreads && threads.length === 0 && (
@@ -454,39 +454,38 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
                   <div
                     key={thread.id}
                     className={cn(
-                      "w-full rounded-lg border px-2 py-2 transition-colors group",
+                      "w-full rounded-lg border px-2 py-1.5 transition-colors group",
                       activeThreadId === thread.id
                         ? "border-primary bg-primary/10"
                         : "border-border/50 hover:bg-secondary/30"
                     )}
                   >
-                    <div className="flex items-start gap-2">
+                    <div className="flex items-center gap-1.5">
                       <button
                         type="button"
                         onClick={() => setActiveThreadId(thread.id)}
                         className="flex-1 text-left min-w-0"
                       >
-                        <p className="text-sm font-medium text-foreground truncate">{thread.title}</p>
-                        <p className="text-[11px] text-muted-foreground truncate">{thread.module}</p>
+                        <p className="text-xs font-medium text-foreground truncate">{thread.title}</p>
                       </button>
-                      <div className="flex items-center gap-1 shrink-0">
+                      <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                         <Button
                           size="icon"
-                          variant="outline"
-                          className="h-7 w-7"
+                          variant="ghost"
+                          className="h-6 w-6"
                           onClick={() => void handleRenameThread(thread.id, thread.title)}
                           title="Rename thread"
                         >
-                          <PencilSimple size={13} />
+                          <PencilSimple size={12} />
                         </Button>
                         <Button
                           size="icon"
-                          variant="outline"
-                          className="h-7 w-7 text-destructive border-destructive/30 hover:text-destructive"
+                          variant="ghost"
+                          className="h-6 w-6 text-destructive hover:text-destructive"
                           onClick={() => void handleDeleteThread(thread.id)}
                           title="Delete thread"
                         >
-                          <Trash size={13} />
+                          <Trash size={12} />
                         </Button>
                       </div>
                     </div>

@@ -4,6 +4,7 @@
 
 import React, { useState } from "react"
 import { useSentinelAuth } from "../../hooks/useSentinelAuth"
+import techpigeonLogo from "@/assets/images/techpigeon-logo.png"
 
 interface LoginFormProps {
   onSuccess?: () => void
@@ -106,8 +107,9 @@ export function LoginForm({ onSuccess, onSwitchToRegister }: LoginFormProps) {
         </p>
       )}
 
-      <p className="text-center text-xs text-gray-400 mt-4">
-        Powered by NovusSparks AI
+      <p className="text-center text-xs text-gray-400 mt-4 flex items-center justify-center gap-1.5">
+        <img src={techpigeonLogo} alt="" className="w-4 h-4 inline-block" />
+        Powered by <a href="https://www.techpigeon.com.pk" target="_blank" rel="noopener noreferrer" className="hover:underline font-medium text-gray-300">Techpigeon</a>
       </p>
     </div>
   )
