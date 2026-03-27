@@ -437,6 +437,18 @@ export async function updateChatThread(
   return rowsArray[0] ? (rowsArray[0] as ChatThread) : null
 }
 
+export async function deleteChatThread(id: number, userId?: number): Promise<boolean> {
+  const sql = await getNeonClient()
+  const rows = await sql`
+    DELETE FROM chat_threads
+    WHERE id = ${id}
+      AND (${userId ?? null}::int IS NULL OR user_id = ${userId ?? null})
+    RETURNING id
+  `
+  const rowsArray = Array.isArray(rows) ? rows : []
+  return rowsArray.length > 0
+}
+
 export async function autoTitleThreadFromFirstMessage(
   threadId: number,
   firstMessage: string

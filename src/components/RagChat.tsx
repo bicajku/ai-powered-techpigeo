@@ -3,9 +3,10 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
-import { Plus, ChatsCircle, User, Robot, ClockCounterClockwise, LinkSimple, X, Lightning, Bell, Question, UserCircle, Gift } from "@phosphor-icons/react"
+import { Plus, ChatsCircle, User, Robot, ClockCounterClockwise, LinkSimple, X, Lightning, Bell, Question, UserCircle, Gift, Trash } from "@phosphor-icons/react"
 import {
   createChatThread,
+  deleteChatThread,
   listChatThreads,
   listChatMessages,
   listRetrievalTraceByMessageId,
@@ -224,6 +225,38 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
     }
   }
 
+  const handleDeleteThread = async (threadId: number) => {
+    const confirmed = window.confirm("Delete this thread and all its messages?")
+    if (!confirmed) return
+
+    try {
+      const deleted = await deleteChatThread(threadId, dbUserId)
+      if (!deleted) {
+        toast.error("Failed to delete thread")
+        return
+      }
+
+      const remaining = threads.filter((thread) => thread.id !== threadId)
+      setThreads(remaining)
+
+      if (activeThreadId === threadId) {
+        const nextThreadId = remaining[0]?.id ?? null
+        setActiveThreadId(nextThreadId)
+        if (!nextThreadId) {
+          setMessages([])
+          setTracesByMessage({})
+          setSelectedAssistantMessageId(null)
+          setMobileTraceOpen(false)
+        }
+      }
+
+      toast.success("Thread deleted")
+    } catch (err) {
+      console.error("Failed to delete thread:", err)
+      toast.error("Failed to delete thread")
+    }
+  }
+
   const selectedTrace = selectedAssistantMessageId
     ? tracesByMessage[selectedAssistantMessageId] ?? null
     : null
@@ -350,6 +383,7 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
   }
 
   const showThreadsSidebar = messages.length > 0 && threads.length > 0
+  const showDesktopTrace = isAdmin && Boolean(selectedAssistantMessageId)
 
   return (
     <div className={cn("grid gap-4 h-full", showThreadsSidebar ? "grid-cols-1 lg:grid-cols-[280px_1fr]" : "grid-cols-1")}>
@@ -384,23 +418,38 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
                 </div>
               )}
 
-              {threads.map((thread) => (
-                <button
-                  key={thread.id}
-                  type="button"
-                  onClick={() => setActiveThreadId(thread.id)}
-                  className={cn(
-                    "w-full text-left rounded-lg border px-3 py-2 transition-colors",
-                    activeThreadId === thread.id
-                      ? "border-primary bg-primary/10"
-                      : "border-border/50 hover:bg-secondary/30"
-                  )}
-                >
-                  <p className="text-sm font-medium text-foreground truncate">{thread.title}</p>
-                  <p className="text-[11px] text-muted-foreground truncate">{thread.module}</p>
-                </button>
-              ))}
-            </div>
+                {threads.map((thread) => (
+                  <div
+                    key={thread.id}
+                    className={cn(
+                      "w-full rounded-lg border px-2 py-2 transition-colors group",
+                      activeThreadId === thread.id
+                        ? "border-primary bg-primary/10"
+                        : "border-border/50 hover:bg-secondary/30"
+                    )}
+                  >
+                    <div className="flex items-start gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setActiveThreadId(thread.id)}
+                        className="flex-1 text-left min-w-0"
+                      >
+                        <p className="text-sm font-medium text-foreground truncate">{thread.title}</p>
+                        <p className="text-[11px] text-muted-foreground truncate">{thread.module}</p>
+                      </button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7 shrink-0 opacity-70 group-hover:opacity-100"
+                        onClick={() => void handleDeleteThread(thread.id)}
+                        title="Delete thread"
+                      >
+                        <Trash size={13} />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
           </ScrollArea>
         </aside>
       )}
@@ -499,7 +548,7 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
             </div>
           </div>
         ) : (
-          <div className={cn("grid grid-cols-1 gap-3 w-full flex-1 min-h-0", isAdmin && "xl:grid-cols-[1fr_340px]")}>
+          <div className={cn("grid grid-cols-1 gap-3 w-full flex-1 min-h-0", showDesktopTrace && "xl:grid-cols-[1fr_340px]")}>
             <div className="flex flex-col h-full min-h-[400px]">
               <ScrollArea className="flex-1 pr-4 -mr-4 h-full">
                 <div className="space-y-4 pb-4">
@@ -567,7 +616,7 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
               </div>
             </div>
 
-            {isAdmin && (
+            {showDesktopTrace && (
               <aside className="hidden xl:block h-full rounded-2xl border border-border/60 bg-background/40 overflow-hidden">
                 <div className="h-full flex flex-col">
                   <div className="flex items-center justify-between px-4 py-3 border-b border-border/60 bg-card/40">
