@@ -366,7 +366,7 @@ function App() {
     }
 
     if (!allowedTabs.has(activeTab)) {
-      setActiveTab("generate")
+      setActiveTab(getDefaultSignedInTab(ragChatEnabled))
     }
   }, [activeTab, user, canAccessNGOSaaS, ragChatEnabled, canUseReviewModule, canUseHumanizerModule])
 

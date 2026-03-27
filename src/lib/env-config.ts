@@ -122,7 +122,7 @@ export function loadEnvConfig(): EnvConfig {
     enableNGOModule: getEnvBoolean("VITE_ENABLE_NGO_MODULE", true),
     enablePlagiarismChecker: getEnvBoolean("VITE_ENABLE_PLAGIARISM_CHECKER", true),
     enableHumanizer: getEnvBoolean("VITE_ENABLE_HUMANIZER", true),
-    enableRagChat: getEnvBoolean("VITE_ENABLE_RAG_CHAT", false),
+    enableRagChat: getEnvBoolean("VITE_ENABLE_RAG_CHAT", true),
     
     // Security
     secretSalt: getEnvString("VITE_SECRET_SALT", "sentinel-secret-store-v1") || "sentinel-secret-store-v1",
