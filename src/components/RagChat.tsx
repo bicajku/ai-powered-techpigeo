@@ -47,6 +47,7 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
   const [tracesByMessage, setTracesByMessage] = useState<TraceByMessage>({})
   const [selectedAssistantMessageId, setSelectedAssistantMessageId] = useState<number | null>(null)
   const [mobileTraceOpen, setMobileTraceOpen] = useState(false)
+  const [mobileThreadsOpen, setMobileThreadsOpen] = useState(false)
   const [input, setInput] = useState("")
   const [isLoadingThreads, setIsLoadingThreads] = useState(true)
   const [isCreatingThread, setIsCreatingThread] = useState(false)
@@ -384,11 +385,12 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
 
   const showThreadsSidebar = messages.length > 0 && threads.length > 0
   const showDesktopTrace = isAdmin && Boolean(selectedAssistantMessageId)
+  const composerSuggestions = starterPrompts.slice(0, 4)
 
   return (
-    <div className={cn("grid gap-4 h-full", showThreadsSidebar ? "grid-cols-1 lg:grid-cols-[280px_1fr]" : "grid-cols-1")}>
+    <div dir="auto" className={cn("grid gap-4 h-full", showThreadsSidebar ? "grid-cols-1 lg:grid-cols-[280px_1fr]" : "grid-cols-1")}>
       {showThreadsSidebar && (
-        <aside className="bg-card/80 backdrop-blur-sm rounded-2xl border border-border/50 p-3">
+        <aside className="hidden lg:block bg-card/80 backdrop-blur-sm rounded-2xl border border-border/50 p-3">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
               <ChatsCircle size={18} weight="duotone" />
@@ -399,7 +401,7 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
             </Button>
           </div>
 
-          <ScrollArea className="h-[calc(100vh-280px)] min-h-[360px] pr-2">
+          <ScrollArea className="h-[calc(100vh-280px)] min-h-[360px] pr-2 scroll-smooth">
             <div className="space-y-2">
               {isLoadingThreads && <p className="text-xs text-muted-foreground">Loading threads...</p>}
 
@@ -440,7 +442,7 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
                       <Button
                         size="icon"
                         variant="ghost"
-                        className="h-7 w-7 shrink-0 opacity-70 group-hover:opacity-100"
+                        className="h-7 w-7 shrink-0 opacity-100"
                         onClick={() => void handleDeleteThread(thread.id)}
                         title="Delete thread"
                       >
@@ -454,24 +456,35 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
         </aside>
       )}
 
-      <section className={cn("bg-card/80 backdrop-blur-sm rounded-2xl border border-border/50 p-4 flex flex-col", messages.length === 0 ? "min-h-[calc(100vh-160px)] items-center justify-center border-none bg-transparent shadow-none" : "min-h-[calc(100vh-200px)]")}>
+      <section className={cn("bg-card/80 backdrop-blur-sm rounded-2xl border border-border/50 p-3 md:p-4 flex flex-col", messages.length === 0 ? "min-h-[calc(100vh-160px)] items-center justify-center border-none bg-transparent shadow-none" : "min-h-[calc(100vh-200px)]")}>
         {messages.length > 0 && (
           <div className="flex items-center justify-between mb-3 w-full shrink-0">
             <div>
               <h3 className="text-base font-semibold text-foreground">{activeThread?.title ?? "AI Chat"}</h3>
               <p className="text-xs text-muted-foreground">Intelligent threaded conversations powered by AI</p>
             </div>
-            {isAdmin && (
+            <div className="flex items-center gap-2">
               <Button
                 size="sm"
                 variant="outline"
-                className="xl:hidden"
-                onClick={() => setMobileTraceOpen(true)}
-                disabled={!selectedTrace}
+                className="lg:hidden"
+                onClick={() => setMobileThreadsOpen(true)}
+                disabled={threads.length === 0}
               >
-                Open Trace Drawer
+                Threads
               </Button>
-            )}
+              {isAdmin && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="xl:hidden"
+                  onClick={() => setMobileTraceOpen(true)}
+                  disabled={!selectedTrace}
+                >
+                  Open Trace
+                </Button>
+              )}
+            </div>
           </div>
         )}
 
@@ -506,7 +519,7 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                className="min-h-[140px] resize-none pb-14 text-lg rounded-none border-0 bg-transparent focus-visible:ring-0"
+                className="min-h-[120px] md:min-h-[140px] resize-none pb-14 text-base md:text-lg rounded-none border-0 bg-transparent focus-visible:ring-0"
               />
               <div className="absolute bottom-3 right-3 flex items-center gap-2">
                 <div className="h-9 w-9 rounded-full bg-emerald-600/15 text-emerald-600 flex items-center justify-center">
@@ -550,7 +563,7 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
         ) : (
           <div className={cn("grid grid-cols-1 gap-3 w-full flex-1 min-h-0", showDesktopTrace && "xl:grid-cols-[1fr_340px]")}>
             <div className="flex flex-col h-full min-h-[400px]">
-              <ScrollArea className="flex-1 pr-4 -mr-4 h-full">
+              <ScrollArea className="flex-1 pr-1 md:pr-4 md:-mr-4 h-full scroll-smooth">
                 <div className="space-y-4 pb-4">
                   {messages.map((message) => {
                     const isAssistant = message.role === "assistant"
@@ -565,7 +578,7 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
                           <span className="font-semibold text-foreground">{isAssistant ? "Techpigeon AI" : "You"}</span>
                           <span className="text-muted-foreground ml-auto">{new Date(message.created_at).toLocaleTimeString()}</span>
                         </div>
-                        <div className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
+                        <div dir="auto" className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
                           {message.content}
                         </div>
 
@@ -596,6 +609,18 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
               </ScrollArea>
 
               <div className="mt-auto pt-4 shrink-0">
+                <div className="mb-3 flex flex-wrap gap-2">
+                  {composerSuggestions.map((prompt) => (
+                    <button
+                      key={`composer-${prompt.title}`}
+                      type="button"
+                      onClick={() => setInput(prompt.title)}
+                      className="rounded-full border border-border/70 bg-muted/30 px-3 py-1.5 text-xs text-foreground hover:bg-muted/50 transition-colors"
+                    >
+                      {prompt.title}
+                    </button>
+                  ))}
+                </div>
                 <div className="relative shadow-sm rounded-xl">
                   <Textarea
                     placeholder="Type your message..."
@@ -653,6 +678,48 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
           </SheetContent>
         </Sheet>
       )}
+
+      <Sheet open={mobileThreadsOpen} onOpenChange={setMobileThreadsOpen}>
+        <SheetContent side="left" className="lg:hidden w-full sm:max-w-sm p-0">
+          <SheetHeader className="border-b border-border/60 p-4">
+            <SheetTitle>Threads</SheetTitle>
+            <SheetDescription>Open, create, or delete chat threads</SheetDescription>
+          </SheetHeader>
+          <div className="p-3 border-b border-border/60">
+            <Button size="sm" variant="outline" onClick={handleCreateThread} disabled={isCreatingThread} className="w-full">
+              <Plus size={14} className="mr-1" />
+              {isCreatingThread ? "Creating..." : "New Thread"}
+            </Button>
+          </div>
+          <ScrollArea className="h-[calc(100vh-150px)] p-3 scroll-smooth">
+            <div className="space-y-2">
+              {threads.map((thread) => (
+                <div key={`mobile-${thread.id}`} className={cn("rounded-lg border px-2 py-2", activeThreadId === thread.id ? "border-primary bg-primary/10" : "border-border/50") }>
+                  <div className="flex items-start gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveThreadId(thread.id)
+                        setMobileThreadsOpen(false)
+                      }}
+                      className="flex-1 text-left min-w-0"
+                    >
+                      <p className="text-sm font-medium text-foreground truncate">{thread.title}</p>
+                      <p className="text-[11px] text-muted-foreground truncate">{thread.module}</p>
+                    </button>
+                    <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={() => void handleDeleteThread(thread.id)}>
+                      <Trash size={13} />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+              {threads.length === 0 && (
+                <p className="text-xs text-muted-foreground">No threads yet.</p>
+              )}
+            </div>
+          </ScrollArea>
+        </SheetContent>
+      </Sheet>
     </div>
   )
 }

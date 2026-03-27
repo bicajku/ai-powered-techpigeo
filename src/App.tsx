@@ -1388,7 +1388,7 @@ ${JSON.stringify(candidate)}`
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             {/* Desktop/Tablet Tabs Navigation */}
-            <div className="hidden md:block w-full mb-8 sticky top-0 z-40 py-2">
+            <div className="hidden md:block w-full mb-8 py-2">
               <div className="w-full max-w-7xl mx-auto px-2 md:px-4">
                 <TabsList className="w-full h-auto bg-card/80 backdrop-blur-sm rounded-2xl border border-border/60 shadow-sm flex flex-nowrap gap-1 md:gap-2 p-2 md:p-3 justify-start overflow-x-auto overflow-y-hidden whitespace-nowrap">
                   <TabsTrigger value="generate" className="gap-1.5 text-xs md:text-sm px-3 md:px-4 py-2 md:py-2.5 whitespace-nowrap flex-shrink-0 rounded-lg hover:bg-accent/50 transition-colors data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">

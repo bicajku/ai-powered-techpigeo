@@ -48,8 +48,8 @@ export function MobileNav({
   }
 
   return (
-    <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 pb-[max(env(safe-area-inset-bottom),0px)] px-2">
-      <nav className="grid grid-cols-4 sm:grid-cols-5 gap-1 p-2 bg-card/95 backdrop-blur-sm border border-border shadow-lg rounded-2xl mb-2">
+    <div className="md:hidden px-2 pb-[max(env(safe-area-inset-bottom),0px)]">
+      <nav className="grid grid-cols-4 sm:grid-cols-5 gap-1 p-2 bg-card/95 backdrop-blur-sm border border-border shadow-lg rounded-2xl mt-3 mb-2">
         {navItems.map((item) => {
           const Icon = item.icon
           const isActive = activeTab === item.value
