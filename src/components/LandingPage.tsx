@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { AuthForm } from "@/components/AuthForm"
-import { Sparkle, Target, Lightbulb, ShieldCheck, Quotes, Brain, ChartBar, Presentation, Rocket, Users, Lightning, ArrowRight, CheckCircle, ArrowLeft, UserCircle, CursorClick } from "@phosphor-icons/react"
+import { Sparkle, Target, Lightbulb, ShieldCheck, Quotes, Brain, ChartBar, Presentation, Rocket, Users, Lightning, ArrowRight, CheckCircle, ArrowLeft, UserCircle, CursorClick, Bank, Heartbeat, Buildings, HandHeart, RocketLaunch, TreeStructure, ArrowsOut, TerminalWindow, Shield, HardDrives } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
 import faviconImg from "@/assets/images/sentinel-sas-logo.svg"
 
@@ -362,70 +362,82 @@ export function LandingPage({ onAuthSuccess, user, onBackToDashboard, onNavigate
 
         {/* CTA Buttons */}
         <motion.div
-          className="flex flex-col sm:flex-row items-center gap-3 sm:gap-4 mb-16 md:mb-20"
+          className="flex flex-col items-center gap-4 mb-16 md:mb-20"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 1.2, duration: 0.6 }}
         >
-          {user ? (
-            <Button
-              size="lg"
-              onClick={onBackToDashboard}
-              className="bg-gradient-to-r from-[#5cc3eb] to-[#8cb499] hover:from-[#5cc3eb]/90 hover:to-[#8cb499]/90 text-white shadow-xl shadow-[#5cc3eb]/25 text-sm sm:text-base px-6 sm:px-8 h-11 sm:h-12 w-full sm:w-auto"
-            >
-              <Rocket weight="fill" className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
-              Go to Dashboard
-            </Button>
-          ) : (
-            <>
+          <div className="flex flex-col sm:flex-row items-center gap-3 sm:gap-4">
+            {user ? (
               <Button
                 size="lg"
-                onClick={() => openAuth("signup")}
+                onClick={onBackToDashboard}
                 className="bg-gradient-to-r from-[#5cc3eb] to-[#8cb499] hover:from-[#5cc3eb]/90 hover:to-[#8cb499]/90 text-white shadow-xl shadow-[#5cc3eb]/25 text-sm sm:text-base px-6 sm:px-8 h-11 sm:h-12 w-full sm:w-auto"
               >
                 <Rocket weight="fill" className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
-                Start Building for Free
+                Go to Dashboard
               </Button>
-              <Button
-                variant="outline"
-                size="lg"
-                onClick={() => openAuth("login")}
-                className="border-white/15 text-gray-300 hover:bg-white/5 hover:text-white text-sm sm:text-base px-6 sm:px-8 h-11 sm:h-12 bg-transparent w-full sm:w-auto"
-              >
-                Sign In to Dashboard
-                <ArrowRight className="w-4 h-4 ml-2" />
-              </Button>
-            </>
-          )}
+            ) : (
+              <>
+                <Button
+                  size="lg"
+                  onClick={() => openAuth("signup")}
+                  className="bg-gradient-to-r from-[#5cc3eb] to-[#8cb499] hover:from-[#5cc3eb]/90 hover:to-[#8cb499]/90 text-white shadow-xl shadow-[#5cc3eb]/25 text-sm sm:text-base px-6 sm:px-8 h-11 sm:h-12 w-full sm:w-auto"
+                >
+                  <Rocket weight="fill" className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
+                  Deploy Sentinel Now
+                </Button>
+                <Button
+                  variant="outline"
+                  size="lg"
+                  onClick={() => openAuth("login")}
+                  className="border-white/15 text-gray-300 hover:bg-white/5 hover:text-white text-sm sm:text-base px-6 sm:px-8 h-11 sm:h-12 bg-transparent w-full sm:w-auto"
+                >
+                  Sign In to Dashboard
+                  <ArrowRight className="w-4 h-4 ml-2" />
+                </Button>
+              </>
+            )}
+          </div>
+          
+          <div className="flex items-center gap-2 mt-4 text-gray-500 text-xs sm:text-sm font-medium">
+            <Shield weight="fill" className="text-[#8cb499] w-4 h-4" />
+            <span>Trusted by forward-thinking enterprises globally.</span>
+          </div>
         </motion.div>
       </section>
-      {/* === Social Proof / Stats Bar === */}
+      {/* === Core Capabilities === */}
       <motion.section
         className="relative z-10 border-y border-white/[0.06] bg-white/[0.02] backdrop-blur-sm"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 1.5 }}
       >
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8 grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6 text-center">
-          <div>
-            <div className="text-xl sm:text-2xl md:text-3xl font-bold text-white">3+</div>
-            <div className="text-[10px] sm:text-xs text-gray-500 mt-1">Proprietary AI Engines</div>
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10 grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8 text-center divide-y md:divide-y-0 md:divide-x divide-white/[0.06]">
+          <div className="pt-4 md:pt-0 px-4">
+            <div className="flex justify-center mb-3">
+              <RocketLaunch weight="duotone" className="w-8 h-8 text-[#5cc3eb]" />
+            </div>
+            <h3 className="text-lg font-bold text-white mb-2">Launch Fast</h3>
+            <p className="text-sm text-gray-500">Bring AI agents from concept to production in days, not months. Accelerate your deployment pipeline.</p>
           </div>
-          <div>
-            <div className="text-xl sm:text-2xl md:text-3xl font-bold text-white">100%</div>
-            <div className="text-[10px] sm:text-xs text-gray-500 mt-1">Cross-Validated Results</div>
+          <div className="pt-6 md:pt-0 px-4">
+            <div className="flex justify-center mb-3">
+              <HardDrives weight="duotone" className="w-8 h-8 text-[#8cb499]" />
+            </div>
+            <h3 className="text-lg font-bold text-white mb-2">Deploy Simply</h3>
+            <p className="text-sm text-gray-500">Seamless integration into your existing infrastructure with secure, compliant enterprise protocols.</p>
           </div>
-          <div>
-            <div className="text-xl sm:text-2xl md:text-3xl font-bold text-white">6+</div>
-            <div className="text-[10px] sm:text-xs text-gray-500 mt-1">Enterprise AI Tools</div>
-          </div>
-          <div>
-            <div className="text-xl sm:text-2xl md:text-3xl font-bold text-[#5cc3eb]">Free</div>
-            <div className="text-[10px] sm:text-xs text-gray-500 mt-1">To Get Started</div>
+          <div className="pt-6 md:pt-0 px-4">
+            <div className="flex justify-center mb-3">
+              <ChartBar weight="duotone" className="w-8 h-8 text-[#bca444]" />
+            </div>
+            <h3 className="text-lg font-bold text-white mb-2">Track Every Agent</h3>
+            <p className="text-sm text-gray-500">Enterprise-grade governance, comprehensive audit logs, and live token analytics for complete visibility.</p>
           </div>
         </div>
       </motion.section>
-      {/* === Why Sentinel — Compelling Features === */}
+      {/* === Product Suite Breakdown === */}
       <section className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 py-16 md:py-24">
         <motion.div
           className="text-center mb-12 md:mb-16"
@@ -434,45 +446,45 @@ export function LandingPage({ onAuthSuccess, user, onBackToDashboard, onNavigate
           viewport={{ once: true }}
         >
           <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-4">
-            <span className="bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400">Why Teams Choose </span>
-            <span className="bg-clip-text text-transparent bg-gradient-to-r from-[#5cc3eb] to-[#8cb499]">Sentinel</span>
+            <span className="bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400">The Sentinel </span>
+            <span className="bg-clip-text text-transparent bg-gradient-to-r from-[#5cc3eb] to-[#8cb499]">Architecture</span>
           </h2>
           <p className="text-sm sm:text-base text-gray-500 max-w-2xl mx-auto">
-            Most AI tools give you one engine's opinion. Sentinel gives you the consensus of multiple proprietary engines — so every decision is backed by multi-layered intelligence.
+            A comprehensive, modular suite designed to deploy, orchestrate, and scale specialized AI capabilities across your entire organization.
           </p>
         </motion.div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
           {[
             {
-              icon: Brain, color: "sky",
-              title: "Consensus Intelligence",
-              desc: "Every query runs through our proprietary RGS Engine, MCP Protocol, and Sentinel Cortex simultaneously. Results are synthesized and humanized into one authoritative answer."
+              icon: Target, color: "sky",
+              title: "Sentinel RGS Engine",
+              desc: "Proprietary retrieval-generation-synthesis engine for deep market analysis and competitive strategy modeling."
             },
             {
-              icon: Lightbulb, color: "gold",
-              title: "Idea-to-Execution Pipeline",
-              desc: "Go from a raw concept to a validated business canvas, pitch deck, and go-to-market strategy — all generated and cross-checked by AI in minutes."
+              icon: Brain, color: "sage",
+              title: "Sentinel Cortex",
+              desc: "Specialized context-awareness layer for ingesting massive knowledge bases and running semantic RAG queries securely."
             },
             {
-              icon: ShieldCheck, color: "sage",
-              title: "Integrity & Originality Engine",
-              desc: "Built-in plagiarism detection, source verification, and quality scoring. Know your content is original before you publish or pitch."
+              icon: HandHeart, color: "gold",
+              title: "NGO / Non-Profit Module",
+              desc: "Specialized workflows tailored for organizational growth, donor analysis, and impact forecasting."
             },
             {
-              icon: ChartBar, color: "sky",
-              title: "Real-Time Market Analysis",
-              desc: "AI-driven competitive landscape mapping, pricing strategy, and trend forecasting pulled from live data and structured models."
+              icon: ShieldCheck, color: "sky",
+              title: "Consensus Protocol",
+              desc: "Multi-engine cross-validation ensuring your AI outputs are accurate, original, and hallucination-free."
             },
             {
-              icon: Users, color: "sage",
-              title: "Team Collaboration Built In",
-              desc: "Invite team members, share strategies, and collaborate on business plans. Role-based access keeps everyone aligned."
+              icon: Presentation, color: "sage",
+              title: "Business Canvas Generator",
+              desc: "Automatically map complex ideas into structured business models, ready for presentation and execution."
             },
             {
               icon: Lightning, color: "gold",
-              title: "Enterprise-Grade Governance",
-              desc: "Budget limits, token tracking, export controls, and audit logs. Scale AI usage across your organization with full visibility."
+              title: "Enterprise Command Center",
+              desc: "Full administrative control with role-based access, usage tracking, and centralized governance limits."
             },
           ].map((feature, i) => {
             const colors = COLOR_MAP[feature.color]
@@ -495,34 +507,80 @@ export function LandingPage({ onAuthSuccess, user, onBackToDashboard, onNavigate
           })}
         </div>
       </section>
-      {/* === How It Works === */}
+      {/* === Industry Solutions === */}
+      <section className="relative z-10 border-t border-white/[0.06] bg-black/20">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-16 md:py-24">
+          <motion.div
+            className="text-center mb-12 md:mb-16"
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+          >
+            <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-4 text-white">Engineered for Every Industry</h2>
+            <p className="text-sm sm:text-base text-gray-400">Tailored AI capabilities to accelerate your sector's most complex challenges.</p>
+          </motion.div>
+          
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+            {[
+              { icon: Bank, title: "Financial Services", desc: "Automate risk assessment, streamline compliance reporting, and generate market insights securely." },
+              { icon: Heartbeat, title: "Healthcare", desc: "Synthesize medical literature, optimize administrative workflows, and accelerate research seamlessly." },
+              { icon: Buildings, title: "Enterprise Operations", desc: "Empower internal teams with custom knowledge bases, automated drafting, and workflow optimization." },
+              { icon: HandHeart, title: "Non-Profits & NGOs", desc: "Grant writing assistance, donor engagement strategies, and impact reporting powered by AI." }
+            ].map((industry, i) => (
+              <motion.div
+                key={industry.title}
+                className="p-6 rounded-2xl bg-gradient-to-b from-white/[0.03] to-transparent border border-white/[0.05] hover:border-white/[0.1] transition-all"
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: i * 0.1 }}
+              >
+                <industry.icon weight="duotone" className="w-8 h-8 text-[#5cc3eb] mb-4" />
+                <h3 className="text-white font-semibold mb-2">{industry.title}</h3>
+                <p className="text-gray-500 text-sm leading-relaxed">{industry.desc}</p>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* === The Sentinel AI Journey (Maturity Model) === */}
       <section className="relative z-10 border-t border-white/[0.06] bg-white/[0.01]">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-16 md:py-24">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-16 md:py-24">
           <motion.div
             className="text-center mb-10 md:mb-14"
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
           >
-            <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-4 text-sky-400">How Sentinel Works</h2>
-            <p className="text-sm sm:text-base text-gray-500">Three steps to decisions you can trust.</p>
+            <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-4">
+              <span className="bg-clip-text text-transparent bg-gradient-to-r from-[#5cc3eb] to-[#8cb499]">The Sentinel AI Journey</span>
+            </h2>
+            <p className="text-sm sm:text-base text-gray-500">From initial prompt to enterprise-wide scaling.</p>
           </motion.div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6 md:gap-8 relative">
+            {/* Connecting line for desktop */}
+            <div className="hidden md:block absolute top-[44px] left-[10%] right-[10%] h-px bg-gradient-to-r from-[#5cc3eb]/0 via-[#5cc3eb]/50 to-[#bca444]/0 z-0"></div>
+
             {[
-              { step: "01", title: "Describe Your Goal", desc: "Enter your business idea, strategy question, or content to validate. No templates needed — just speak naturally." },
-              { step: "02", title: "AI Engines Collaborate", desc: "Our RGS Engine, MCP Protocol, and Sentinel Cortex analyze your input in parallel. Each engine brings unique strengths to the table." },
-              { step: "03", title: "Get Consensus Results", desc: "Receive a synthesized, humanized response backed by multiple AI perspectives. Export as PDF, Word, or share with your team." },
+              { step: "01", icon: TerminalWindow, title: "Prompt", desc: "Start instantly with natural language interfaces, suggested templates, and powerful default engines." },
+              { step: "02", icon: TreeStructure, title: "Orchestrate", desc: "Chain multiple tasks and specialized AI tools together for complex, multi-step business workflows." },
+              { step: "03", icon: RocketLaunch, title: "Deploy", desc: "Roll out AI capabilities securely to your entire organization with isolated environments and RBAC." },
+              { step: "04", icon: ArrowsOut, title: "Scale", desc: "Monitor usage, optimize costs, and expand the impact of AI across all departments and use cases." },
             ].map((item, i) => (
               <motion.div
                 key={item.step}
-                className="text-center md:text-left"
+                className="text-center relative z-10"
                 initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: i * 0.15 }}
               >
-                <div className="text-3xl sm:text-4xl font-black mb-3 text-gray-50">{item.step}</div>
+                <div className="w-12 h-12 mx-auto rounded-full bg-black border border-white/10 flex items-center justify-center mb-4 shadow-[0_0_15px_rgba(92,195,235,0.15)]">
+                  <item.icon weight="fill" className="w-5 h-5 text-[#8cb499]" />
+                </div>
+                <div className="text-[#bca444] text-xs font-bold mb-2 tracking-widest">PHASE {item.step}</div>
                 <h3 className="text-white text-sm sm:text-base font-semibold mb-2">{item.title}</h3>
                 <p className="text-gray-500 text-xs sm:text-sm leading-relaxed">{item.desc}</p>
               </motion.div>
