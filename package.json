@@ -1,8 +1,8 @@
 {
-    "name": "techpigeon-ai-assistant",
+    "name": "novussparks-ai",
     "private": true,
     "version": "1.0.0",
-    "description": "AI-Powered TechPigeon Assistant - Pakistan's leading AI platform",
+    "description": "NovusSparks AI - Enterprise AI Platform",
     "type": "module",
     "engines": {
         "node": ">=18.0.0"

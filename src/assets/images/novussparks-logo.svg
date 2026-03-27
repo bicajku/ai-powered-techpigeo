@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- NovusSparks Primary Gradient: Electric Cyan → Spark Gold -->
+    <linearGradient id="nsGradPrimary" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="55%" stop-color="#6ee7a0" />
+      <stop offset="100%" stop-color="#e5a932" />
+    </linearGradient>
+
+    <!-- Reverse accent gradient -->
+    <linearGradient id="nsGradAccent" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#e5a932" />
+      <stop offset="100%" stop-color="#38bdf8" />
+    </linearGradient>
+
+    <!-- Core energy glow -->
+    <radialGradient id="nsGlow" cx="50%" cy="45%" r="45%">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.22"/>
+      <stop offset="60%" stop-color="#6ee7a0" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="#e5a932" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Spark particle glow -->
+    <filter id="sparkGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="6" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+
+    <filter id="softGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="4" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Ambient energy field -->
+  <circle cx="256" cy="230" r="200" fill="url(#nsGlow)" />
+
+  <!-- Outer hexagonal frame — innovation shield -->
+  <polygon points="256,45 435,115 435,305 256,415 77,305 77,115" fill="none" stroke="currentColor" stroke-width="1.5" stroke-opacity="0.08" />
+  <polygon points="256,65 410,128 410,292 256,393 102,292 102,128" fill="none" stroke="url(#nsGradPrimary)" stroke-width="3" stroke-opacity="0.6" stroke-linejoin="round" />
+
+  <!-- ══════ N letterform — left side ══════ -->
+  <!-- Constructed as a bold geometric "N" using strokes -->
+  <g filter="url(#softGlow)">
+    <!-- N left vertical -->
+    <line x1="152" y1="300" x2="152" y2="155" stroke="url(#nsGradPrimary)" stroke-width="14" stroke-linecap="round" />
+    <!-- N diagonal -->
+    <line x1="152" y1="155" x2="248" y2="300" stroke="url(#nsGradPrimary)" stroke-width="12" stroke-linecap="round" />
+    <!-- N right vertical -->
+    <line x1="248" y1="300" x2="248" y2="155" stroke="url(#nsGradPrimary)" stroke-width="14" stroke-linecap="round" />
+  </g>
+
+  <!-- ══════ S letterform — right side ══════ -->
+  <!-- Constructed as a flowing "S" with neural-curve aesthetics -->
+  <g filter="url(#softGlow)">
+    <path d="M 350 162 C 350 162, 350 155, 338 150 C 320 143, 290 143, 278 155 C 266 167, 270 182, 285 192 C 300 202, 340 210, 350 225 C 360 240, 358 260, 340 272 C 322 284, 290 285, 275 275 C 268 270, 264 262, 264 262"
+      fill="none" stroke="url(#nsGradAccent)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" />
+  </g>
+
+  <!-- ══════ Spark particles — the ignition points ══════ -->
+  <!-- Top spark cluster -->
+  <circle cx="200" cy="115" r="4" fill="#38bdf8" filter="url(#sparkGlow)" opacity="0.9" />
+  <circle cx="310" cy="108" r="3" fill="#e5a932" filter="url(#sparkGlow)" opacity="0.85" />
+  <circle cx="256" cy="88" r="5" fill="#6ee7a0" filter="url(#sparkGlow)" opacity="0.8" />
+
+  <!-- Side spark nodes -->
+  <circle cx="120" cy="200" r="3.5" fill="#38bdf8" opacity="0.7" />
+  <circle cx="395" cy="195" r="3" fill="#e5a932" opacity="0.75" />
+  <circle cx="115" cy="280" r="2.5" fill="#6ee7a0" opacity="0.6" />
+  <circle cx="400" cy="270" r="3" fill="#38bdf8" opacity="0.65" />
+
+  <!-- Bottom spark trail -->
+  <circle cx="180" cy="340" r="3" fill="#e5a932" filter="url(#sparkGlow)" opacity="0.7" />
+  <circle cx="340" cy="335" r="2.5" fill="#6ee7a0" filter="url(#sparkGlow)" opacity="0.65" />
+
+  <!-- ══════ Central spark nexus — the ignition core ══════ -->
+  <circle cx="256" cy="228" r="18" fill="none" stroke="url(#nsGradPrimary)" stroke-width="2.5" opacity="0.5" />
+  <circle cx="256" cy="228" r="8" fill="#e5a932" filter="url(#sparkGlow)" />
+  <circle cx="256" cy="228" r="3" fill="#ffffff" />
+
+  <!-- Energy connection lines (spark trails) -->
+  <line x1="248" y1="155" x2="264" y2="228" stroke="#38bdf8" stroke-width="1" stroke-dasharray="3 5" opacity="0.3" />
+  <line x1="264" y1="162" x2="256" y2="210" stroke="#e5a932" stroke-width="1" stroke-dasharray="3 5" opacity="0.3" />
+
+  <!-- ══════ Typography ══════ -->
+  <text x="256" y="450" font-family="'Plus Jakarta Sans', 'Inter', sans-serif" font-size="28" font-weight="900" fill="currentColor" text-anchor="middle" letter-spacing="5">NOVUS SPARKS</text>
+  <text x="256" y="478" font-family="'Plus Jakarta Sans', 'Inter', sans-serif" font-size="12" font-weight="700" fill="#e5a932" text-anchor="middle" letter-spacing="10">AI PLATFORM</text>
+</svg>

@@ -609,7 +609,7 @@ export async function exportReviewToPDF(
   } else {
     const link = document.createElement('a')
     link.href = url
-    link.download = `${review.name.replace(/[^a-z0-9]/gi, '_')}_Techpigeon_Review.html`
+    link.download = `${review.name.replace(/[^a-z0-9]/gi, '_')}_NovusSparks_Review.html`
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
@@ -694,7 +694,7 @@ export async function exportBusinessCanvasAsPDF(canvas: BusinessCanvasModel, ide
   } else {
     const link = document.createElement('a')
     link.href = url
-    link.download = `Business_Canvas_${ideaName.replace(/[^a-z0-9]/gi, '_')}_Techpigeon.html`
+    link.download = `Business_Canvas_${ideaName.replace(/[^a-z0-9]/gi, '_')}_NovusSparks.html`
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
@@ -772,7 +772,7 @@ export async function exportPitchDeckAsPDF(pitchDeck: PitchDeck, ideaName: strin
   } else {
     const link = document.createElement('a')
     link.href = url
-    link.download = `Pitch_Deck_${ideaName.replace(/[^a-z0-9]/gi, '_')}_Techpigeon.html`
+    link.download = `Pitch_Deck_${ideaName.replace(/[^a-z0-9]/gi, '_')}_NovusSparks.html`
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)

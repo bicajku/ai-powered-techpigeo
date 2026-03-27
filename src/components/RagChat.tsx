@@ -551,7 +551,7 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
             </div>
 
             <h1 className="text-4xl md:text-5xl font-semibold tracking-tight text-foreground mb-8 text-center">
-              Welcome, how can Techpigeon AI help you?
+              Welcome, how can NovusSparks AI help you?
             </h1>
             
             <div className="w-full relative mb-10 rounded-2xl border border-border/60 bg-background shadow-sm overflow-hidden">
@@ -616,7 +616,7 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
                           <div className={cn("h-6 w-6 rounded-full flex items-center justify-center", isAssistant ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground")}>
                             {isAssistant ? <Robot size={14} weight="fill" /> : <User size={14} weight="fill" />}
                           </div>
-                          <span className="font-semibold text-foreground">{isAssistant ? "Techpigeon AI" : "You"}</span>
+                          <span className="font-semibold text-foreground">{isAssistant ? "NovusSparks AI" : "You"}</span>
                           <span className="text-muted-foreground ml-auto">{new Date(message.created_at).toLocaleTimeString()}</span>
                           {!isAssistant && (
                             <Button

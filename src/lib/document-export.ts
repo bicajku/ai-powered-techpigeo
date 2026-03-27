@@ -174,7 +174,7 @@ export async function exportStrategyAsWord(strategy: SavedStrategy) {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
-  link.download = `Strategy_${strategy.name.replace(/[^a-z0-9]/gi, '_')}_Techpigeon.doc`
+  link.download = `Strategy_${strategy.name.replace(/[^a-z0-9]/gi, '_')}_NovusSparks.doc`
   document.body.appendChild(link)
   link.click()
   document.body.removeChild(link)
@@ -341,7 +341,7 @@ export async function exportBusinessCanvasAsWord(canvas: BusinessCanvasModel, id
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
-  link.download = `Business_Canvas_${ideaName.replace(/[^a-z0-9]/gi, '_')}_Techpigeon.doc`
+  link.download = `Business_Canvas_${ideaName.replace(/[^a-z0-9]/gi, '_')}_NovusSparks.doc`
   document.body.appendChild(link)
   link.click()
   document.body.removeChild(link)
@@ -428,7 +428,7 @@ export async function exportBusinessCanvasAsPptxWord(canvas: BusinessCanvasModel
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
-  link.download = `Business_Canvas_Presentation_${ideaName.replace(/[^a-z0-9]/gi, '_')}_Techpigeon.doc`
+  link.download = `Business_Canvas_Presentation_${ideaName.replace(/[^a-z0-9]/gi, '_')}_NovusSparks.doc`
   document.body.appendChild(link)
   link.click()
   document.body.removeChild(link)
@@ -566,7 +566,7 @@ export async function exportPitchDeckAsWord(pitchDeck: PitchDeck, ideaName: stri
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
-  link.download = `Pitch_Deck_${ideaName.replace(/[^a-z0-9]/gi, '_')}_Techpigeon.doc`
+  link.download = `Pitch_Deck_${ideaName.replace(/[^a-z0-9]/gi, '_')}_NovusSparks.doc`
   document.body.appendChild(link)
   link.click()
   document.body.removeChild(link)

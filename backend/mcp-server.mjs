@@ -3,7 +3,7 @@ import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { z } from "zod";
 
 export const mcpServer = new McpServer({
-  name: "Techpigeon-BrightData",
+  name: "NovusSparks-BrightData",
   version: "1.0.0"
 });
 
@@ -27,7 +27,7 @@ mcpServer.tool(
     
     // Simulating Bright Data API call for now
     return {
-      content: [{ type: "text", text: `[Simulated] Bright Data Search Results for "${query}"\n1. Techpigeon Portal - https://techpigeon.ai` }]
+      content: [{ type: "text", text: `[Simulated] Bright Data Search Results for "${query}"\n1. NovusSparks Portal - https://novussparks.com` }]
     };
   }
 );
@@ -51,7 +51,7 @@ mcpServer.tool(
     
     // Simulating Bright Data Scraping
     return {
-      content: [{ type: "text", text: `[Simulated] Bright Data Scrape Results for ${url} in ${format} format.\n\n# Welcome to Techpigeon\nThis data was scraped via Bright Data.` }]
+      content: [{ type: "text", text: `[Simulated] Bright Data Scrape Results for ${url} in ${format} format.\n\n# Welcome to NovusSparks\nThis data was scraped via Bright Data.` }]
     };
   }
 );

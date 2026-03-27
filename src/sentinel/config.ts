@@ -14,7 +14,7 @@ export const SENTINEL_CONFIG = {
   apiBaseUrl: (import.meta.env.VITE_SENTINEL_API_BASE_URL as string | undefined) ?? "",
 
   /** Super admin email (read-only reference — seed separately) */
-  adminEmail: (import.meta.env.VITE_SENTINEL_ADMIN_EMAIL as string | undefined) ?? "sentinel.sa@techpigeon.com.pk",
+  adminEmail: (import.meta.env.VITE_SENTINEL_ADMIN_EMAIL as string | undefined) ?? "admin@novussparks.com",
 
   /** Whether the NGO SAAS module is enabled */
   ngoSaasEnabled: import.meta.env.VITE_SENTINEL_NGO_ENABLED !== "false",
@@ -80,7 +80,7 @@ export const SUBSCRIPTION_DEFINITIONS: Record<
   }
 > = {
   BASIC: {
-    label: "Sentinel Basic",
+    label: "NovusSparks Basic",
     description: "Essential tools for individuals getting started",
     pricingMonthly: 9,
     pricingYearly: 90,
@@ -96,7 +96,7 @@ export const SUBSCRIPTION_DEFINITIONS: Record<
     color: "#6366f1",
   },
   PRO: {
-    label: "Sentinel Pro",
+    label: "NovusSparks Pro",
     description: "Advanced features for power users",
     pricingMonthly: 29,
     pricingYearly: 290,
@@ -114,7 +114,7 @@ export const SUBSCRIPTION_DEFINITIONS: Record<
     color: "#8b5cf6",
   },
   TEAMS: {
-    label: "Sentinel Teams",
+    label: "NovusSparks Teams",
     description: "Collaboration tools for teams",
     pricingMonthly: 79,
     pricingYearly: 790,
@@ -132,7 +132,7 @@ export const SUBSCRIPTION_DEFINITIONS: Record<
     color: "#0ea5e9",
   },
   ENTERPRISE: {
-    label: "Sentinel Enterprise",
+    label: "NovusSparks Enterprise",
     description: "Enterprise-grade solution with NGO SAAS module",
     pricingMonthly: 0, // Contact sales
     pricingYearly: 0,
@@ -214,15 +214,15 @@ export const DEFAULT_SENTINEL_BRANDING: Omit<
   OrganizationBranding,
   "id" | "organizationId" | "createdAt" | "updatedAt"
 > = {
-  name: "Sentinel SAAS",
-  logoUrl: "/sentinel-logo.svg",
+  name: "NovusSparks AI",
+  logoUrl: "/novussparks-logo.svg",
   primaryColor: "#1e1b4b",
   secondaryColor: "#4f46e5",
-  accentColor: "#fbbf24",
+  accentColor: "#e5a932",
   phone: "",
-  email: "support@techpigeon.com.pk",
-  officeAddress: "TechPigeon, Pakistan",
-  website: "https://techpigeon.com.pk",
+  email: "support@novussparks.com",
+  officeAddress: "NovusSparks, Pakistan",
+  website: "https://novussparks.com",
   useCustomBranding: false,
 }
 

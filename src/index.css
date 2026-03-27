@@ -18,18 +18,18 @@
 :root {
   --brand-background: #ffffff;
   --brand-text: #1c1414;
-  --brand-surface: #f2f7f3;
-  --brand-primary: #5cc3eb;
+  --brand-surface: #f0faf5;
+  --brand-primary: #38bdf8;
   --brand-primary-foreground: #1c1414;
-  --brand-secondary: #8cb499;
+  --brand-secondary: #6ee7a0;
   --brand-secondary-foreground: #1c1414;
-  --brand-accent: #bca444;
+  --brand-accent: #e5a932;
   --brand-accent-foreground: #1c1414;
   --brand-border: #ddd6d2;
-  --brand-highlight: #eef9fd;
-  --brand-shadow: #5cc3eb;
-  --brand-glow-primary: rgb(92 195 235 / 0.16);
-  --brand-glow-secondary: rgb(140 180 153 / 0.18);
+  --brand-highlight: #ecfaff;
+  --brand-shadow: #38bdf8;
+  --brand-glow-primary: rgb(56 189 248 / 0.16);
+  --brand-glow-secondary: rgb(110 231 160 / 0.18);
 
   --background: var(--brand-background);
   --foreground: var(--brand-text);
@@ -106,18 +106,18 @@
   --shadow-offset-y: 10px;
 }
 
-:root[data-brand-theme="techpigeon_classic"] {
+:root[data-brand-theme="novussparks_classic"] {
   --brand-background: #ffffff;
   --brand-text: #0b1d3a;
-  --brand-surface: #f5edc8;
+  --brand-surface: #fdf5e6;
   --brand-primary: #0b1d3a;
   --brand-primary-foreground: #ffffff;
-  --brand-secondary: #3ba8d4;
+  --brand-secondary: #38bdf8;
   --brand-secondary-foreground: #0b1d3a;
-  --brand-accent: #bba442;
+  --brand-accent: #e5a932;
   --brand-accent-foreground: #1c1414;
   --brand-border: #d7deea;
-  --brand-highlight: #e8f6fc;
+  --brand-highlight: #ecfaff;
   --brand-shadow: #3ba8d4;
   --brand-glow-primary: rgb(11 29 58 / 0.12);
   --brand-glow-secondary: rgb(59 168 212 / 0.18);

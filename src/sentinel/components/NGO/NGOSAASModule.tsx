@@ -155,8 +155,8 @@ export function NGOSAASModule({ projectId, organizationId }: NGOSAASModuleProps)
           <strong>Current plan:</strong> {label}
           <br />
           Contact{" "}
-          <a href="mailto:sales@techpigeon.com.pk" className="underline">
-            sales@techpigeon.com.pk
+          <a href="mailto:sales@novussparks.com" className="underline">
+            sales@novussparks.com
           </a>{" "}
           to upgrade to Enterprise.
         </div>

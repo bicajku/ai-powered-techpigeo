@@ -107,7 +107,7 @@ export function LoginForm({ onSuccess, onSwitchToRegister }: LoginFormProps) {
       )}
 
       <p className="text-center text-xs text-gray-400 mt-4">
-        Powered by Sentinel SAAS &bull; TechPigeon
+        Powered by NovusSparks AI
       </p>
     </div>
   )

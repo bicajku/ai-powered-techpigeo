@@ -86,8 +86,8 @@ export function NGOSAASPage() {
         <p className="text-gray-600 max-w-sm">
           This module is exclusively available to Enterprise subscribers with explicit access.
           Contact your administrator or{" "}
-          <a href="mailto:sales@techpigeon.com.pk" className="text-indigo-600 underline">
-            sales@techpigeon.com.pk
+          <a href="mailto:sales@novussparks.com" className="text-indigo-600 underline">
+            sales@novussparks.com
           </a>
           .
         </p>

@@ -52,7 +52,7 @@ export function RegisterForm({ onSuccess, onSwitchToLogin }: RegisterFormProps) 
           🛡
         </div>
         <h1 className="text-2xl font-bold text-gray-900">Create Account</h1>
-        <p className="text-gray-500 text-sm mt-1">Join Sentinel SAAS</p>
+        <p className="text-gray-500 text-sm mt-1">Join NovusSparks AI</p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4" noValidate>
@@ -152,8 +152,8 @@ export function RegisterForm({ onSuccess, onSwitchToLogin }: RegisterFormProps) 
 
       <div className="mt-6 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
         <strong>Enterprise subscription?</strong> Contact{" "}
-        <a href="mailto:sales@techpigeon.com.pk" className="underline">
-          sales@techpigeon.com.pk
+        <a href="mailto:sales@novussparks.com" className="underline">
+          sales@novussparks.com
         </a>{" "}
         for NGO SAAS module access.
       </div>

@@ -5,7 +5,7 @@ import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { AuthForm } from "@/components/AuthForm"
 import { Sparkle, Target, Lightbulb, ShieldCheck, Quotes, Brain, ChartBar, Presentation, Rocket, Users, Lightning, ArrowRight, CheckCircle, ArrowLeft, UserCircle, CursorClick, Bank, Heartbeat, Buildings, HandHeart, RocketLaunch, TreeStructure, ArrowsOut, TerminalWindow, Shield, HardDrives } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
-import faviconImg from "@/assets/images/sentinel-sas-logo.svg"
+import faviconImg from "@/assets/images/novussparks-logo.svg"
 
 import { UserProfile } from "@/types"
 
@@ -30,18 +30,18 @@ interface QuoteNode {
 
 // More dots spread across the globe
 const QUOTE_NODES: QuoteNode[] = [
-  { id: 1, x: 18, y: 22, size: 1.8, delay: 0.2, quote: "Innovation distinguishes between a leader and a follower.", author: "Sentinel Brain" },
-  { id: 2, x: 72, y: 18, size: 2, delay: 0.5, quote: "The best way to predict the future is to invent it.", author: "Sentinel Analyzer" },
-  { id: 3, x: 82, y: 65, size: 1.4, delay: 0.8, quote: "AI is the new electricity, powering the next tier of human evolution.", author: "Sentinel Core" },
-  { id: 4, x: 25, y: 75, size: 2.2, delay: 1.1, quote: "Intelligence is the ability to adapt to change.", author: "Sentinel Logic" },
-  { id: 5, x: 50, y: 45, size: 3, delay: 0, quote: "Empowering your business with universal intelligence.", author: "Sentinel Nexus" },
-  { id: 6, x: 60, y: 28, size: 1.2, delay: 1.4, quote: "Every dataset tells a story waiting to be heard.", author: "Sentinel Muse" },
-  { id: 7, x: 38, y: 58, size: 1.6, delay: 0.9, quote: "Decisions fueled by data outperform intuition alone.", author: "Sentinel Oracle" },
-  { id: 8, x: 15, y: 50, size: 1, delay: 1.6, quote: "Automation is liberation for creative minds.", author: "Sentinel Forge" },
-  { id: 9, x: 85, y: 40, size: 1.3, delay: 0.3, quote: "Scale intelligence, not headcount.", author: "Sentinel Prism" },
-  { id: 10, x: 55, y: 78, size: 1.1, delay: 1.8, quote: "The future belongs to those who prepare for it today.", author: "Sentinel Vanguard" },
-  { id: 11, x: 42, y: 15, size: 0.9, delay: 2.0, quote: "Complexity simplified is strategy amplified.", author: "Sentinel Flux" },
-  { id: 12, x: 68, y: 52, size: 1.5, delay: 0.7, quote: "Build once, iterate forever.", author: "Sentinel Craft" },
+  { id: 1, x: 18, y: 22, size: 1.8, delay: 0.2, quote: "Innovation distinguishes between a leader and a follower.", author: "NovusSparks Brain" },
+  { id: 2, x: 72, y: 18, size: 2, delay: 0.5, quote: "The best way to predict the future is to invent it.", author: "NovusSparks Analyzer" },
+  { id: 3, x: 82, y: 65, size: 1.4, delay: 0.8, quote: "AI is the new electricity, powering the next tier of human evolution.", author: "NovusSparks Core" },
+  { id: 4, x: 25, y: 75, size: 2.2, delay: 1.1, quote: "Intelligence is the ability to adapt to change.", author: "NovusSparks Logic" },
+  { id: 5, x: 50, y: 45, size: 3, delay: 0, quote: "Empowering your business with universal intelligence.", author: "NovusSparks Nexus" },
+  { id: 6, x: 60, y: 28, size: 1.2, delay: 1.4, quote: "Every dataset tells a story waiting to be heard.", author: "NovusSparks Muse" },
+  { id: 7, x: 38, y: 58, size: 1.6, delay: 0.9, quote: "Decisions fueled by data outperform intuition alone.", author: "NovusSparks Oracle" },
+  { id: 8, x: 15, y: 50, size: 1, delay: 1.6, quote: "Automation is liberation for creative minds.", author: "NovusSparks Forge" },
+  { id: 9, x: 85, y: 40, size: 1.3, delay: 0.3, quote: "Scale intelligence, not headcount.", author: "NovusSparks Prism" },
+  { id: 10, x: 55, y: 78, size: 1.1, delay: 1.8, quote: "The future belongs to those who prepare for it today.", author: "NovusSparks Vanguard" },
+  { id: 11, x: 42, y: 15, size: 0.9, delay: 2.0, quote: "Complexity simplified is strategy amplified.", author: "NovusSparks Flux" },
+  { id: 12, x: 68, y: 52, size: 1.5, delay: 0.7, quote: "Build once, iterate forever.", author: "NovusSparks Craft" },
 ]
 
 // Pill data for circular orbit — tab maps to App.tsx tab values
@@ -50,15 +50,15 @@ const ORBIT_PILLS = [
   { id: "strategy", tab: "generate", label: "Strategy Engine", icon: Target, color: "sage", desc: "Multi-engine market analysis and planning" },
   { id: "integrity", tab: "plagiarism", label: "Integrity Check", icon: ShieldCheck, color: "gold", desc: "Plagiarism detection and quality validation" },
   { id: "consensus", tab: "generate", label: "Consensus AI", icon: Sparkle, color: "sky", desc: "All engines vote, synthesize, and humanize" },
-  { id: "brain", tab: "sentinel-brain", label: "Sentinel Cortex", icon: Brain, color: "sage", desc: "Knowledge base ingestion and RAG queries" },
+  { id: "brain", tab: "sentinel-brain", label: "NovusSparks Cortex", icon: Brain, color: "sage", desc: "Knowledge base ingestion and RAG queries" },
   { id: "canvas", tab: "generate", label: "Business Canvas", icon: Presentation, color: "gold", desc: "Auto-generated business model canvas" },
 ]
 
-// Techpigeon brand palette: primary #5cc3eb, secondary #8cb499, accent #bca444
+// NovusSparks brand palette: primary #38bdf8, secondary #6ee7a0, accent #e5a932
 const COLOR_MAP: Record<string, { bg: string; text: string; glow: string }> = {
-  sky: { bg: "bg-[#5cc3eb]/20", text: "text-[#5cc3eb]", glow: "shadow-[#5cc3eb]/30" },
-  sage: { bg: "bg-[#8cb499]/20", text: "text-[#8cb499]", glow: "shadow-[#8cb499]/30" },
-  gold: { bg: "bg-[#bca444]/20", text: "text-[#bca444]", glow: "shadow-[#bca444]/30" },
+  sky: { bg: "bg-[#38bdf8]/20", text: "text-[#38bdf8]", glow: "shadow-[#38bdf8]/30" },
+  sage: { bg: "bg-[#6ee7a0]/20", text: "text-[#6ee7a0]", glow: "shadow-[#6ee7a0]/30" },
+  gold: { bg: "bg-[#e5a932]/20", text: "text-[#e5a932]", glow: "shadow-[#e5a932]/30" },
 }
 
 export function LandingPage({ onAuthSuccess, user, onBackToDashboard, onNavigate }: LandingPageProps) {
@@ -91,20 +91,20 @@ export function LandingPage({ onAuthSuccess, user, onBackToDashboard, onNavigate
   }, [user, onBackToDashboard])
 
   return (
-    <div className="min-h-screen bg-[#0a0f18] text-white overflow-x-hidden relative font-sans selection:bg-[#5cc3eb]/30">
-      {/* === Ambient Background — Techpigeon brand tones === */}
+    <div className="min-h-screen bg-[#0a0f18] text-white overflow-x-hidden relative font-sans selection:bg-[#38bdf8]/30">
+      {/* === Ambient Background — NovusSparks brand tones === */}
       <div className="fixed inset-0 z-0 pointer-events-none">
-        <div className="absolute top-[15%] left-[5%] w-72 md:w-96 h-72 md:h-96 bg-[#5cc3eb]/8 rounded-full blur-[120px]" />
-        <div className="absolute top-[50%] right-[5%] w-64 md:w-80 h-64 md:h-80 bg-[#8cb499]/8 rounded-full blur-[100px]" />
-        <div className="absolute bottom-[10%] left-[40%] w-80 h-80 bg-[#bca444]/6 rounded-full blur-[140px]" />
+        <div className="absolute top-[15%] left-[5%] w-72 md:w-96 h-72 md:h-96 bg-[#38bdf8]/8 rounded-full blur-[120px]" />
+        <div className="absolute top-[50%] right-[5%] w-64 md:w-80 h-64 md:h-80 bg-[#6ee7a0]/8 rounded-full blur-[100px]" />
+        <div className="absolute bottom-[10%] left-[40%] w-80 h-80 bg-[#e5a932]/6 rounded-full blur-[140px]" />
       </div>
       {/* === Header === */}
       <header className="relative z-50 flex items-center justify-between px-4 sm:px-6 md:px-12 py-4 md:py-6">
         <div className="flex items-center gap-2.5">
-          <img src={faviconImg} alt="Sentinel AI Suite" className="w-8 h-8 md:w-10 md:h-10 object-contain" />
+          <img src={faviconImg} alt="NovusSparks AI" className="w-8 h-8 md:w-10 md:h-10 object-contain" />
           <div className="flex flex-col">
-            <span className="font-bold text-lg md:text-xl tracking-tight text-white leading-tight">Sentinel AI Suite</span>
-            <span className="text-[9px] sm:text-[10px] text-gray-500 font-medium tracking-wider">by Techpigeon</span>
+            <span className="font-bold text-lg md:text-xl tracking-tight text-white leading-tight">NovusSparks AI</span>
+            <span className="text-[9px] sm:text-[10px] text-gray-500 font-medium tracking-wider">Enterprise AI Platform</span>
           </div>
         </div>
         <div className="flex items-center gap-2 sm:gap-4">
@@ -114,14 +114,14 @@ export function LandingPage({ onAuthSuccess, user, onBackToDashboard, onNavigate
                 {user.avatarUrl ? (
                   <img src={user.avatarUrl} alt="" className="w-6 h-6 rounded-full" />
                 ) : (
-                  <UserCircle weight="fill" className="w-6 h-6 text-[#5cc3eb]" />
+                  <UserCircle weight="fill" className="w-6 h-6 text-[#38bdf8]" />
                 )}
                 <span className="text-xs sm:text-sm text-gray-300 font-medium max-w-[120px] truncate">{user.fullName}</span>
                 {user.role === "admin" && (
-                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[#bca444]/20 text-[#bca444] uppercase">Admin</span>
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[#e5a932]/20 text-[#e5a932] uppercase">Admin</span>
                 )}
               </div>
-              <Button size="sm" onClick={onBackToDashboard} className="bg-gradient-to-r from-[#5cc3eb] to-[#8cb499] hover:opacity-90 text-white shadow-lg shadow-[#5cc3eb]/20 text-sm gap-1.5">
+              <Button size="sm" onClick={onBackToDashboard} className="bg-gradient-to-r from-[#38bdf8] to-[#6ee7a0] hover:opacity-90 text-white shadow-lg shadow-[#38bdf8]/20 text-sm gap-1.5">
                 <ArrowLeft weight="bold" className="w-4 h-4" />
                 Dashboard
               </Button>
@@ -131,7 +131,7 @@ export function LandingPage({ onAuthSuccess, user, onBackToDashboard, onNavigate
               <Button variant="ghost" size="sm" onClick={() => openAuth("login")} className="text-gray-300 hover:text-white hover:bg-white/10 text-sm">
                 Login
               </Button>
-              <Button size="sm" onClick={() => openAuth("signup")} className="bg-gradient-to-r from-[#5cc3eb] to-[#8cb499] hover:opacity-90 text-white shadow-lg shadow-[#5cc3eb]/20 text-sm">
+              <Button size="sm" onClick={() => openAuth("signup")} className="bg-gradient-to-r from-[#38bdf8] to-[#6ee7a0] hover:opacity-90 text-white shadow-lg shadow-[#38bdf8]/20 text-sm">
                 Get Started Free
               </Button>
             </>
@@ -149,23 +149,23 @@ export function LandingPage({ onAuthSuccess, user, onBackToDashboard, onNavigate
           transition={{ duration: 0.8, delay: 0.2 }}
         >
           <motion.div
-            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-[#5cc3eb] text-xs sm:text-sm font-medium mb-4 md:mb-6 backdrop-blur-sm"
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-[#38bdf8] text-xs sm:text-sm font-medium mb-4 md:mb-6 backdrop-blur-sm"
             animate={{ boxShadow: ["0 0 0px rgba(92,195,235,0)", "0 0 20px rgba(92,195,235,0.15)", "0 0 0px rgba(92,195,235,0)"] }}
             transition={{ duration: 3, repeat: Infinity }}
           >
             <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#5cc3eb] opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-[#5cc3eb]"></span>
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#38bdf8] opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-[#38bdf8]"></span>
             </span>
             Consensus Mode — Proprietary Multi-Engine Intelligence
           </motion.div>
           <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tight mb-4 md:mb-6 leading-[1.1]">
             <span className="bg-clip-text text-transparent bg-gradient-to-r from-white via-gray-100 to-gray-400">The Ultimate AI</span>
             <br />
-            <span className="bg-clip-text text-transparent bg-gradient-to-r from-[#5cc3eb] via-[#8cb499] to-[#bca444]">Business Intelligence Suite</span>
+            <span className="bg-clip-text text-transparent bg-gradient-to-r from-[#38bdf8] via-[#6ee7a0] to-[#e5a932]">Business Intelligence Suite</span>
           </h1>
           <p className="text-sm sm:text-base md:text-lg text-gray-400 leading-relaxed max-w-2xl mx-auto">
-            Stop guessing, start knowing. Sentinel's proprietary <strong className="text-gray-200">RGS Engine, MCP Protocol, and Sentinel Cortex</strong> work in parallel — cross-validating every insight so you get answers you can actually trust.
+            Stop guessing, start knowing. NovusSparks' proprietary <strong className="text-gray-200">RGS Engine, MCP Protocol, and Neural Cortex</strong> work in parallel — cross-validating every insight so you get answers you can actually trust.
           </p>
         </motion.div>
 
@@ -245,13 +245,13 @@ export function LandingPage({ onAuthSuccess, user, onBackToDashboard, onNavigate
             transition={{ duration: 1.2, ease: "easeOut" }}
           >
             {/* Globe shell */}
-            <div className="w-full h-full rounded-full border-2 border-[#5cc3eb]/20 relative overflow-hidden shadow-[inset_0_0_80px_rgba(92,195,235,0.1),0_0_120px_rgba(92,195,235,0.12)]">
+            <div className="w-full h-full rounded-full border-2 border-[#38bdf8]/20 relative overflow-hidden shadow-[inset_0_0_80px_rgba(92,195,235,0.1),0_0_120px_rgba(92,195,235,0.12)]">
 
               {/* Orbit Ring 1 — full rotation */}
               <motion.div
                 animate={{ rotateZ: 360 }}
                 transition={{ duration: 45, repeat: Infinity, ease: "linear" }}
-                className="absolute inset-0 rounded-full border border-dashed border-[#5cc3eb]/25"
+                className="absolute inset-0 rounded-full border border-dashed border-[#38bdf8]/25"
               />
               {/* Orbit Ring 2 — counter-rotation, elliptical */}
               <motion.div
@@ -276,11 +276,11 @@ export function LandingPage({ onAuthSuccess, user, onBackToDashboard, onNavigate
               <motion.div
                 animate={{ rotateZ: 360 }}
                 transition={{ duration: 60, repeat: Infinity, ease: "linear" }}
-                className="absolute top-[48%] left-0 right-0 h-px bg-gradient-to-r from-transparent via-[#5cc3eb]/30 to-transparent"
+                className="absolute top-[48%] left-0 right-0 h-px bg-gradient-to-r from-transparent via-[#38bdf8]/30 to-transparent"
               />
 
               {/* Globe ambient glow */}
-              <div className="absolute inset-0 bg-gradient-to-br from-[#5cc3eb]/10 via-transparent to-[#8cb499]/10 rounded-full" />
+              <div className="absolute inset-0 bg-gradient-to-br from-[#38bdf8]/10 via-transparent to-[#6ee7a0]/10 rounded-full" />
               <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent rounded-full" />
 
               {/* Interactive Green Dots */}
@@ -303,9 +303,9 @@ export function LandingPage({ onAuthSuccess, user, onBackToDashboard, onNavigate
                   onClick={() => handleDotClick(node)}
                 >
                   <span className="relative flex items-center justify-center">
-                    <span className="animate-ping absolute rounded-full bg-[#8cb499] opacity-30" style={{ width: `${node.size * 8}px`, height: `${node.size * 8}px` }}></span>
+                    <span className="animate-ping absolute rounded-full bg-[#6ee7a0] opacity-30" style={{ width: `${node.size * 8}px`, height: `${node.size * 8}px` }}></span>
                     <span className={cn(
-                      "relative inline-flex rounded-full bg-[#8cb499] shadow-[0_0_8px_rgba(140,180,153,0.9)] transition-all duration-300 group-hover:scale-[2] group-hover:bg-[#5cc3eb]",
+                      "relative inline-flex rounded-full bg-[#6ee7a0] shadow-[0_0_8px_rgba(140,180,153,0.9)] transition-all duration-300 group-hover:scale-[2] group-hover:bg-[#38bdf8]",
                       activeQuote?.id === node.id ? "scale-[2] bg-white shadow-[0_0_15px_rgba(255,255,255,0.8)]" : ""
                     )} style={{ width: `${node.size * 4}px`, height: `${node.size * 4}px` }}></span>
                   </span>
@@ -332,11 +332,11 @@ export function LandingPage({ onAuthSuccess, user, onBackToDashboard, onNavigate
                 initial={{ opacity: 0, y: 20, scale: 0.9 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 10, scale: 0.9 }}
-                className="absolute z-50 bottom-0 left-1/2 -translate-x-1/2 translate-y-2 bg-black/70 backdrop-blur-2xl border border-[#5cc3eb]/20 rounded-2xl p-4 sm:p-5 shadow-2xl shadow-[#5cc3eb]/10 max-w-[280px] sm:max-w-sm w-full pointer-events-none"
+                className="absolute z-50 bottom-0 left-1/2 -translate-x-1/2 translate-y-2 bg-black/70 backdrop-blur-2xl border border-[#38bdf8]/20 rounded-2xl p-4 sm:p-5 shadow-2xl shadow-[#38bdf8]/10 max-w-[280px] sm:max-w-sm w-full pointer-events-none"
               >
-                <Quotes weight="fill" className="text-[#5cc3eb]/40 w-6 h-6 sm:w-8 sm:h-8 mb-2" />
+                <Quotes weight="fill" className="text-[#38bdf8]/40 w-6 h-6 sm:w-8 sm:h-8 mb-2" />
                 <p className="text-white/90 text-sm sm:text-base font-medium leading-relaxed mb-3">"{activeQuote.quote}"</p>
-                <p className="text-[#5cc3eb] text-[10px] sm:text-xs font-semibold tracking-wider uppercase">— {activeQuote.author}</p>
+                <p className="text-[#38bdf8] text-[10px] sm:text-xs font-semibold tracking-wider uppercase">— {activeQuote.author}</p>
               </motion.div>
             )}
           </AnimatePresence>
@@ -348,13 +348,13 @@ export function LandingPage({ onAuthSuccess, user, onBackToDashboard, onNavigate
                 initial={{ opacity: 0, y: 10, scale: 0.95 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 5, scale: 0.95 }}
-                className="absolute z-50 bottom-0 left-1/2 -translate-x-1/2 translate-y-2 bg-black/70 backdrop-blur-2xl border border-[#bca444]/30 rounded-2xl px-5 py-4 shadow-2xl shadow-[#bca444]/10 max-w-[300px] sm:max-w-sm w-full text-center"
+                className="absolute z-50 bottom-0 left-1/2 -translate-x-1/2 translate-y-2 bg-black/70 backdrop-blur-2xl border border-[#e5a932]/30 rounded-2xl px-5 py-4 shadow-2xl shadow-[#e5a932]/10 max-w-[300px] sm:max-w-sm w-full text-center"
               >
-                <CursorClick weight="duotone" className="text-[#bca444] w-8 h-8 mx-auto mb-2" />
+                <CursorClick weight="duotone" className="text-[#e5a932] w-8 h-8 mx-auto mb-2" />
                 <p className="text-white/90 text-sm sm:text-base font-semibold leading-relaxed">
                   Click the dots to know about what suits you best!
                 </p>
-                <p className="text-[#8cb499] text-[10px] sm:text-xs mt-1.5">Each dot reveals an insight</p>
+                <p className="text-[#6ee7a0] text-[10px] sm:text-xs mt-1.5">Each dot reveals an insight</p>
               </motion.div>
             )}
           </AnimatePresence>
@@ -372,7 +372,7 @@ export function LandingPage({ onAuthSuccess, user, onBackToDashboard, onNavigate
               <Button
                 size="lg"
                 onClick={onBackToDashboard}
-                className="bg-gradient-to-r from-[#5cc3eb] to-[#8cb499] hover:from-[#5cc3eb]/90 hover:to-[#8cb499]/90 text-white shadow-xl shadow-[#5cc3eb]/25 text-sm sm:text-base px-6 sm:px-8 h-11 sm:h-12 w-full sm:w-auto"
+                className="bg-gradient-to-r from-[#38bdf8] to-[#6ee7a0] hover:from-[#38bdf8]/90 hover:to-[#6ee7a0]/90 text-white shadow-xl shadow-[#38bdf8]/25 text-sm sm:text-base px-6 sm:px-8 h-11 sm:h-12 w-full sm:w-auto"
               >
                 <Rocket weight="fill" className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
                 Go to Dashboard
@@ -382,10 +382,10 @@ export function LandingPage({ onAuthSuccess, user, onBackToDashboard, onNavigate
                 <Button
                   size="lg"
                   onClick={() => openAuth("signup")}
-                  className="bg-gradient-to-r from-[#5cc3eb] to-[#8cb499] hover:from-[#5cc3eb]/90 hover:to-[#8cb499]/90 text-white shadow-xl shadow-[#5cc3eb]/25 text-sm sm:text-base px-6 sm:px-8 h-11 sm:h-12 w-full sm:w-auto"
+                  className="bg-gradient-to-r from-[#38bdf8] to-[#6ee7a0] hover:from-[#38bdf8]/90 hover:to-[#6ee7a0]/90 text-white shadow-xl shadow-[#38bdf8]/25 text-sm sm:text-base px-6 sm:px-8 h-11 sm:h-12 w-full sm:w-auto"
                 >
                   <Rocket weight="fill" className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
-                  Deploy Sentinel Now
+                  Deploy NovusSparks Now
                 </Button>
                 <Button
                   variant="outline"
@@ -401,7 +401,7 @@ export function LandingPage({ onAuthSuccess, user, onBackToDashboard, onNavigate
           </div>
           
           <div className="flex items-center gap-2 mt-4 text-gray-500 text-xs sm:text-sm font-medium">
-            <Shield weight="fill" className="text-[#8cb499] w-4 h-4" />
+            <Shield weight="fill" className="text-[#6ee7a0] w-4 h-4" />
             <span>Trusted by forward-thinking enterprises globally.</span>
           </div>
         </motion.div>
@@ -416,21 +416,21 @@ export function LandingPage({ onAuthSuccess, user, onBackToDashboard, onNavigate
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10 grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8 text-center divide-y md:divide-y-0 md:divide-x divide-white/[0.06]">
           <div className="pt-4 md:pt-0 px-4">
             <div className="flex justify-center mb-3">
-              <RocketLaunch weight="duotone" className="w-8 h-8 text-[#5cc3eb]" />
+              <RocketLaunch weight="duotone" className="w-8 h-8 text-[#38bdf8]" />
             </div>
             <h3 className="text-lg font-bold text-white mb-2">Launch Fast</h3>
             <p className="text-sm text-gray-500">Bring AI agents from concept to production in days, not months. Accelerate your deployment pipeline.</p>
           </div>
           <div className="pt-6 md:pt-0 px-4">
             <div className="flex justify-center mb-3">
-              <HardDrives weight="duotone" className="w-8 h-8 text-[#8cb499]" />
+              <HardDrives weight="duotone" className="w-8 h-8 text-[#6ee7a0]" />
             </div>
             <h3 className="text-lg font-bold text-white mb-2">Deploy Simply</h3>
             <p className="text-sm text-gray-500">Seamless integration into your existing infrastructure with secure, compliant enterprise protocols.</p>
           </div>
           <div className="pt-6 md:pt-0 px-4">
             <div className="flex justify-center mb-3">
-              <ChartBar weight="duotone" className="w-8 h-8 text-[#bca444]" />
+              <ChartBar weight="duotone" className="w-8 h-8 text-[#e5a932]" />
             </div>
             <h3 className="text-lg font-bold text-white mb-2">Track Every Agent</h3>
             <p className="text-sm text-gray-500">Enterprise-grade governance, comprehensive audit logs, and live token analytics for complete visibility.</p>
@@ -446,8 +446,8 @@ export function LandingPage({ onAuthSuccess, user, onBackToDashboard, onNavigate
           viewport={{ once: true }}
         >
           <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-4">
-            <span className="bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400">The Sentinel </span>
-            <span className="bg-clip-text text-transparent bg-gradient-to-r from-[#5cc3eb] to-[#8cb499]">Architecture</span>
+            <span className="bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400">The NovusSparks </span>
+            <span className="bg-clip-text text-transparent bg-gradient-to-r from-[#38bdf8] to-[#6ee7a0]">Architecture</span>
           </h2>
           <p className="text-sm sm:text-base text-gray-500 max-w-2xl mx-auto">
             A comprehensive, modular suite designed to deploy, orchestrate, and scale specialized AI capabilities across your entire organization.
@@ -458,12 +458,12 @@ export function LandingPage({ onAuthSuccess, user, onBackToDashboard, onNavigate
           {[
             {
               icon: Target, color: "sky",
-              title: "Sentinel RGS Engine",
+              title: "NovusSparks RGS Engine",
               desc: "Proprietary retrieval-generation-synthesis engine for deep market analysis and competitive strategy modeling."
             },
             {
               icon: Brain, color: "sage",
-              title: "Sentinel Cortex",
+              title: "NovusSparks Cortex",
               desc: "Specialized context-awareness layer for ingesting massive knowledge bases and running semantic RAG queries securely."
             },
             {
@@ -535,7 +535,7 @@ export function LandingPage({ onAuthSuccess, user, onBackToDashboard, onNavigate
                 viewport={{ once: true }}
                 transition={{ delay: i * 0.1 }}
               >
-                <industry.icon weight="duotone" className="w-8 h-8 text-[#5cc3eb] mb-4" />
+                <industry.icon weight="duotone" className="w-8 h-8 text-[#38bdf8] mb-4" />
                 <h3 className="text-white font-semibold mb-2">{industry.title}</h3>
                 <p className="text-gray-500 text-sm leading-relaxed">{industry.desc}</p>
               </motion.div>
@@ -554,14 +554,14 @@ export function LandingPage({ onAuthSuccess, user, onBackToDashboard, onNavigate
             viewport={{ once: true }}
           >
             <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-4">
-              <span className="bg-clip-text text-transparent bg-gradient-to-r from-[#5cc3eb] to-[#8cb499]">The Sentinel AI Journey</span>
+              <span className="bg-clip-text text-transparent bg-gradient-to-r from-[#38bdf8] to-[#6ee7a0]">The NovusSparks AI Journey</span>
             </h2>
             <p className="text-sm sm:text-base text-gray-500">From initial prompt to enterprise-wide scaling.</p>
           </motion.div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6 md:gap-8 relative">
             {/* Connecting line for desktop */}
-            <div className="hidden md:block absolute top-[44px] left-[10%] right-[10%] h-px bg-gradient-to-r from-[#5cc3eb]/0 via-[#5cc3eb]/50 to-[#bca444]/0 z-0"></div>
+            <div className="hidden md:block absolute top-[44px] left-[10%] right-[10%] h-px bg-gradient-to-r from-[#38bdf8]/0 via-[#38bdf8]/50 to-[#e5a932]/0 z-0"></div>
 
             {[
               { step: "01", icon: TerminalWindow, title: "Prompt", desc: "Start instantly with natural language interfaces, suggested templates, and powerful default engines." },
@@ -578,9 +578,9 @@ export function LandingPage({ onAuthSuccess, user, onBackToDashboard, onNavigate
                 transition={{ delay: i * 0.15 }}
               >
                 <div className="w-12 h-12 mx-auto rounded-full bg-black border border-white/10 flex items-center justify-center mb-4 shadow-[0_0_15px_rgba(92,195,235,0.15)]">
-                  <item.icon weight="fill" className="w-5 h-5 text-[#8cb499]" />
+                  <item.icon weight="fill" className="w-5 h-5 text-[#6ee7a0]" />
                 </div>
-                <div className="text-[#bca444] text-xs font-bold mb-2 tracking-widest">PHASE {item.step}</div>
+                <div className="text-[#e5a932] text-xs font-bold mb-2 tracking-widest">PHASE {item.step}</div>
                 <h3 className="text-white text-sm sm:text-base font-semibold mb-2">{item.title}</h3>
                 <p className="text-gray-500 text-xs sm:text-sm leading-relaxed">{item.desc}</p>
               </motion.div>
@@ -605,15 +605,15 @@ export function LandingPage({ onAuthSuccess, user, onBackToDashboard, onNavigate
               <Button
                 size="lg"
                 onClick={() => user ? onBackToDashboard?.() : openAuth("signup")}
-                className="bg-gradient-to-r from-[#5cc3eb] to-[#8cb499] hover:from-[#5cc3eb]/90 hover:to-[#8cb499]/90 text-white shadow-xl shadow-[#5cc3eb]/25 px-8 h-12 w-full sm:w-auto"
+                className="bg-gradient-to-r from-[#38bdf8] to-[#6ee7a0] hover:from-[#38bdf8]/90 hover:to-[#6ee7a0]/90 text-white shadow-xl shadow-[#38bdf8]/25 px-8 h-12 w-full sm:w-auto"
               >
                 {user ? "Go to Dashboard" : "Get Started — It's Free"}
               </Button>
             </div>
             <div className="flex flex-wrap items-center justify-center gap-x-4 sm:gap-x-6 gap-y-2 mt-6 text-[10px] sm:text-xs text-gray-600">
-              <span className="flex items-center gap-1 text-yellow-600"><CheckCircle weight="fill" className="text-[#8cb499] w-3.5 h-3.5" /> No credit card required</span>
-              <span className="flex items-center gap-1 text-amber-600"><CheckCircle weight="fill" className="text-[#8cb499] w-3.5 h-3.5" /> Free tier included</span>
-              <span className="flex items-center gap-1"><CheckCircle weight="fill" className="text-[#8cb499] w-3.5 h-3.5" /> Enterprise-ready</span>
+              <span className="flex items-center gap-1 text-yellow-600"><CheckCircle weight="fill" className="text-[#6ee7a0] w-3.5 h-3.5" /> No credit card required</span>
+              <span className="flex items-center gap-1 text-amber-600"><CheckCircle weight="fill" className="text-[#6ee7a0] w-3.5 h-3.5" /> Free tier included</span>
+              <span className="flex items-center gap-1"><CheckCircle weight="fill" className="text-[#6ee7a0] w-3.5 h-3.5" /> Enterprise-ready</span>
             </div>
           </motion.div>
         </div>
@@ -623,7 +623,7 @@ export function LandingPage({ onAuthSuccess, user, onBackToDashboard, onNavigate
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-[10px] sm:text-xs text-gray-600">
           <div className="flex items-center gap-2">
             <img src={faviconImg} alt="" className="w-4 h-4 opacity-40" />
-            <span className="text-slate-50">&copy; {new Date().getFullYear()} Techpigeon — Sentinel AI Suite. All rights reserved.</span>
+            <span className="text-slate-50">&copy; {new Date().getFullYear()} NovusSparks AI. All rights reserved.</span>
           </div>
           <div className="flex items-center gap-4">
             {user ? (

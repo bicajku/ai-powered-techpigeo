@@ -112,7 +112,7 @@ function SettingsPanel() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
             <Lightning size={20} weight="duotone" className="text-amber-500" />
-            Sentinel AI Cloud
+            NovusSparks AI Cloud
             <Badge variant="outline" className="ml-1 text-[10px] text-emerald-600 border-emerald-400/40 bg-emerald-500/5 animate-pulse">Bridge</Badge>
           </CardTitle>
         </CardHeader>
@@ -134,7 +134,7 @@ function SettingsPanel() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
             <GitBranch size={20} weight="duotone" className="text-purple-500" />
-            Sentinel AI MCP
+            NovusSparks AI MCP
             <Badge variant="outline" className="ml-1 text-[10px] text-blue-600 border-blue-400/40 bg-blue-500/5 animate-pulse">Bridge</Badge>
           </CardTitle>
         </CardHeader>
@@ -500,7 +500,7 @@ function ConnectorsPanel() {
           <CardContent className="py-12 text-center">
             <Plugs size={40} weight="duotone" className="mx-auto text-muted-foreground mb-3" />
             <p className="text-muted-foreground">No platform connectors configured yet.</p>
-            <p className="text-xs text-muted-foreground mt-1">Add external APIs, services, and webhooks to extend Sentinel AI Suite.</p>
+            <p className="text-xs text-muted-foreground mt-1">Add external APIs, services, and webhooks to extend NovusSparks AI.</p>
           </CardContent>
         </Card>
       ) : (

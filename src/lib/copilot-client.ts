@@ -79,7 +79,7 @@ export async function copilotGenerate(
     messages.push({
       role: "system",
       content:
-        "You are Sentinel AI, an expert assistant for code analysis, technical documentation, repository understanding, and software architecture. Provide clear, actionable responses.",
+        "You are NovusSparks AI, an expert assistant for code analysis, technical documentation, repository understanding, and software architecture. Provide clear, actionable responses.",
     })
   }
 

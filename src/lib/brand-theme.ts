@@ -1,21 +1,21 @@
-export const BRAND_THEME_STORAGE_KEY = "techpigeon-brand-theme"
+export const BRAND_THEME_STORAGE_KEY = "novussparks-brand-theme"
 
 export const BRAND_THEMES = {
-  techpigeon_brand: {
-    name: "techpigeon_brand",
-    label: "TechPigeon Brand",
-    description: "Picton Blue, Roti, Cocoa Brown, and Bay Leaf",
+  novussparks_brand: {
+    name: "novussparks_brand",
+    label: "NovusSparks Brand",
+    description: "Electric Cyan, Neural Sage, and Spark Gold",
   },
-  techpigeon_classic: {
-    name: "techpigeon_classic",
-    label: "TechPigeon Classic",
-    description: "Original navy, sky blue, and gold palette",
+  novussparks_classic: {
+    name: "novussparks_classic",
+    label: "NovusSparks Classic",
+    description: "Deep navy, sky blue, and gold palette",
   },
 } as const
 
 export type BrandThemeName = keyof typeof BRAND_THEMES
 
-export const DEFAULT_BRAND_THEME: BrandThemeName = "techpigeon_brand"
+export const DEFAULT_BRAND_THEME: BrandThemeName = "novussparks_brand"
 
 export const BRAND_THEME_OPTIONS = Object.values(BRAND_THEMES)
 

@@ -1,5 +1,5 @@
 import { MapPin, Phone, EnvelopeSimple, Globe } from "@phosphor-icons/react"
-import techpigeonLogo from "@/assets/images/logo.png"
+import novussparksLogo from "@/assets/images/logo.png"
 
 export function Footer() {
   return (
@@ -7,20 +7,20 @@ export function Footer() {
       <div className="max-w-6xl mx-auto px-6 md:px-8 py-12">
         <div className="flex flex-col items-center mb-8">
           <a 
-            href="https://www.techpigeon.org" 
+            href="https://www.novussparks.com" 
             target="_blank" 
             rel="noopener noreferrer"
             className="transition-transform hover:scale-105 duration-300"
           >
             <img 
-              src={techpigeonLogo} 
-              alt="Techpigeon Logo" 
+              src={novussparksLogo} 
+              alt="NovusSparks Logo" 
               className="h-16 md:h-20 w-auto mb-4"
             />
           </a>
-          <h3 className="text-lg font-semibold text-foreground mb-1">Techpigeon</h3>
+          <h3 className="text-lg font-semibold text-foreground mb-1">NovusSparks</h3>
           <p className="text-sm text-muted-foreground max-w-md text-center">
-            Sentinel AI Suite — Enterprise AI Platform
+            NovusSparks AI — Enterprise AI Platform
           </p>
         </div>
 
@@ -29,7 +29,7 @@ export function Footer() {
             <div className="flex items-start gap-3">
               <MapPin size={22} weight="duotone" className="text-primary mt-1 flex-shrink-0" />
               <div>
-                <p className="font-semibold text-foreground mb-2">Techpigeon Pakistan</p>
+                <p className="font-semibold text-foreground mb-2">NovusSparks Pakistan</p>
                 <p className="text-sm text-muted-foreground leading-relaxed">
                   G-7/4, Islamabad 44000, Pakistan
                 </p>
@@ -50,7 +50,7 @@ export function Footer() {
             <div className="flex items-start gap-3">
               <MapPin size={22} weight="duotone" className="text-primary mt-1 flex-shrink-0" />
               <div>
-                <p className="font-semibold text-foreground mb-2">Techpigeon Spark LLC 🇴🇲</p>
+                <p className="font-semibold text-foreground mb-2">NovusSparks LLC</p>
                 <p className="text-sm text-muted-foreground leading-relaxed">
                   Dohat al adab st, Alkhuwair, 133, Muscat, Oman
                 </p>
@@ -70,26 +70,26 @@ export function Footer() {
 
         <div className="flex flex-col md:flex-row items-center justify-center gap-6 mb-6 pb-6 border-b border-border/30">
           <a 
-            href="https://www.techpigeon.org" 
+            href="https://www.novussparks.com" 
             target="_blank" 
             rel="noopener noreferrer"
             className="flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors group"
           >
             <Globe size={18} weight="duotone" className="group-hover:rotate-12 transition-transform" />
-            <span>www.techpigeon.org</span>
+            <span>www.novussparks.com</span>
           </a>
           <a 
-            href="mailto:info@techpigeon.org" 
+            href="mailto:info@novussparks.com" 
             className="flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors group"
           >
             <EnvelopeSimple size={18} weight="duotone" className="group-hover:scale-110 transition-transform" />
-            <span>info@techpigeon.org</span>
+            <span>info@novussparks.com</span>
           </a>
         </div>
         
         <div className="text-center">
           <p className="text-sm text-muted-foreground">
-            © {new Date().getFullYear()} Techpigeon. All rights reserved.
+            &copy; {new Date().getFullYear()} NovusSparks. All rights reserved.
           </p>
         </div>
       </div>

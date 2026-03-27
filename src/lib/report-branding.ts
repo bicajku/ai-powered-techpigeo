@@ -1,4 +1,4 @@
-import techpigeonLogo from "@/assets/images/logo.png"
+import novussparksLogo from "@/assets/images/logo.png"
 
 // Cache the base64 version of the logo for use in exported reports
 let cachedLogoDataUrl: string | null = null
@@ -6,7 +6,7 @@ let cachedLogoDataUrl: string | null = null
 async function getLogoAsDataUrl(): Promise<string> {
   if (cachedLogoDataUrl) return cachedLogoDataUrl
   try {
-    const response = await fetch(techpigeonLogo)
+    const response = await fetch(novussparksLogo)
     const blob = await response.blob()
     return new Promise((resolve) => {
       const reader = new FileReader()
@@ -14,11 +14,11 @@ async function getLogoAsDataUrl(): Promise<string> {
         cachedLogoDataUrl = reader.result as string
         resolve(cachedLogoDataUrl)
       }
-      reader.onerror = () => resolve(techpigeonLogo)
+      reader.onerror = () => resolve(novussparksLogo)
       reader.readAsDataURL(blob)
     })
   } catch {
-    return techpigeonLogo
+    return novussparksLogo
   }
 }
 
@@ -26,18 +26,18 @@ async function getLogoAsDataUrl(): Promise<string> {
 getLogoAsDataUrl()
 
 export const REPORT_BRAND = {
-  companyName: "Techpigeon",
-  projectName: "Drive 2 AI Sparks",
-  companyTagline: "Drive 2 AI Sparks",
-  website: "https://www.techpigeon.org",
-  logoPath: techpigeonLogo,
+  companyName: "NovusSparks",
+  projectName: "NovusSparks AI",
+  companyTagline: "Enterprise AI Platform",
+  website: "https://www.novussparks.com",
+  logoPath: novussparksLogo,
   colors: {
-    primary: "#5CC3EB",
-    secondary: "#8CB499",
-    accent: "#BCA444",
+    primary: "#38BDF8",
+    secondary: "#6EE7A0",
+    accent: "#E5A932",
     text: "#1C1414",
     muted: "#6A5B5B",
-    panel: "#F2F7F3",
+    panel: "#F0FAF5",
     border: "#DDD6D2",
   },
   contactLine: "G-7/4, Islamabad 44000, Pakistan | Ph: +92(300) 0529697 | USA: +1(786) 8226386 | Oman: +968 76786324",

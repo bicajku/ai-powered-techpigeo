@@ -1,26 +1,26 @@
 {
-  "activeTheme": "techpigeon_brand",
+  "activeTheme": "novussparks_brand",
   "themes": {
-    "techpigeon_brand": {
-      "primaryColor": "#5cc3eb",
-      "secondaryColor": "#8cb499",
-      "accentColor": "#bca444",
+    "novussparks_brand": {
+      "primaryColor": "#38bdf8",
+      "secondaryColor": "#6ee7a0",
+      "accentColor": "#e5a932",
       "backgroundColor": "#ffffff",
-      "surfaceColor": "#f2f7f3",
+      "surfaceColor": "#f0faf5",
       "textColor": "#1c1414",
       "borderColor": "#ddd6d2",
-      "lightBlue": "#eef9fd",
+      "lightBlue": "#ecfaff",
       "darkNavy": "#1c1414"
     },
-    "techpigeon_classic": {
+    "novussparks_classic": {
       "primaryColor": "#0b1d3a",
-      "secondaryColor": "#3ba8d4",
-      "accentColor": "#bba442",
+      "secondaryColor": "#38bdf8",
+      "accentColor": "#e5a932",
       "backgroundColor": "#ffffff",
-      "surfaceColor": "#f5edc8",
+      "surfaceColor": "#fdf5e6",
       "textColor": "#0b1d3a",
       "borderColor": "#d7deea",
-      "lightBlue": "#e8f6fc",
+      "lightBlue": "#ecfaff",
       "darkNavy": "#0b1d3a"
     }
   }
