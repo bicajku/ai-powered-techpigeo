@@ -1276,7 +1276,10 @@ ${JSON.stringify(candidate)}`
           onSignup={() => {}}
           onAuthSuccess={handleAuthSuccess}
           user={user}
-          onBackToDashboard={() => setShowLandingPage(false)}
+          onBackToDashboard={() => {
+            setShowLandingPage(false)
+            setActiveTab(getDefaultSignedInTab(getEnvConfig().enableRagChat))
+          }}
           onNavigate={(tab) => { setActiveTab(tab); setShowLandingPage(false) }}
         />
       </Suspense>
