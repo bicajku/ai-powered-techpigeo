@@ -1344,6 +1344,11 @@ ${JSON.stringify(candidate)}`
       }
       return alreadyShown
     })
+    // Navigate away from auth pages so the path checks don't re-render them
+    const path = window.location.pathname
+    if (path === "/login" || path === "/signup") {
+      window.history.replaceState({}, "", "/")
+    }
   }
 
   const handleLogout = () => {
@@ -1396,7 +1401,7 @@ ${JSON.stringify(candidate)}`
     )
   }
 
-  if (window.location.pathname === "/signup") {
+  if (window.location.pathname === "/signup" && !user) {
     return (
       <Suspense fallback={<div className="flex items-center justify-center h-screen bg-[#0a0f18]"><p className="text-gray-400">Loading...</p></div>}>
         <SignupPage onAuthSuccess={handleAuthSuccess} />
@@ -1404,7 +1409,7 @@ ${JSON.stringify(candidate)}`
     )
   }
 
-  if (window.location.pathname === "/login") {
+  if (window.location.pathname === "/login" && !user) {
     return (
       <Suspense fallback={<div className="flex items-center justify-center h-screen bg-[#0a0f18]"><p className="text-gray-400">Loading...</p></div>}>
         <LoginPage onAuthSuccess={handleAuthSuccess} />
