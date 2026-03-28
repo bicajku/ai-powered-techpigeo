@@ -2147,6 +2147,56 @@ const server = http.createServer(async (req, res) => {
       return handleVerify(req, res)
     }
 
+    // ── OAuth Routes ──
+    if (method === "GET" && reqPathname === "/api/auth/google") {
+      const { getGoogleAuthUrl } = await import('./oauth.mjs');
+      try {
+        const url = await getGoogleAuthUrl();
+        res.writeHead(302, { Location: url });
+        return res.end();
+      } catch (err) {
+        console.error("Google Auth URL error:", err);
+        return sendJson(res, 500, { ok: false, error: err.message }, req);
+      }
+    }
+    if (method === "GET" && reqPathname === "/api/auth/google/callback") {
+      const { handleGoogleCallback, generateOAuthCallbackHtml } = await import('./oauth.mjs');
+      const code = url.searchParams.get("code");
+      try {
+        const { user, token } = await handleGoogleCallback(code);
+        res.writeHead(200, { "Content-Type": "text/html" });
+        return res.end(generateOAuthCallbackHtml(token, user));
+      } catch (err) {
+        console.error("Google OAuth error:", err);
+        res.writeHead(302, { Location: "/?error=oauth_failed" });
+        return res.end();
+      }
+    }
+    if (method === "GET" && reqPathname === "/api/auth/github") {
+      const { getGithubAuthUrl } = await import('./oauth.mjs');
+      try {
+        const url = await getGithubAuthUrl();
+        res.writeHead(302, { Location: url });
+        return res.end();
+      } catch (err) {
+        console.error("GitHub Auth URL error:", err);
+        return sendJson(res, 500, { ok: false, error: err.message }, req);
+      }
+    }
+    if (method === "GET" && reqPathname === "/api/auth/github/callback") {
+      const { handleGithubCallback, generateOAuthCallbackHtml } = await import('./oauth.mjs');
+      const code = url.searchParams.get("code");
+      try {
+        const { user, token } = await handleGithubCallback(code);
+        res.writeHead(200, { "Content-Type": "text/html" });
+        return res.end(generateOAuthCallbackHtml(token, user));
+      } catch (err) {
+        console.error("GitHub OAuth error:", err);
+        res.writeHead(302, { Location: "/?error=oauth_failed" });
+        return res.end();
+      }
+    }
+
     // ── POST /api/auth/refresh ──
     if (method === "POST" && reqPathname === "/api/auth/refresh") {
       return handleRefresh(req, res)

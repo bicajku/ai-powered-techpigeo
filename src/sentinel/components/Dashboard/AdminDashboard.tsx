@@ -7,6 +7,7 @@
 
 import React, { useEffect, useState, useCallback } from "react"
 import { useSentinelAuth } from "../../hooks/useSentinelAuth"
+import { AuditLogViewer } from "./AuditLogViewer"
 import { dbListUsers } from "../../api/db"
 import {
   listAllSubscriptions,
@@ -149,15 +150,7 @@ export function AdminDashboard() {
   // System stats (overview tab)
   const [systemStats, setSystemStats] = useState<SystemStats | null>(null)
 
-  // Audit log (audit tab)
-  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([])
-  const [auditTotal, setAuditTotal] = useState(0)
-  const [auditQuery, setAuditQuery] = useState<AuditLogQuery>({ limit: 25, offset: 0 })
-  const [auditStats, setAuditStats] = useState<AuditStats | null>(null)
-  const [auditLoading, setAuditLoading] = useState(false)
-  const [expandedLog, setExpandedLog] = useState<string | null>(null)
-
-  // Module subscriptions tab
+  // Module subscriptions (module-subs tab)
   const [modSubs, setModSubs] = useState<OrgModuleSubscription[]>([])
   const [modSubsLoading, setModSubsLoading] = useState(false)
 
@@ -196,40 +189,6 @@ export function AdminDashboard() {
     }
   }, [])
 
-  const loadAuditLogs = useCallback(async (query: AuditLogQuery) => {
-    setAuditLoading(true)
-    try {
-      const params = new URLSearchParams()
-      if (query.limit) params.set("limit", String(query.limit))
-      if (query.offset) params.set("offset", String(query.offset))
-      if (query.userId) params.set("userId", query.userId)
-      if (query.action) params.set("action", query.action)
-      if (query.resource) params.set("resource", query.resource)
-      if (query.success !== undefined) params.set("success", String(query.success))
-      if (query.from) params.set("from", String(query.from))
-      if (query.to) params.set("to", String(query.to))
-
-      const resp = await fetchApi<AuditPageResponse>(`/api/sentinel/audit?${params}`)
-      if (resp.ok) {
-        setAuditLogs(resp.logs)
-        setAuditTotal(resp.total)
-      }
-    } catch (err) {
-      console.error("Audit logs error:", err)
-    } finally {
-      setAuditLoading(false)
-    }
-  }, [])
-
-  const loadAuditStats = useCallback(async () => {
-    try {
-      const resp = await fetchApi<AuditStatsResponse>("/api/sentinel/audit/stats")
-      if (resp.ok) setAuditStats(resp)
-    } catch (err) {
-      console.error("Audit stats error:", err)
-    }
-  }, [])
-
   const loadModSubs = useCallback(async () => {
     setModSubsLoading(true)
     try {
@@ -247,13 +206,6 @@ export function AdminDashboard() {
     void loadLegacyData()
     void loadSystemStats()
   }, [loadLegacyData, loadSystemStats])
-
-  useEffect(() => {
-    if (activeTab === "audit") {
-      void loadAuditLogs(auditQuery)
-      void loadAuditStats()
-    }
-  }, [activeTab, auditQuery, loadAuditLogs, loadAuditStats])
 
   useEffect(() => {
     if (activeTab === "module-subs") void loadModSubs()
@@ -294,15 +246,6 @@ export function AdminDashboard() {
     await reviewUpgradeRequest(requestId, action, user.id)
     await loadLegacyData()
   }
-
-  const setAuditFilter = (key: keyof AuditLogQuery, value: string | number | boolean | undefined) => {
-    setAuditQuery((prev) => ({ ...prev, [key]: value, offset: 0 }))
-  }
-
-  const auditPageCount = Math.ceil(auditTotal / (auditQuery.limit || 25))
-  const auditCurrentPage = Math.floor((auditQuery.offset || 0) / (auditQuery.limit || 25)) + 1
-
-  // ── Tab styling ──
 
   const TABS: { id: AdminTab; label: string; badge?: number }[] = [
     { id: "overview", label: "Overview" },
@@ -527,194 +470,7 @@ export function AdminDashboard() {
 
             {/* ═══ Audit Log Tab (Enhanced) ═══ */}
             {activeTab === "audit" && (
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-semibold text-gray-900">
-                    Audit Log <span className="text-sm font-normal text-gray-500">({auditTotal} total)</span>
-                  </h2>
-                  <button
-                    onClick={() => { void loadAuditLogs(auditQuery); void loadAuditStats() }}
-                    className="text-sm text-indigo-600 hover:text-indigo-800"
-                  >
-                    Refresh
-                  </button>
-                </div>
-
-                {/* Stats summary bar */}
-                {auditStats && (
-                  <div className="bg-white rounded-xl border p-4 shadow-sm mb-4">
-                    <div className="flex flex-wrap gap-4 text-sm">
-                      <div>
-                        <span className="font-bold text-gray-900">{auditStats.totalEvents}</span>{" "}
-                        <span className="text-gray-500">events (30d)</span>
-                      </div>
-                      <div>
-                        <span className="font-bold text-red-600">{auditStats.failedEvents}</span>{" "}
-                        <span className="text-gray-500">failures</span>
-                      </div>
-                      {auditStats.byDay.length > 0 && (
-                        <div className="flex-1 min-w-[200px]">
-                          <div className="flex items-end gap-px h-8">
-                            {auditStats.byDay.slice(-14).map((d) => {
-                              const max = Math.max(...auditStats.byDay.slice(-14).map((x) => x.count), 1)
-                              const h = Math.max((d.count / max) * 100, 4)
-                              return (
-                                <div
-                                  key={d.day}
-                                  className="flex-1 bg-indigo-300 rounded-t"
-                                  style={{ height: `${h}%` }}
-                                  title={`${d.day}: ${d.count}`}
-                                />
-                              )
-                            })}
-                          </div>
-                          <div className="text-xs text-gray-400 text-center mt-1">Last 14 days</div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Filters */}
-                <div className="bg-white rounded-xl border p-4 shadow-sm mb-4">
-                  <div className="flex flex-wrap gap-3 items-end">
-                    <div>
-                      <label className="block text-xs text-gray-500 mb-1">Action</label>
-                      <select
-                        value={auditQuery.action || ""}
-                        onChange={(e) => setAuditFilter("action", e.target.value || undefined)}
-                        className="px-2 py-1.5 border border-gray-300 rounded text-xs w-36"
-                      >
-                        <option value="">All actions</option>
-                        {ALL_ACTIONS.map((a) => <option key={a} value={a}>{a}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs text-gray-500 mb-1">Resource</label>
-                      <input
-                        type="text"
-                        value={auditQuery.resource || ""}
-                        onChange={(e) => setAuditFilter("resource", e.target.value || undefined)}
-                        placeholder="e.g. ngo-report"
-                        className="px-2 py-1.5 border border-gray-300 rounded text-xs w-32"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-gray-500 mb-1">User ID</label>
-                      <input
-                        type="text"
-                        value={auditQuery.userId || ""}
-                        onChange={(e) => setAuditFilter("userId", e.target.value || undefined)}
-                        placeholder="Filter by user"
-                        className="px-2 py-1.5 border border-gray-300 rounded text-xs w-32"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-gray-500 mb-1">Status</label>
-                      <select
-                        value={auditQuery.success === undefined ? "" : String(auditQuery.success)}
-                        onChange={(e) => setAuditFilter("success", e.target.value === "" ? undefined : e.target.value === "true")}
-                        className="px-2 py-1.5 border border-gray-300 rounded text-xs w-24"
-                      >
-                        <option value="">All</option>
-                        <option value="true">Success</option>
-                        <option value="false">Failed</option>
-                      </select>
-                    </div>
-                    <button
-                      onClick={() => setAuditQuery({ limit: 25, offset: 0 })}
-                      className="px-3 py-1.5 text-xs text-gray-600 hover:text-gray-900 border border-gray-300 rounded"
-                    >
-                      Clear
-                    </button>
-                  </div>
-                </div>
-
-                {/* Table */}
-                <div className="bg-white rounded-xl shadow-sm border overflow-x-auto">
-                  {auditLoading ? (
-                    <div className="text-center py-8 text-gray-400">Loading...</div>
-                  ) : (
-                    <table className="w-full text-sm">
-                      <thead className="bg-gray-50 border-b">
-                        <tr>
-                          {["Time", "User", "Action", "Resource", "Resource ID", "IP", "Status", ""].map((h) => (
-                            <th key={h} className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {auditLogs.map((log) => (
-                          <React.Fragment key={log.id}>
-                            <tr className="hover:bg-gray-50 cursor-pointer" onClick={() => setExpandedLog(expandedLog === log.id ? null : log.id)}>
-                              <td className="px-3 py-2 text-xs text-gray-500 whitespace-nowrap">{formatTs(log.timestamp)}</td>
-                              <td className="px-3 py-2 font-mono text-xs text-gray-600">{log.userId.length > 16 ? log.userId.slice(0, 16) + "..." : log.userId}</td>
-                              <td className="px-3 py-2">
-                                <span className={`inline-flex px-2 py-0.5 rounded-full text-xs ${ACTION_COLORS[log.action] || "bg-gray-100 text-gray-700"}`}>
-                                  {log.action}
-                                </span>
-                              </td>
-                              <td className="px-3 py-2 text-gray-600 text-xs">{log.resource}</td>
-                              <td className="px-3 py-2 font-mono text-xs text-gray-400">{log.resourceId ? (log.resourceId.length > 16 ? log.resourceId.slice(0, 16) + "..." : log.resourceId) : "--"}</td>
-                              <td className="px-3 py-2 text-xs text-gray-400">{log.ipAddress || "--"}</td>
-                              <td className="px-3 py-2">
-                                <span className={`text-xs font-medium ${log.success ? "text-green-600" : "text-red-600"}`}>
-                                  {log.success ? "OK" : "FAIL"}
-                                </span>
-                              </td>
-                              <td className="px-3 py-2 text-xs text-gray-400">{expandedLog === log.id ? "[-]" : "[+]"}</td>
-                            </tr>
-                            {expandedLog === log.id && log.metadata && (
-                              <tr>
-                                <td colSpan={8} className="px-3 py-3 bg-gray-50">
-                                  <div className="text-xs">
-                                    <div className="font-medium text-gray-700 mb-1">Metadata</div>
-                                    <pre className="bg-gray-100 rounded p-2 overflow-x-auto text-gray-600 whitespace-pre-wrap">
-                                      {JSON.stringify(log.metadata, null, 2)}
-                                    </pre>
-                                    <div className="mt-2 text-gray-400">
-                                      Full ID: {log.id} | User: {log.userId}
-                                      {log.resourceId && <> | Resource: {log.resourceId}</>}
-                                    </div>
-                                  </div>
-                                </td>
-                              </tr>
-                            )}
-                          </React.Fragment>
-                        ))}
-                        {auditLogs.length === 0 && (
-                          <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400">No audit events match filters</td></tr>
-                        )}
-                      </tbody>
-                    </table>
-                  )}
-
-                  {/* Pagination */}
-                  {auditTotal > (auditQuery.limit || 25) && (
-                    <div className="border-t px-4 py-3 flex items-center justify-between bg-gray-50">
-                      <div className="text-xs text-gray-500">
-                        Page {auditCurrentPage} of {auditPageCount} ({auditTotal} total)
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          disabled={auditCurrentPage <= 1}
-                          onClick={() => setAuditQuery((q) => ({ ...q, offset: Math.max((q.offset || 0) - (q.limit || 25), 0) }))}
-                          className="px-3 py-1 text-xs border rounded disabled:opacity-40 hover:bg-gray-100"
-                        >
-                          Prev
-                        </button>
-                        <button
-                          disabled={auditCurrentPage >= auditPageCount}
-                          onClick={() => setAuditQuery((q) => ({ ...q, offset: (q.offset || 0) + (q.limit || 25) }))}
-                          className="px-3 py-1 text-xs border rounded disabled:opacity-40 hover:bg-gray-100"
-                        >
-                          Next
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
+              <AuditLogViewer />
             )}
 
             {/* ═══ Module Subscriptions Tab ═══ */}

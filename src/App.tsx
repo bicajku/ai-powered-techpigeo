@@ -8,6 +8,7 @@ import { ResultCard } from "@/components/ResultCard"
 import { LoadingState } from "@/components/LoadingState"
 import { EmptyState } from "@/components/EmptyState"
 import { SaveStrategyDialog } from "@/components/SaveStrategyDialog"
+import { StrategyHistoryDialog } from "@/components/StrategyHistoryDialog"
 import { UserMenu } from "@/components/UserMenu"
 import { WelcomeBanner } from "@/components/WelcomeBanner"
 import { TopNotchBanner } from "@/components/TopNotchBanner"
@@ -46,6 +47,8 @@ const Dashboard = lazy(() => import("@/components/Dashboard").then(m => ({ defau
 const AdminDashboard = lazy(() => import("@/components/AdminDashboard").then(m => ({ default: m.AdminDashboard })))
 const EnterpriseAdmin = lazy(() => import("@/components/EnterpriseAdmin").then(m => ({ default: m.EnterpriseAdmin })))
 const SavedStrategies = lazy(() => import("@/components/SavedStrategies").then(m => ({ default: m.SavedStrategies })))
+const AirtableIntegration = lazy(() => import("@/components/integrations/AirtableIntegration").then(m => ({ default: m.AirtableIntegration })))
+const AutomationsPanel = lazy(() => import("@/components/automations/AutomationsPanel").then(m => ({ default: m.AutomationsPanel })))
 const ComparisonView = lazy(() => import("@/components/ComparisonView").then(m => ({ default: m.ComparisonView })))
 const StrategyTemplatesBrowser = lazy(() => import("@/components/StrategyTemplatesBrowser").then(m => ({ default: m.StrategyTemplatesBrowser })))
 
@@ -129,6 +132,7 @@ function App() {
   const [error, setError] = useState<string | null>(null)
   const [hasShownWelcomeThisSession, setHasShownWelcomeThisSession] = useState(false)
   const [showExpandedWelcome, setShowExpandedWelcome] = useState(false)
+  const [airtableContext] = useSafeKV<string | null>("airtable-synced-context", null)
   const [notchDismissedAt, setNotchDismissedAt] = useState<number>(() => {
     if (typeof window === "undefined") {
       return 0
@@ -163,6 +167,8 @@ function App() {
   const [selectedForComparison, setSelectedForComparison] = useState<string[]>([])
   const [showComparison, setShowComparison] = useState(false)
   const [showSaveDialog, setShowSaveDialog] = useState(false)
+  const [showHistoryDialog, setShowHistoryDialog] = useState(false)
+  const [historyStrategy, setHistoryStrategy] = useState<SavedStrategy | null>(null)
   const [showTemplatesBrowser, setShowTemplatesBrowser] = useState(false)
   const [conceptMode, setConceptMode] = useState<ConceptMode>("auto")
   const [showPromptSuggestions, setShowPromptSuggestions] = useState(false)
@@ -179,6 +185,7 @@ function App() {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const [showLandingPage, setShowLandingPage] = useState(false)
   const [adminAllStrategies, setAdminAllStrategies] = useState<SavedStrategy[]>([])
+  const [activeStrategyId, setActiveStrategyId] = useState<string | null>(null)
   const resultsRef = useRef<HTMLDivElement>(null)
 
   // When admin logs in, load all users' strategies for a global view
@@ -524,6 +531,8 @@ Automatically select the most relevant archetypes and implementation patterns ba
 Topic: ${description}
 
 ${contextSection}
+
+${airtableContext ? `\nBackground Data from Airtable:\n${airtableContext}\n` : ""}
 
 ${qaFeedback ? `Fix these issues from QA review:\n${qaFeedback}` : ""}
 ${memoryContext}
@@ -953,6 +962,37 @@ ${JSON.stringify(candidate)}`
         toast.success("Strategy generated successfully.")
       }
 
+      // Execute Workflow Automations for 'on_strategy_generated'
+      const rulesStr = localStorage.getItem("user-automation-rules")
+      if (rulesStr) {
+        try {
+          const rules = JSON.parse(rulesStr)
+          if (Array.isArray(rules)) {
+            const activeRules = rules.filter(r => r.isActive && r.trigger === "on_strategy_generated")
+            for (const rule of activeRules) {
+              if (rule.action.type === "send_email") {
+                toast.success(`Automation: Simulated email sent to ${rule.action.target}`)
+              } else if (rule.action.type === "webhook") {
+                try {
+                  fetch(rule.action.target, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ event: "strategy_generated", description })
+                  }).catch(() => {
+                    // Ignore fetch failures for mock webhooks
+                  })
+                  toast.success(`Automation: Webhook triggered to ${rule.action.target.substring(0, 20)}...`)
+                } catch (e) {
+                  // Ignore
+                }
+              }
+            }
+          }
+        } catch (e) {
+          // parse error
+        }
+      }
+
       setTimeout(() => {
         resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
       }, 100)
@@ -988,28 +1028,75 @@ ${JSON.stringify(candidate)}`
     setResult(null)
     setCurrentDescription("")
     setError(null)
+    setActiveStrategyId(null)
     window.scrollTo({ top: 0, behavior: "smooth" })
   }
 
   const handleSaveStrategy = (name: string) => {
     if (!result || !currentDescription) return
 
-    if ((savedStrategies || []).length >= strategyPlanConfig.maxSavedStrategies) {
-      toast.error(`You've reached the ${strategyPlanConfig.maxSavedStrategies} saved strategy limit for your plan.`)
-      return
-    }
-
     try {
-      const newStrategy: SavedStrategy = {
-        id: Date.now().toString(),
-        name: name,
-        description: currentDescription,
-        result: result,
-        timestamp: Date.now()
-      }
+      if (activeStrategyId) {
+        setSavedStrategies((current) => {
+          const list = current || []
+          const existingIndex = list.findIndex(s => s.id === activeStrategyId)
+          if (existingIndex >= 0) {
+            const existing = list[existingIndex]
+            const versionId = Date.now().toString()
+            const updatedStrategy: SavedStrategy = {
+              ...existing,
+              name,
+              description: currentDescription,
+              result,
+              timestamp: Date.now(),
+              versions: [
+                ...(existing.versions || []),
+                {
+                  id: versionId,
+                  timestamp: existing.timestamp,
+                  result: existing.result,
+                  description: existing.description,
+                  message: `Version saved before update to ${name}`
+                }
+              ]
+            }
+            const newList = [...list]
+            newList[existingIndex] = updatedStrategy
+            return newList
+          }
+          // fallback if not found
+          return [
+            {
+              id: Date.now().toString(),
+              name,
+              description: currentDescription,
+              result,
+              timestamp: Date.now(),
+              versions: []
+            },
+            ...list
+          ]
+        })
+        toast.success("Strategy version saved successfully")
+      } else {
+        if ((savedStrategies || []).length >= strategyPlanConfig.maxSavedStrategies) {
+          toast.error(`You've reached the ${strategyPlanConfig.maxSavedStrategies} saved strategy limit for your plan.`)
+          return
+        }
 
-      setSavedStrategies((current) => [newStrategy, ...(current || [])])
-      toast.success("Strategy saved successfully")
+        const newStrategy: SavedStrategy = {
+          id: Date.now().toString(),
+          name: name,
+          description: currentDescription,
+          result: result,
+          timestamp: Date.now(),
+          versions: []
+        }
+
+        setSavedStrategies((current) => [newStrategy, ...(current || [])])
+        setActiveStrategyId(newStrategy.id)
+        toast.success("Strategy saved successfully")
+      }
     } catch (error) {
       console.error("Failed to save strategy:", error)
       logError(
@@ -1154,6 +1241,54 @@ ${JSON.stringify(candidate)}`
     setDescription(strategy.description)
     setResult(strategy.result)
     setCurrentDescription(strategy.description)
+    setActiveStrategyId(strategy.id)
+    window.scrollTo({ top: 0, behavior: "smooth" })
+  }
+
+  const handleHistoryStrategy = (strategy: SavedStrategy) => {
+    setHistoryStrategy(strategy)
+    setShowHistoryDialog(true)
+  }
+
+  const handleRestoreStrategyVersion = (strategyId: string, versionId: string) => {
+    const strategy = savedStrategies?.find(s => s.id === strategyId)
+    if (!strategy) return
+    const version = strategy.versions?.find(v => v.id === versionId)
+    if (!version) return
+
+    setSavedStrategies((current) => {
+      const list = current || []
+      const index = list.findIndex(s => s.id === strategyId)
+      if (index === -1) return list
+
+      const existing = list[index]
+      const backupVersionId = Date.now().toString()
+      const updatedStrategy: SavedStrategy = {
+        ...existing,
+        result: version.result,
+        description: version.description,
+        timestamp: Date.now(),
+        versions: [
+          ...(existing.versions || []),
+          {
+            id: backupVersionId,
+            timestamp: existing.timestamp,
+            result: existing.result,
+            description: existing.description,
+            message: "Auto-saved before restoring previous version"
+          }
+        ]
+      }
+      const newList = [...list]
+      newList[index] = updatedStrategy
+      return newList
+    })
+
+    setDescription(version.description)
+    setResult(version.result)
+    setCurrentDescription(version.description)
+    setActiveStrategyId(strategy.id)
+    toast.success("Strategy version restored successfully")
     window.scrollTo({ top: 0, behavior: "smooth" })
   }
 
@@ -1306,6 +1441,12 @@ ${JSON.stringify(candidate)}`
         onOpenChange={setShowSaveDialog}
         onSave={handleSaveStrategy}
       />
+      <StrategyHistoryDialog
+        open={showHistoryDialog}
+        onOpenChange={setShowHistoryDialog}
+        strategy={historyStrategy}
+        onRestore={handleRestoreStrategyVersion}
+      />
       <Suspense fallback={null}>
         <StrategyTemplatesBrowser
           open={showTemplatesBrowser}
@@ -1442,15 +1583,17 @@ ${JSON.stringify(candidate)}`
                   {user.role === "admin" && (
                     <TabsTrigger value="admin" className="gap-1.5 text-xs md:text-sm px-3 md:px-4 py-2 md:py-2.5 whitespace-nowrap flex-shrink-0 rounded-lg hover:bg-accent/50 transition-colors data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
                       <ShieldCheck size={16} weight="bold" className="flex-shrink-0" />
-                      <span className="hidden md:inline">Admin</span>
+                      <span className="hidden sm:inline">Admin</span>
                     </TabsTrigger>
                   )}
-                  {user.role === "admin" && (
-                    <TabsTrigger value="enterprise" className="gap-1.5 text-xs md:text-sm px-3 md:px-4 py-2 md:py-2.5 whitespace-nowrap flex-shrink-0 rounded-lg hover:bg-accent/50 transition-colors data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                      <ShieldCheck size={16} weight="bold" className="flex-shrink-0" />
-                      <span className="hidden md:inline">Enterprise</span>
-                    </TabsTrigger>
-                  )}
+                  <TabsTrigger value="integrations" className="gap-1.5 text-xs md:text-sm px-3 md:px-4 py-2 md:py-2.5 whitespace-nowrap flex-shrink-0 rounded-lg hover:bg-accent/50 transition-colors data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                    <Database size={16} weight="bold" className="flex-shrink-0" />
+                    <span className="hidden sm:inline">Integrations</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="automations" className="gap-1.5 text-xs md:text-sm px-3 md:px-4 py-2 md:py-2.5 whitespace-nowrap flex-shrink-0 rounded-lg hover:bg-accent/50 transition-colors data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                    <Lightning size={16} weight="bold" className="flex-shrink-0" />
+                    <span className="hidden sm:inline">Automations</span>
+                  </TabsTrigger>
                 </TabsList>
               </div>
             </div>
@@ -2363,6 +2506,18 @@ ${JSON.stringify(candidate)}`
               </Suspense>
             </TabsContent>
 
+            <TabsContent value="integrations" className="space-y-6">
+              <Suspense fallback={<LoadingState />}>
+                <AirtableIntegration />
+              </Suspense>
+            </TabsContent>
+
+            <TabsContent value="automations" className="space-y-6">
+              <Suspense fallback={<LoadingState />}>
+                <AutomationsPanel />
+              </Suspense>
+            </TabsContent>
+
             <TabsContent value="dashboard" className="space-y-6">
               <div className="flex flex-wrap items-center gap-2">
                 <Button
@@ -2449,6 +2604,7 @@ ${JSON.stringify(candidate)}`
                   strategies={user.role === "admin" && adminAllStrategies.length > 0 ? adminAllStrategies : (savedStrategies || [])}
                   onDelete={handleDeleteStrategy}
                   onView={handleViewStrategy}
+                  onHistory={handleHistoryStrategy}
                   onCompare={handleToggleCompare}
                   onExportPdf={handleExportStrategyPdf}
                   onExportWord={handleExportStrategyWord}

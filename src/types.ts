@@ -47,6 +47,13 @@ export interface SavedStrategy {
   description: string
   result: MarketingResult
   timestamp: number
+  versions?: {
+    id: string
+    timestamp: number
+    result: MarketingResult
+    description: string
+    message: string
+  }[]
 }
 
 export type UserRole = "admin" | "client"

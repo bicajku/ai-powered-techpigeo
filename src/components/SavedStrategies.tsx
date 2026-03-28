@@ -1,7 +1,7 @@
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { FloppyDisk, Trash, Eye, Scales, FilePdf, FileDoc, DownloadSimple } from "@phosphor-icons/react"
+import { FloppyDisk, Trash, Eye, Scales, FilePdf, FileDoc, DownloadSimple, ClockCounterClockwise } from "@phosphor-icons/react"
 import { motion } from "framer-motion"
 import { SavedStrategy } from "@/types"
 import {
@@ -15,6 +15,7 @@ interface SavedStrategiesProps {
   strategies: SavedStrategy[]
   onDelete: (id: string) => void
   onView: (strategy: SavedStrategy) => void
+  onHistory: (strategy: SavedStrategy) => void
   onCompare: (id: string) => void
   onExportPdf: (strategy: SavedStrategy) => void
   onExportWord: (strategy: SavedStrategy) => void
@@ -26,6 +27,7 @@ export function SavedStrategies({
   strategies, 
   onDelete, 
   onView,
+  onHistory,
   onCompare,
   onExportPdf,
   onExportWord,
@@ -86,6 +88,15 @@ export function SavedStrategies({
                     >
                       <Eye size={16} weight="bold" />
                       View
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onHistory(strategy)}
+                      className="gap-1.5"
+                    >
+                      <ClockCounterClockwise size={16} weight="bold" />
+                      History
                     </Button>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>

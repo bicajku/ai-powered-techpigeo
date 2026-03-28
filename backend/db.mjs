@@ -44,6 +44,28 @@ export async function ensureSentinelTables() {
     // Just verify sentinel_users table exists by selecting 1 row
     await sql`SELECT 1 FROM sentinel_users LIMIT 1`
 
+    // Migrate sentinel_users to support OAuth
+    await sql`
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.tables WHERE table_name = 'sentinel_users'
+        ) THEN
+          -- Make password_hash nullable for OAuth
+          ALTER TABLE sentinel_users ALTER COLUMN password_hash DROP NOT NULL;
+          
+          -- Add OAuth IDs
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'sentinel_users' AND column_name = 'google_id') THEN
+            ALTER TABLE sentinel_users ADD COLUMN google_id TEXT UNIQUE;
+          END IF;
+          
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'sentinel_users' AND column_name = 'github_id') THEN
+            ALTER TABLE sentinel_users ADD COLUMN github_id TEXT UNIQUE;
+          END IF;
+        END IF;
+      END $$
+    `
+
     // Ensure RAG chat tables exist for threaded conversations.
     await sql`
       CREATE TABLE IF NOT EXISTS chat_threads (
