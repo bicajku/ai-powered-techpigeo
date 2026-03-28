@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Lightbulb, Sparkle, MagnifyingGlass, ChartBar, ShieldCheck, LockSimple, Brain, Target, List, X } from "@phosphor-icons/react"
+import { Lightbulb, Sparkle, MagnifyingGlass, ChartBar, ShieldCheck, LockSimple, Brain, Target, List, X, Database, Lightning } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
@@ -50,6 +50,10 @@ export function MobileNav({
   if (canAccessNGOSaaS) {
     navItems.push({ value: "ngo-saas", label: "NGO-SAAS", icon: Target })
   }
+
+  // Integrations & Automations available to all users
+  navItems.push({ value: "integrations", label: "Integrations", icon: Database })
+  navItems.push({ value: "automations", label: "Automations", icon: Lightning })
 
   return (
     <div className="md:hidden fixed bottom-3 right-3 z-50">
