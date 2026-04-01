@@ -81,6 +81,28 @@ async function simpleHash(text: string): Promise<string> {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
+function getBackendBaseUrl(): string {
+  if (typeof import.meta !== "undefined" && import.meta.env?.VITE_BACKEND_API_BASE_URL) {
+    return import.meta.env.VITE_BACKEND_API_BASE_URL as string
+  }
+  return ""
+}
+
+async function postBackend(path: string, payload: unknown): Promise<{ ok: boolean; status: number; data?: any }> {
+  try {
+    const res = await fetch(`${getBackendBaseUrl()}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(payload),
+    })
+    const data = await res.json().catch(() => null)
+    return { ok: res.ok, status: res.status, data }
+  } catch {
+    return { ok: false, status: 0 }
+  }
+}
+
 export const authService = {
   /**
    * Initialize master admin account.
@@ -479,6 +501,14 @@ export const authService = {
         return { success: false, error: "Email is required" }
       }
 
+      const backendRes = await postBackend("/api/auth/password-reset/request", { email })
+      if (backendRes.status !== 0) {
+        if (backendRes.ok && backendRes.data?.ok) {
+          return { success: true }
+        }
+        return { success: false, error: backendRes.data?.error || "Failed to process reset request. Please try again." }
+      }
+
       const kv = getSafeKVClient()
       const credentials = await kv.get<Record<string, StoredCredential>>(USER_CREDENTIALS_KEY) || {}
       const credential = credentials[email.toLowerCase()]
@@ -516,6 +546,14 @@ export const authService = {
         return { success: false, error: "Email and code are required" }
       }
 
+      const backendRes = await postBackend("/api/auth/password-reset/verify", { email, code })
+      if (backendRes.status !== 0) {
+        if (backendRes.ok && backendRes.data?.ok) {
+          return { success: true }
+        }
+        return { success: false, error: backendRes.data?.error || "Invalid or expired reset code" }
+      }
+
       const kv = getSafeKVClient()
       const resetCodes = await kv.get<Record<string, PasswordResetCode>>(RESET_CODES_KEY) || {}
       const resetData = resetCodes[email.toLowerCase()]
@@ -549,6 +587,18 @@ export const authService = {
 
       if (newPassword.length < 8) {
         return { success: false, error: "Password must be at least 8 characters" }
+      }
+
+      const backendRes = await postBackend("/api/auth/password-reset/confirm", {
+        email,
+        code,
+        newPassword,
+      })
+      if (backendRes.status !== 0) {
+        if (backendRes.ok && backendRes.data?.ok) {
+          return { success: true }
+        }
+        return { success: false, error: backendRes.data?.error || "Failed to reset password. Please try again." }
       }
 
       const verifyResult = await this.verifyResetCode(email, code)

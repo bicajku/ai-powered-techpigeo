@@ -11,6 +11,29 @@ export interface InviteLink {
 
 const INVITES_STORAGE_KEY = "invite-links"
 const DEFAULT_PUBLIC_APP_URL = "https://ai-powered-techpigeo--umerslone.github.app"
+const SENTINEL_TOKEN_STORAGE_KEY = "sentinel-auth-token"
+
+function getBackendBaseUrl(): string {
+  if (typeof import.meta !== "undefined") {
+    const envUrl = (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_BACKEND_API_BASE_URL
+    if (envUrl) return envUrl
+  }
+  return ""
+}
+
+function getCsrfToken(): string | null {
+  if (typeof document === "undefined") return null
+  const match = document.cookie
+    .split(";")
+    .map((c) => c.trim())
+    .find((c) => c.startsWith("__csrf="))
+  return match ? match.slice("__csrf=".length) : null
+}
+
+function getAuthToken(): string | null {
+  if (typeof window === "undefined") return null
+  return window.localStorage.getItem(SENTINEL_TOKEN_STORAGE_KEY)
+}
 
 function getPublicAppUrl(): string {
   if (typeof window === "undefined") {
@@ -146,6 +169,44 @@ export const inviteService = {
     } catch (error) {
       console.error("Failed to revoke invite link:", error)
       return { success: false, error: "Failed to revoke invite link" }
+    }
+  },
+
+  async sendInviteEmail(params: {
+    email: string
+    inviteLink: string
+    inviterName?: string
+    organizationName?: string
+  }): Promise<{ success: boolean; error?: string }> {
+    try {
+      const token = getAuthToken()
+      if (!token) {
+        return { success: false, error: "You must be logged in to send invite emails" }
+      }
+
+      const csrf = getCsrfToken()
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      }
+      if (csrf) headers["X-CSRF-Token"] = csrf
+
+      const res = await fetch(`${getBackendBaseUrl()}/api/sentinel/org/invite-email`, {
+        method: "POST",
+        headers,
+        credentials: "include",
+        body: JSON.stringify(params),
+      })
+
+      const data = await res.json().catch(() => null) as { error?: string } | null
+      if (!res.ok) {
+        return { success: false, error: data?.error || "Failed to send invite email" }
+      }
+
+      return { success: true }
+    } catch (error) {
+      console.error("Failed to send invite email:", error)
+      return { success: false, error: "Failed to send invite email" }
     }
   },
 }

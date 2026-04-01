@@ -84,6 +84,12 @@ import {
   filterActiveWebProviders,
   logProviderUsage,
 } from "./routing-service.mjs"
+import {
+  isGraphMailConfigured,
+  sendWelcomeEmail,
+  sendPasswordResetEmail,
+  sendInviteEmail,
+} from "./graph-mailer.mjs"
 
 // ─────────────────────────── Config ──────────────────────────────
 
@@ -162,6 +168,57 @@ function hashToken(token) {
  */
 const _rateLimitBuckets = new Map() // key -> { count, windowStart }
 
+// ───────────────────── Password Reset Store ───────────────────────
+
+const PASSWORD_RESET_TTL_MS = Math.max(60000, Number(process.env.PASSWORD_RESET_TTL_MS || 15 * 60 * 1000))
+const PASSWORD_RESET_MAX_ATTEMPTS = Math.max(1, Number(process.env.PASSWORD_RESET_MAX_ATTEMPTS || 5))
+const _passwordResetCodes = new Map() // email -> { code, expiresAt, attempts }
+
+function generateResetCode() {
+  return String(Math.floor(100000 + Math.random() * 900000))
+}
+
+function setResetCode(email, code) {
+  _passwordResetCodes.set(email, {
+    code,
+    expiresAt: Date.now() + PASSWORD_RESET_TTL_MS,
+    attempts: 0,
+  })
+}
+
+function getResetCodeRecord(email) {
+  const rec = _passwordResetCodes.get(email)
+  if (!rec) return null
+  if (Date.now() > rec.expiresAt) {
+    _passwordResetCodes.delete(email)
+    return null
+  }
+  return rec
+}
+
+function verifyResetCode(email, code) {
+  const rec = getResetCodeRecord(email)
+  if (!rec) return { valid: false, reason: "Code has expired or does not exist" }
+  if (rec.attempts >= PASSWORD_RESET_MAX_ATTEMPTS) {
+    _passwordResetCodes.delete(email)
+    return { valid: false, reason: "Too many failed attempts. Request a new code." }
+  }
+
+  rec.attempts += 1
+  if (rec.code !== code) {
+    return { valid: false, reason: "Invalid reset code" }
+  }
+
+  return { valid: true }
+}
+
+setInterval(() => {
+  const now = Date.now()
+  for (const [email, rec] of _passwordResetCodes) {
+    if (now > rec.expiresAt) _passwordResetCodes.delete(email)
+  }
+}, 60000).unref()
+
 const RATE_LIMITS = {
   login: { windowMs: 60000, max: 5 },       // 5 login attempts per minute per IP
   api:   { windowMs: 60000, max: 120 },      // 120 API calls per minute per user
@@ -221,6 +278,9 @@ const CSRF_HEADER_NAME = "x-csrf-token"
 const CSRF_EXEMPT_PATHS = new Set([
   "/api/auth/login",
   "/api/auth/register",
+  "/api/auth/password-reset/request",
+  "/api/auth/password-reset/verify",
+  "/api/auth/password-reset/confirm",
   "/health",
 ])
 
@@ -713,6 +773,15 @@ async function handleRegister(req, res) {
       success: true,
     }).catch(() => {})
 
+    if (isGraphMailConfigured()) {
+      sendWelcomeEmail({
+        to: newUser.email,
+        fullName,
+      }).catch((err) => {
+        console.warn("[mail/welcome] send failed:", err.message)
+      })
+    }
+
     return sendJson(res, 201, {
       ok: true,
       token,
@@ -721,6 +790,201 @@ async function handleRegister(req, res) {
   } catch (err) {
     console.error("[auth/register] error:", err)
     return sendJson(res, 500, { ok: false, error: "Internal server error" }, req)
+  }
+}
+
+/**
+ * POST /api/auth/password-reset/request
+ * Body: { email }
+ * Returns: { ok } (always generic for security)
+ */
+async function handlePasswordResetRequest(req, res) {
+  const clientIp = getClientIp(req)
+  const rl = checkRateLimit("create", clientIp)
+  if (!rl.allowed) {
+    return sendJson(res, 429, {
+      ok: false,
+      error: `Too many requests. Try again in ${rl.retryAfter} seconds.`,
+    }, req)
+  }
+
+  const parsed = await parseJsonBody(req)
+  if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+
+  const body = parsed.data
+  const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : ""
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return sendJson(res, 200, { ok: true }, req)
+  }
+
+  if (!isDbConfigured()) return sendJson(res, 200, { ok: true }, req)
+
+  try {
+    const user = await getUserByEmailForLogin(email)
+    if (!user || !user.isActive) {
+      return sendJson(res, 200, { ok: true }, req)
+    }
+
+    const resetCode = generateResetCode()
+    setResetCode(email, resetCode)
+
+    if (isGraphMailConfigured()) {
+      await sendPasswordResetEmail({
+        to: email,
+        fullName: user.fullName,
+        resetCode,
+        expiresMinutes: Math.round(PASSWORD_RESET_TTL_MS / 60000),
+      })
+    } else {
+      console.warn("[mail/reset] Graph mail not configured; reset email skipped")
+    }
+
+    await writeAuditLog({
+      userId: user.id,
+      action: "UPDATE",
+      resource: "auth-password-reset-request",
+      ipAddress: clientIp,
+      success: true,
+    }).catch(() => {})
+
+    const payload = { ok: true }
+    if (String(process.env.NODE_ENV || "").toLowerCase() !== "production") {
+      payload.debugCode = resetCode
+    }
+    return sendJson(res, 200, payload, req)
+  } catch (err) {
+    console.error("[auth/password-reset/request] error:", err)
+    return sendJson(res, 200, { ok: true }, req)
+  }
+}
+
+/**
+ * POST /api/auth/password-reset/verify
+ * Body: { email, code }
+ * Returns: { ok }
+ */
+async function handlePasswordResetVerify(req, res) {
+  const parsed = await parseJsonBody(req)
+  if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+
+  const body = parsed.data
+  const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : ""
+  const code = typeof body.code === "string" ? body.code.trim() : ""
+  if (!email || !code) {
+    return sendJson(res, 400, { ok: false, error: "Email and code are required" }, req)
+  }
+
+  const result = verifyResetCode(email, code)
+  if (!result.valid) {
+    return sendJson(res, 400, { ok: false, error: result.reason || "Invalid reset code" }, req)
+  }
+
+  return sendJson(res, 200, { ok: true }, req)
+}
+
+/**
+ * POST /api/auth/password-reset/confirm
+ * Body: { email, code, newPassword }
+ * Returns: { ok }
+ */
+async function handlePasswordResetConfirm(req, res) {
+  const parsed = await parseJsonBody(req)
+  if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+
+  const body = parsed.data
+  const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : ""
+  const code = typeof body.code === "string" ? body.code.trim() : ""
+  const newPassword = typeof body.newPassword === "string" ? body.newPassword : ""
+
+  if (!email || !code || !newPassword) {
+    return sendJson(res, 400, { ok: false, error: "Email, code, and new password are required" }, req)
+  }
+  if (newPassword.length < 8) {
+    return sendJson(res, 400, { ok: false, error: "Password must be at least 8 characters" }, req)
+  }
+  if (!isDbConfigured()) {
+    return sendJson(res, 503, { ok: false, error: "Database not configured" }, req)
+  }
+
+  const verifyResult = verifyResetCode(email, code)
+  if (!verifyResult.valid) {
+    return sendJson(res, 400, { ok: false, error: verifyResult.reason || "Invalid reset code" }, req)
+  }
+
+  try {
+    const user = await getUserByEmailForLogin(email)
+    if (!user || !user.isActive) {
+      return sendJson(res, 400, { ok: false, error: "Invalid reset request" }, req)
+    }
+
+    const newHash = await hashPassword(newPassword)
+    await updatePasswordHash(user.id, newHash)
+    _passwordResetCodes.delete(email)
+
+    await writeAuditLog({
+      userId: user.id,
+      action: "UPDATE",
+      resource: "auth-password-reset-confirm",
+      ipAddress: getClientIp(req),
+      success: true,
+    }).catch(() => {})
+
+    return sendJson(res, 200, { ok: true }, req)
+  } catch (err) {
+    console.error("[auth/password-reset/confirm] error:", err)
+    return sendJson(res, 500, { ok: false, error: "Internal server error" }, req)
+  }
+}
+
+/**
+ * POST /api/sentinel/org/invite-email
+ * Body: { email, inviteLink, inviterName?, organizationName? }
+ */
+async function handleSendInviteEmail(req, res, user) {
+  if (!canPerformAction(user.role, ACTIONS.TEAM_ADD_MEMBER)) {
+    return sendJson(res, 403, { ok: false, error: "Insufficient permissions" }, req)
+  }
+
+  if (!isGraphMailConfigured()) {
+    return sendJson(res, 503, { ok: false, error: "Microsoft Graph email is not configured" }, req)
+  }
+
+  const parsed = await parseJsonBody(req)
+  if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+
+  const body = parsed.data
+  const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : ""
+  const inviteLink = typeof body.inviteLink === "string" ? body.inviteLink.trim() : ""
+  const inviterName = typeof body.inviterName === "string" && body.inviterName.trim() ? body.inviterName.trim() : user.email
+  const organizationName = typeof body.organizationName === "string" && body.organizationName.trim()
+    ? body.organizationName.trim()
+    : "NovusSparks"
+
+  if (!email || !inviteLink) {
+    return sendJson(res, 400, { ok: false, error: "email and inviteLink are required" }, req)
+  }
+
+  try {
+    await sendInviteEmail({
+      to: email,
+      inviterName,
+      inviteLink,
+      organizationName,
+    })
+
+    await writeAuditLog({
+      userId: user.userId,
+      action: "CREATE",
+      resource: "invite-email",
+      metadata: { email, organizationName },
+      ipAddress: getClientIp(req),
+      success: true,
+    }).catch(() => {})
+
+    return sendJson(res, 200, { ok: true }, req)
+  } catch (err) {
+    console.error("[sentinel/org/invite-email] error:", err)
+    return sendJson(res, 500, { ok: false, error: "Failed to send invite email" }, req)
   }
 }
 
@@ -2140,6 +2404,21 @@ const server = http.createServer(async (req, res) => {
       return handleRegister(req, res)
     }
 
+    // ── POST /api/auth/password-reset/request ──
+    if (method === "POST" && reqPathname === "/api/auth/password-reset/request") {
+      return handlePasswordResetRequest(req, res)
+    }
+
+    // ── POST /api/auth/password-reset/verify ──
+    if (method === "POST" && reqPathname === "/api/auth/password-reset/verify") {
+      return handlePasswordResetVerify(req, res)
+    }
+
+    // ── POST /api/auth/password-reset/confirm ──
+    if (method === "POST" && reqPathname === "/api/auth/password-reset/confirm") {
+      return handlePasswordResetConfirm(req, res)
+    }
+
     // ── GET /api/auth/verify ──
     if (method === "GET" && reqPathname === "/api/auth/verify") {
       return handleVerify(req, res)
@@ -2269,6 +2548,11 @@ const server = http.createServer(async (req, res) => {
       // GET /api/sentinel/org/members
       if (method === "GET" && reqPathname === "/api/sentinel/org/members") {
         return handleGetOrgMembers(req, res, user)
+      }
+
+      // POST /api/sentinel/org/invite-email
+      if (method === "POST" && reqPathname === "/api/sentinel/org/invite-email") {
+        return handleSendInviteEmail(req, res, user)
       }
 
       // POST /api/sentinel/modules/grant

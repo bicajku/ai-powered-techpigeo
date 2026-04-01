@@ -95,6 +95,24 @@ VITE_USE_BACKEND_AUTH=false
 > `localStorage`) and/or httpOnly cookie session + `X-CSRF-Token` header.
 > Enable server-side auth with `BACKEND_REQUIRE_AUTH=true` on the backend.
 
+### Backend Email (Microsoft 365 Graph)
+
+For transactional emails (welcome, password reset, invite), configure these backend-only variables:
+
+```bash
+M365_TENANT_ID=your-entra-tenant-id
+M365_CLIENT_ID=your-app-registration-client-id
+M365_CLIENT_SECRET=your-app-registration-client-secret
+M365_SENDER_EMAIL=info@novussparks.com
+M365_SENDER_NAME=NovusSparks
+
+# Optional password reset tuning
+PASSWORD_RESET_TTL_MS=900000
+PASSWORD_RESET_MAX_ATTEMPTS=5
+```
+
+Required Graph API app permission: `Mail.Send` (Application), with admin consent granted.
+
 Phase 3 adds backend provider diagnostics endpoint:
 
 - `GET /api/providers/status`

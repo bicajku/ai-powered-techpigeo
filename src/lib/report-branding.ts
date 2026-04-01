@@ -29,7 +29,7 @@ export const REPORT_BRAND = {
   companyName: "NovusSparks",
   projectName: "NovusSparks AI",
   companyTagline: "Enterprise AI Platform",
-  website: "https://www.novussparks.com",
+  website: "https://novussparks.com",
   logoPath: novussparksLogo,
   colors: {
     primary: "#38BDF8",

@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Copy, QrCode, Trash, Link as LinkIcon } from "@phosphor-icons/react"
+import { Input } from "@/components/ui/input"
+import { Copy, QrCode, Trash, Link as LinkIcon, EnvelopeSimple } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { inviteService, buildInviteLink, type InviteLink } from "@/lib/invite-system"
 import { QRCodeGenerator } from "@/components/QRCodeGenerator"
@@ -23,6 +24,7 @@ interface InviteManagerProps {
 export function InviteManager({ user }: InviteManagerProps) {
   const [invites, setInvites] = useState<InviteLink[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  const [inviteEmail, setInviteEmail] = useState("")
 
   const loadInvites = useCallback(async () => {
     const links = await inviteService.getInviteLinks(user.id)
@@ -38,7 +40,25 @@ export function InviteManager({ user }: InviteManagerProps) {
     const result = await inviteService.generateInviteLink(user.id, 30)
 
     if (result.success && result.link) {
-      toast.success("Invite link generated!")
+      const recipient = inviteEmail.trim().toLowerCase()
+      if (recipient) {
+        const sendRes = await inviteService.sendInviteEmail({
+          email: recipient,
+          inviteLink: result.link,
+          inviterName: user.fullName,
+          organizationName: "NovusSparks",
+        })
+
+        if (sendRes.success) {
+          toast.success(`Invite link generated and emailed to ${recipient}`)
+          setInviteEmail("")
+        } else {
+          toast.warning("Invite link generated, but email failed. You can copy the link manually.")
+        }
+      } else {
+        toast.success("Invite link generated!")
+      }
+
       await loadInvites()
     } else {
       toast.error(result.error || "Failed to generate invite link")
@@ -88,6 +108,24 @@ export function InviteManager({ user }: InviteManagerProps) {
           <LinkIcon size={18} weight="bold" />
           Generate New Invite Link
         </Button>
+        <div className="mt-3 flex flex-col sm:flex-row gap-2 max-w-xl">
+          <Input
+            type="email"
+            placeholder="Optional: recipient email (send automatically)"
+            value={inviteEmail}
+            onChange={(e) => setInviteEmail(e.target.value)}
+            disabled={isLoading}
+          />
+          <Button
+            variant="outline"
+            disabled
+            className="gap-2 sm:w-auto"
+            title="Email is sent automatically when you generate invite"
+          >
+            <EnvelopeSimple size={16} />
+            Auto-send
+          </Button>
+        </div>
       </div>
 
       <div className="space-y-3">
