@@ -173,6 +173,10 @@ function isBcryptHash(hash) {
  * @returns {Promise<{ verified: boolean, needsRehash: boolean }>}
  */
 export async function verifyPassword(password, storedHash) {
+  if (!storedHash) {
+    return { verified: false, needsRehash: false }
+  }
+
   if (isBcryptHash(storedHash)) {
     // Modern bcrypt verification
     const match = await bcrypt.compare(password, storedHash)
