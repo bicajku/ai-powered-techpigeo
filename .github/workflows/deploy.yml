@@ -1,0 +1,36 @@
+# This workflow only runs after a PR is merged into main.
+# Branch protection rules ensure CI must pass before any PR can be merged.
+name: Deploy
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  deploy-staging:
+    name: Deploy to Heroku Staging
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to Heroku Staging
+        uses: akhileshns/heroku-deploy@v4.0.0
+        with:
+          heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
+          heroku_app_name: ${{ secrets.HEROKU_STAGING_APP_NAME }}
+          heroku_email: ${{ secrets.HEROKU_EMAIL }}
+
+  deploy-production:
+    name: Deploy to Heroku Production
+    runs-on: ubuntu-latest
+    needs: [deploy-staging]
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to Heroku Production
+        uses: akhileshns/heroku-deploy@v4.0.0
+        with:
+          heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
+          heroku_app_name: ${{ secrets.HEROKU_PROD_APP_NAME }}
+          heroku_email: ${{ secrets.HEROKU_EMAIL }}
