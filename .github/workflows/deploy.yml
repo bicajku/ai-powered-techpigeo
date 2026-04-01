@@ -12,6 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      
+      - name: Install Heroku CLI
+        run: curl https://cli-assets.heroku.com/install.sh | sh
 
       - name: Deploy to Heroku Staging
         uses: akhileshns/heroku-deploy@v3.14.15
@@ -27,6 +30,9 @@ jobs:
     environment: production
     steps:
       - uses: actions/checkout@v4
+      
+      - name: Install Heroku CLI
+        run: curl https://cli-assets.heroku.com/install.sh | sh
 
       - name: Deploy to Heroku Production
         uses: akhileshns/heroku-deploy@v3.14.15
