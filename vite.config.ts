@@ -9,6 +9,31 @@ import { resolve } from 'path'
 const projectRoot = process.env.PROJECT_ROOT || import.meta.dirname
 
 /**
+ * Build-time safeguard: fail the production build if VITE_BACKEND_API_KEY is
+ * present in the environment. VITE_* variables are bundled into client assets,
+ * so a backend API key would be publicly readable — this is insecure.
+ * Use JWT/cookie session auth (BACKEND_REQUIRE_AUTH + Sentinel login) instead.
+ */
+function rejectClientApiKeyPlugin(): PluginOption {
+  return {
+    name: 'reject-client-api-key',
+    config(_config, env) {
+      if (env.command === 'build' && env.mode !== 'development') {
+        const key = process.env.VITE_BACKEND_API_KEY
+        if (key && key.trim().length > 0) {
+          throw new Error(
+            '\n[SECURITY BUILD ERROR] VITE_BACKEND_API_KEY is set in your environment.\n' +
+            'This variable is bundled into client assets and is publicly readable.\n' +
+            'Remove VITE_BACKEND_API_KEY from your production environment and use\n' +
+            'JWT/cookie session auth (BACKEND_REQUIRE_AUTH=true + Sentinel login).\n'
+          )
+        }
+      }
+    },
+  }
+}
+
+/**
  * Dev-only plugin: exposes /__github-user endpoint that proxies the
  * Codespace's GITHUB_TOKEN to api.github.com so the browser can
  * authenticate the real GitHub user without exposing the token client-side.
@@ -56,6 +81,7 @@ export default defineConfig({
     react(),
     tailwindcss(),
     codespaceGitHubUserPlugin(),
+    rejectClientApiKeyPlugin(),
     // DO NOT REMOVE
     createIconImportProxy() as PluginOption,
     sparkPlugin() as PluginOption,

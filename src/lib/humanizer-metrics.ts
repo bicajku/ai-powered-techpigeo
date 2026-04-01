@@ -85,8 +85,6 @@ export async function scoreHumanizerMeters(input: string): Promise<HumanizerMete
       : null
     if (sentinelToken) {
       headers["Authorization"] = `Bearer ${sentinelToken}`
-    } else if (config.useBackendAuth && config.backendApiKey) {
-      headers["x-api-key"] = config.backendApiKey
     }
 
     // CSRF token from cookie

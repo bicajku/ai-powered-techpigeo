@@ -74,8 +74,6 @@ async function callBackendLlm(request: BackendLlmRequest): Promise<unknown> {
     : null
   if (sentinelToken) {
     headers["Authorization"] = `Bearer ${sentinelToken}`
-  } else if (config.useBackendAuth && config.backendApiKey) {
-    headers["x-backend-api-key"] = config.backendApiKey
   }
 
   // CSRF token from cookie
@@ -176,8 +174,6 @@ export async function fetchBackendProviderStatus(): Promise<BackendProviderStatu
     : null
   if (sentinelToken) {
     headers["Authorization"] = `Bearer ${sentinelToken}`
-  } else if (config.useBackendAuth && config.backendApiKey) {
-    headers["x-backend-api-key"] = config.backendApiKey
   }
 
   const response = await fetch(`${baseUrl}/api/providers/status`, {

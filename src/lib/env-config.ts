@@ -151,10 +151,35 @@ export function loadEnvConfig(): EnvConfig {
     useBackendLlm: getEnvBoolean("VITE_USE_BACKEND_LLM", false),
     useBackendStorage: getEnvBoolean("VITE_USE_BACKEND_STORAGE", false),
     useBackendAuth: getEnvBoolean("VITE_USE_BACKEND_AUTH", false),
-    backendApiKey: getEnvString("VITE_BACKEND_API_KEY"),
+    // SECURITY: backendApiKey is always null at runtime. VITE_BACKEND_API_KEY must
+    // never be used in frontend code — VITE_* variables are bundled into client
+    // assets and are effectively public. Use JWT/cookie session auth instead.
+    backendApiKey: null,
     enableServerHumanizerScoring: getEnvBoolean("VITE_ENABLE_SERVER_HUMANIZER_SCORING", false),
   }
-  
+
+  // Runtime safeguard: warn loudly if VITE_BACKEND_API_KEY was set (dev or prod).
+  // In production this is a security violation; in development it is a misconfiguration.
+  const rawBackendApiKey = getEnvString("VITE_BACKEND_API_KEY")
+  if (rawBackendApiKey) {
+    const isProd =
+      typeof import.meta !== "undefined" && import.meta.env?.PROD === true
+    if (isProd) {
+      console.error(
+        "[SECURITY] VITE_BACKEND_API_KEY is set in a production build. " +
+        "This key is bundled into client assets and is publicly readable. " +
+        "Remove VITE_BACKEND_API_KEY from your production environment immediately " +
+        "and use JWT/cookie session auth (BACKEND_REQUIRE_AUTH + Sentinel login)."
+      )
+    } else {
+      console.warn(
+        "[env-config] VITE_BACKEND_API_KEY is set but is NOT used by frontend clients. " +
+        "Frontend auth relies on JWT bearer tokens only. " +
+        "Do not deploy VITE_BACKEND_API_KEY to production."
+      )
+    }
+  }
+
   return config
 }
 

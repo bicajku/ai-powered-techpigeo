@@ -26,8 +26,6 @@ export async function searchWeb(query: string, limit = 4): Promise<WebSearchResp
     : null
   if (token) {
     headers["Authorization"] = `Bearer ${token}`
-  } else if (config.backendApiKey) {
-    headers["x-api-key"] = config.backendApiKey
   }
 
   try {

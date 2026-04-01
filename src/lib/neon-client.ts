@@ -35,12 +35,6 @@ function getProxyHeaders(): Record<string, string> {
       : null
   if (token) {
     headers["Authorization"] = `Bearer ${token}`
-  } else {
-    const apiKey =
-      typeof import.meta !== "undefined" ? import.meta.env?.VITE_BACKEND_API_KEY : undefined
-    if (apiKey) {
-      headers["x-api-key"] = apiKey
-    }
   }
   // M1 fix: Attach CSRF token from cookie
   try {

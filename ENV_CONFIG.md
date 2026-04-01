@@ -73,13 +73,27 @@ VITE_BACKEND_API_BASE_URL=http://127.0.0.1:8787
 VITE_USE_BACKEND_LLM=false
 VITE_USE_BACKEND_STORAGE=false
 VITE_USE_BACKEND_AUTH=false
-VITE_BACKEND_API_KEY=
 ```
 
 - `VITE_USE_BACKEND_LLM=true` routes LLM calls via backend endpoint `/api/llm/generate`.
 - Keep storage/auth flags disabled until their migration phases are implemented.
-- `VITE_USE_BACKEND_AUTH=true` adds `x-backend-api-key` header for backend auth guard.
-- `VITE_BACKEND_API_KEY` should match backend `BACKEND_API_KEY`.
+
+> **⚠️ SECURITY — `VITE_BACKEND_API_KEY` must NOT be used in production.**
+>
+> `VITE_*` variables are bundled into client-side JavaScript assets and are
+> effectively public — anyone can extract them from the browser. Setting
+> `VITE_BACKEND_API_KEY` in a production environment is a security violation:
+>
+> - The production build will **fail with an error** if `VITE_BACKEND_API_KEY`
+>   is present in the environment.
+> - The frontend **never** sends `x-api-key` or `x-backend-api-key` headers
+>   from browser code, regardless of this variable.
+> - Backend secrets (`BACKEND_API_KEY`, `GEMINI_API_KEY`, etc.) **must remain
+>   server-side only** (Heroku Config Vars, GitHub Secrets, etc.).
+>
+> **Preferred auth flow:** JWT bearer token (`sentinel-auth-token` in
+> `localStorage`) and/or httpOnly cookie session + `X-CSRF-Token` header.
+> Enable server-side auth with `BACKEND_REQUIRE_AUTH=true` on the backend.
 
 Phase 3 adds backend provider diagnostics endpoint:
 
@@ -180,9 +194,16 @@ This will log:
 
 1. **Never commit `.env.local`** - It's already in `.gitignore`
 2. **Never commit API keys or secrets** to version control
-3. **Use the secret-store module** for runtime secret management
-4. **Rotate credentials regularly** especially for production
-5. **Use different credentials** for development and production
+3. **Never set `VITE_BACKEND_API_KEY` in production** — it will be bundled into
+   client assets and exposed publicly. The production build will fail if it is set.
+4. **Keep backend secrets server-side only** (`BACKEND_API_KEY`, `GEMINI_API_KEY`,
+   `BRIGHT_DATA_API_KEY`, etc. must only be set as server environment variables,
+   never as `VITE_*` variables).
+5. **Use JWT/cookie session auth** — the frontend authenticates via bearer token
+   (`sentinel-auth-token`) and/or httpOnly cookie + CSRF header.
+6. **Use the secret-store module** for runtime secret management
+7. **Rotate credentials regularly** especially for production
+8. **Use different credentials** for development and production
 
 ## Secret Storage
 
