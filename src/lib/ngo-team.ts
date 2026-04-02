@@ -45,6 +45,50 @@ async function saveTeamMembers(adminId: string, members: NGOTeamMember[]): Promi
   } catch { /* ignore */ }
 }
 
+/**
+ * Sync a member into the NGO team list when module access is granted
+ * from outside (e.g. Enterprise admin panel). Idempotent — will not
+ * duplicate an existing member.
+ */
+export async function syncMemberToNGOTeam(
+  adminId: string,
+  member: { id: string; email: string; fullName: string; accessLevel: NGOAccessLevel }
+): Promise<void> {
+  const team = await getTeamMembers(adminId)
+  const existing = team.find(m => m.id === member.id || m.email.toLowerCase() === member.email.toLowerCase())
+  if (existing) {
+    // Update access level if it changed
+    existing.accessLevel = member.accessLevel
+    await saveTeamMembers(adminId, team)
+    return
+  }
+  const entry: NGOTeamMember = {
+    id: member.id,
+    email: member.email.toLowerCase().trim(),
+    fullName: member.fullName,
+    accessLevel: member.accessLevel,
+    addedBy: adminId,
+    addedAt: Date.now(),
+  }
+  await saveTeamMembers(adminId, [...team, entry])
+}
+
+/**
+ * Remove a member from the NGO team list when module access is revoked
+ * from outside (e.g. Enterprise admin panel). No-op if the member is
+ * not in the list.
+ */
+export async function removeMemberFromNGOTeam(
+  adminId: string,
+  memberId: string
+): Promise<void> {
+  const team = await getTeamMembers(adminId)
+  const filtered = team.filter(m => m.id !== memberId)
+  if (filtered.length !== team.length) {
+    await saveTeamMembers(adminId, filtered)
+  }
+}
+
 export async function addTeamMember(
   adminId: string,
   email: string,

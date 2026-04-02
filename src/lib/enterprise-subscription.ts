@@ -2,6 +2,7 @@ import { UserProfile, NGOAccessLevel } from "@/types"
 import { ensureUserSubscription, getDefaultSubscription } from "@/lib/subscription"
 import { getSafeKVClient } from "@/lib/spark-shim"
 import { createOrganizationMember } from "@/lib/org-members"
+import { syncMemberToNGOTeam, removeMemberFromNGOTeam } from "@/lib/ngo-team"
 
 /**
  * Enterprise Subscription & Team Access Management
@@ -432,6 +433,16 @@ export async function addEnterpriseTeamMember(
     sub.updatedAt = Date.now()
     await saveEnterpriseSubscription(sub)
 
+    // If the new member was granted NGO access, sync them to the NGO team list
+    if (ngoAccessLevel) {
+      await syncMemberToNGOTeam(sub.ownerId, {
+        id: member.id,
+        email: member.email,
+        fullName: member.fullName,
+        accessLevel: ngoAccessLevel,
+      })
+    }
+
     return { success: true, member, warning }
   } catch (error) {
     console.error("Failed to add team member:", error)
@@ -484,6 +495,7 @@ export async function removeEnterpriseTeamMember(
     const sub = await getEnterpriseSubscription(organizationId)
     if (!sub) return { success: false, error: "Enterprise subscription not found" }
 
+    const removedMember = sub.teamMembers.find((m) => m.id === memberId)
     const initialLength = sub.teamMembers.length
     sub.teamMembers = sub.teamMembers.filter((m) => m.id !== memberId)
 
@@ -493,6 +505,12 @@ export async function removeEnterpriseTeamMember(
 
     sub.updatedAt = Date.now()
     await saveEnterpriseSubscription(sub)
+
+    // If the removed member had NGO access, remove them from the NGO team list
+    if (removedMember?.ngoAccessLevel) {
+      await removeMemberFromNGOTeam(sub.ownerId, memberId)
+    }
+
     return { success: true }
   } catch (error) {
     console.error("Failed to remove team member:", error)
@@ -531,6 +549,14 @@ export async function grantNGOAccess(
       member.individualProLicense
     )
 
+    // Sync to NGO team list so the member appears in the NGO-SAAS Team tab
+    await syncMemberToNGOTeam(sub.ownerId, {
+      id: member.id,
+      email: member.email,
+      fullName: member.fullName,
+      accessLevel,
+    })
+
     return { success: true }
   } catch (error) {
     console.error("Failed to grant NGO access:", error)
@@ -563,6 +589,9 @@ export async function revokeNGOAccess(
       member.moduleAccess,
       member.individualProLicense
     )
+
+    // Remove from NGO team list so the member disappears from NGO-SAAS Team tab
+    await removeMemberFromNGOTeam(sub.ownerId, memberId)
 
     return { success: true }
   } catch (error) {
