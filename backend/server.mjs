@@ -648,20 +648,10 @@ async function handleLogin(req, res) {
       })
     }
 
-    // Get subscription info for token with timeout
-    console.log(`[auth/login] Getting subscription for ${user.id}`)
-    let subscription = null
-    try {
-      const subscriptionPromise = getUserSubscription(user.id)
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error("Subscription query timeout")), 5000)
-      )
-      subscription = await Promise.race([subscriptionPromise, timeoutPromise])
-    } catch (err) {
-      console.warn("[auth/login] getUserSubscription failed or timed out:", err.message)
-      subscription = null
-    }
-    const tier = subscription?.tier || null
+    // Get subscription info for token with timeout - TEMPORARILY SKIPPED FOR DEBUGGING
+    console.log(`[auth/login] Skipping subscription query (debug mode)`)
+    const subscription = null
+    const tier = null
 
     // Sign JWT
     const token = signToken({
@@ -2412,6 +2402,11 @@ const server = http.createServer(async (req, res) => {
   // ════════════════════════════════════════════════════════════════
 
   if (SENTINEL_AUTH_ENABLED) {
+    // ── GET /api/health ──
+    if (method === "GET" && reqPathname === "/api/health") {
+      return sendJson(res, 200, { ok: true, status: "healthy", timestamp: Date.now() }, req)
+    }
+
     // ── POST /api/auth/login ──
     if (method === "POST" && reqPathname === "/api/auth/login") {
       return handleLogin(req, res)
