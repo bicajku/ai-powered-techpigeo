@@ -29,6 +29,7 @@ import {
   getUserById,
   updateLastLogin,
   updatePasswordHash,
+  assignUserToOrganization,
   getUserSubscription,
   getUserModulePermissions,
   getOrganization,
@@ -1300,6 +1301,81 @@ async function handleGetOrgMembers(req, res, user) {
     return sendJson(res, 200, { ok: true, members }, req)
   } catch (err) {
     console.error("[sentinel/org/members] error:", err)
+    return sendJson(res, 500, { ok: false, error: "Internal server error" }, req)
+  }
+}
+
+async function handleCreateOrgMember(req, res, actor) {
+  if (!actor.organizationId) {
+    return sendJson(res, 400, { ok: false, error: "User not in an organization" }, req)
+  }
+
+  if (!canPerformAction(actor.role, ACTIONS.TEAM_ADD_MEMBER)) {
+    return sendJson(res, 403, { ok: false, error: "Insufficient permissions" }, req)
+  }
+
+  const parsed = await parseJsonBody(req)
+  if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+
+  const body = parsed.data
+  const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : ""
+  const password = typeof body.password === "string" ? body.password : ""
+  const fullName = typeof body.fullName === "string" ? body.fullName.trim() : ""
+  const role = typeof body.role === "string" ? body.role.trim().toUpperCase() : "TEAM_MEMBER"
+
+  if (!email || !fullName || !password) {
+    return sendJson(res, 400, { ok: false, error: "Email, fullName, and password are required" }, req)
+  }
+
+  if (password.length < 8) {
+    return sendJson(res, 400, { ok: false, error: "Password must be at least 8 characters" }, req)
+  }
+
+  const allowedRoles = new Set(["USER", "TEAM_MEMBER", "TEAM_ADMIN", "ORG_ADMIN"])
+  const nextRole = allowedRoles.has(role) ? role : "TEAM_MEMBER"
+
+  try {
+    let user = await getUserByEmailForLogin(email)
+
+    if (!user) {
+      const passwordHash = await hashPassword(password)
+      const newUserId = crypto.randomUUID()
+      user = await createUser({
+        id: newUserId,
+        email,
+        fullName,
+        passwordHash,
+        role: nextRole,
+        organizationId: actor.organizationId,
+      })
+
+      if (!user) {
+        user = await getUserByEmailForLogin(email)
+      }
+    }
+
+    if (!user) {
+      return sendJson(res, 500, { ok: false, error: "Failed to create organization member" }, req)
+    }
+
+    const assignedUser = await assignUserToOrganization(user.id, actor.organizationId, nextRole)
+    if (!assignedUser) {
+      return sendJson(res, 500, { ok: false, error: "Failed to assign member to organization" }, req)
+    }
+
+    await writeAuditLog({
+      userId: actor.userId,
+      action: "CREATE",
+      resource: "organization-member",
+      resourceId: assignedUser.id,
+      metadata: { email, organizationId: actor.organizationId, role: nextRole },
+      ipAddress: getClientIp(req),
+      success: true,
+    }).catch(() => {})
+
+    return sendJson(res, 201, { ok: true, member: assignedUser }, req)
+  } catch (err) {
+    console.error("[sentinel/org/members:create] error:", err)
     return sendJson(res, 500, { ok: false, error: "Internal server error" }, req)
   }
 }
@@ -2620,6 +2696,11 @@ const server = http.createServer(async (req, res) => {
       // GET /api/sentinel/org/members
       if (method === "GET" && reqPathname === "/api/sentinel/org/members") {
         return handleGetOrgMembers(req, res, user)
+      }
+
+      // POST /api/sentinel/org/members
+      if (method === "POST" && reqPathname === "/api/sentinel/org/members") {
+        return handleCreateOrgMember(req, res, user)
       }
 
       // POST /api/sentinel/org/invite-email

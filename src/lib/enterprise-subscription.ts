@@ -1,6 +1,7 @@
 import { UserProfile, NGOAccessLevel } from "@/types"
 import { ensureUserSubscription, getDefaultSubscription } from "@/lib/subscription"
 import { getSafeKVClient } from "@/lib/spark-shim"
+import { createOrganizationMember } from "@/lib/org-members"
 
 /**
  * Enterprise Subscription & Team Access Management
@@ -321,21 +322,22 @@ export async function addEnterpriseTeamMember(
         return { success: false, error: "Password (min 8 chars) is required for new members" }
       }
 
-      const registerResult = await postBackend("/api/auth/register", {
+      const backendCreate = await createOrganizationMember({
         email: normalizedEmail,
-        password: password.trim(),
         fullName,
+        password: password.trim(),
+        role,
       })
 
-      if (!registerResult.ok || !registerResult.data?.user) {
+      if (!backendCreate.success) {
         return {
           success: false,
-          error: (registerResult.data?.error as string) || "Failed to create backend account for member",
+          error: backendCreate.error || "Failed to create backend account for member",
         }
       }
 
-      const backendUser = registerResult.data.user as Partial<UserProfile>
-      userId = typeof backendUser.id === "string" ? backendUser.id : `ent_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+      const backendUser = backendCreate.member as Partial<UserProfile> | undefined
+      userId = typeof backendUser?.id === "string" ? backendUser.id : `ent_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
       const passwordHash = await simpleHash(password.trim())
       const targetPlan = planFromTier(sub.tier)
 
