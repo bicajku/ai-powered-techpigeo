@@ -282,6 +282,9 @@ const CSRF_EXEMPT_PATHS = new Set([
   "/api/auth/password-reset/verify",
   "/api/auth/password-reset/confirm",
   "/health",
+  "/api/proxy/db/query", // Database proxy - relies on JWT authentication instead
+  "/api/proxy/db/test",
+  "/api/proxy/gemini/generate", // LLM proxy - relies on JWT authentication instead
 ])
 
 function generateCsrfToken() {
@@ -483,28 +486,20 @@ function authorize(req) {
     if (token) {
       // Check token revocation before verifying
       if (isTokenRevoked(hashToken(token))) {
-        console.warn("[authorize] Token is revoked")
         return { authorized: false }
       }
       const jwtResult = authenticateRequest(req)
       if (jwtResult.authenticated) {
-        console.log(`[authorize] JWT verified successfully for user: ${jwtResult.user?.email}`)
         return { authorized: true, user: jwtResult.user }
-      } else {
-        console.warn(`[authorize] JWT verification failed: ${jwtResult.error}`)
       }
-    } else {
-      console.warn("[authorize] No token found in request")
     }
   }
 
   // Fall back to legacy API key
   if (isApiKeyAuthorized(req)) {
-    console.log("[authorize] Authorized via API key")
     return { authorized: true, user: null } // No user context with API key
   }
 
-  console.warn("[authorize] No valid auth found (no JWT, no API key)")
   return { authorized: false }
 }
 
@@ -2958,16 +2953,8 @@ const server = http.createServer(async (req, res) => {
 
   // ── POST /api/proxy/db/query ── (requires auth)
   if (method === "POST" && reqPathname === "/api/proxy/db/query") {
-    const token = extractToken(req)
-    console.log(`[proxy/db/query] Authorization check - Token present: ${!!token}, SENTINEL_AUTH_ENABLED: ${SENTINEL_AUTH_ENABLED}`)
-    if (token) {
-      const jwtResult = authenticateRequest(req)
-      console.log(`[proxy/db/query] JWT verification result: authenticated=${jwtResult.authenticated}, error=${jwtResult.error}`)
-    }
     const auth = authorize(req)
-    console.log(`[proxy/db/query] Authorization result: ${auth.authorized ? 'AUTHORIZED' : 'UNAUTHORIZED'}`)
     if (!auth.authorized) {
-      console.error(`[proxy/db/query] DENIED - No valid auth. Token: ${!!token}, SENTINEL_ENABLED: ${SENTINEL_AUTH_ENABLED}`)
       return sendJson(res, 401, { ok: false, error: "Unauthorized" }, req)
     }
 
