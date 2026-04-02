@@ -1391,11 +1391,10 @@ async function handleBootstrapOrganization(req, res, actor) {
   const actorRole = fullActor?.role || actor.role
   const actorOrganizationId = fullActor?.organizationId || actor.organizationId || null
 
-  if (!hasMinimumRole(actorRole, "ORG_ADMIN")) {
-    return sendJson(res, 403, { ok: false, error: "Insufficient permissions" }, req)
-  }
-
   if (actorOrganizationId) {
+    if (!hasMinimumRole(actorRole, "ORG_ADMIN")) {
+      return sendJson(res, 403, { ok: false, error: "Insufficient permissions to manage organization" }, req)
+    }
     const existingOrg = await getOrganization(actorOrganizationId).catch(() => null)
     return sendJson(res, 200, { ok: true, organization: existingOrg || { id: actorOrganizationId } }, req)
   }

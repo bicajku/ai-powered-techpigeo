@@ -75,6 +75,32 @@ export function EnterpriseAdmin({ user, organizationId }: EnterpriseAdminProps) 
     try {
       setLoading(true)
       const sub = await getEnterpriseSubscription(organizationId)
+
+      if (sub) {
+        // Auto-repair backend organization if missing
+        try {
+          const bootstrap = await bootstrapOrganization({
+            name: `${user.fullName || user.email} Enterprise`,
+            tier: sub.tier,
+          })
+          if (bootstrap.success && bootstrap.organization?.id && bootstrap.organization.id !== organizationId) {
+             // A new backend organization was created, or it differs from our KV org ID.
+             // We should update the KV subscription to use the correct backend ID.
+             await saveEnterpriseSubscription({
+               ...sub,
+               organizationId: bootstrap.organization.id
+             })
+             // Also reconcile entitlements for the new org
+             await reconcileEnterpriseMemberEntitlements(bootstrap.organization.id)
+             // Force reload to get updated auth state
+             window.location.reload()
+             return
+          }
+        } catch (e) {
+          console.warn("Silent backend org bootstrap failed:", e)
+        }
+      }
+
       if (!sub) {
         setSubscription(null)
         setError(null)
@@ -211,7 +237,8 @@ export function EnterpriseAdmin({ user, organizationId }: EnterpriseAdminProps) 
 
       await saveEnterpriseSubscription(created)
       await reconcileEnterpriseMemberEntitlements(backendOrganizationId)
-      await loadSubscription()
+      // We must reload the page so the app context picks up the newly created DB organizationId
+      window.location.reload()
     } catch (err) {
       setError("Failed to create subscription")
       console.error(err)

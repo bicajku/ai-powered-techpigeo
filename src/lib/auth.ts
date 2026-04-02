@@ -59,13 +59,18 @@ function mapSentinelUserToUserProfile(user: SentinelUser): UserProfile {
     user.role === "ORG_ADMIN" ||
     user.role === "TEAM_ADMIN"
 
+  const defaultSub = getDefaultSubscription()
+
   return {
     id: user.id,
     email: user.email,
     fullName: user.fullName,
     role: isAdminRole ? "admin" : "client",
     avatarUrl: user.avatarUrl,
-    subscription: getDefaultSubscription(),
+    subscription: user.organizationId ? {
+      ...defaultSub,
+      enterpriseOrganizationId: user.organizationId,
+    } : defaultSub,
     createdAt: user.createdAt,
     lastLoginAt: user.lastLoginAt,
   }
@@ -75,10 +80,15 @@ function mergeUserProfileWithStoredState(user: SentinelUser, storedUser?: UserPr
   const mappedUser = mapSentinelUserToUserProfile(user)
   const previous = storedUser ?? null
 
+  const mergedSubscription = previous?.subscription ? {
+    ...previous.subscription,
+    enterpriseOrganizationId: user.organizationId || previous.subscription.enterpriseOrganizationId
+  } : mappedUser.subscription
+
   return ensureUserSubscription({
     ...previous,
     ...mappedUser,
-    subscription: previous?.subscription || mappedUser.subscription,
+    subscription: mergedSubscription,
   })
 }
 
