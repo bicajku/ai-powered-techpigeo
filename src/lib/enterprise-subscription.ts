@@ -95,6 +95,31 @@ function maxPlan(
   return planRank(left) >= planRank(right) ? left : right
 }
 
+function findStoredUserRecord(
+  users: Record<string, UserProfile>,
+  userId: string,
+  email?: string
+): { key: string; user: UserProfile } | null {
+  if (users[userId]) {
+    return { key: userId, user: users[userId] }
+  }
+
+  const byId = Object.entries(users).find(([, candidate]) => candidate.id === userId)
+  if (byId) {
+    return { key: byId[0], user: byId[1] }
+  }
+
+  if (!email) return null
+
+  const normalizedEmail = email.toLowerCase()
+  const byEmail = Object.entries(users).find(([, candidate]) => candidate.email.toLowerCase() === normalizedEmail)
+  if (byEmail) {
+    return { key: byEmail[0], user: byEmail[1] }
+  }
+
+  return null
+}
+
 async function syncMemberSubscription(
   userId: string,
   subscription: EnterpriseSubscription,
@@ -105,7 +130,20 @@ async function syncMemberSubscription(
 ): Promise<void> {
   const kv = getSafeKVClient()
   const users = (await kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
-  const existingUser = users[userId]
+  const member = subscription.teamMembers.find((teamMember) => teamMember.id === userId)
+  const storedRecord = findStoredUserRecord(users, userId, member?.email)
+
+  const existingUser = storedRecord?.user || (member
+    ? {
+        id: userId,
+        email: member.email,
+        fullName: member.fullName,
+        role: "client",
+        createdAt: member.addedAt,
+        lastLoginAt: member.lastActiveAt,
+      }
+    : null)
+
   if (!existingUser) return
 
   const safeUser = ensureUserSubscription(existingUser)
@@ -113,22 +151,24 @@ async function syncMemberSubscription(
   const targetPlan = planFromTier(subscription.tier)
   const nextPlan = maxPlan(existingSub.plan, targetPlan)
 
-  users[userId] = {
+  const storageKey = storedRecord?.key || userId
+  users[storageKey] = {
     ...safeUser,
+    id: userId,
     subscription: {
       ...existingSub,
       plan: nextPlan,
       status: "active",
-        hasNgoModuleAccess: subscription.features.canAccessNGOSaaS && !!ngoAccessLevel,
-        ngoAccessLevel: subscription.features.canAccessNGOSaaS ? ngoAccessLevel : undefined,
-        ngoTeamAdminId: subscription.features.canAccessNGOSaaS && ngoAccessLevel ? subscription.ownerId : undefined,
-        enterpriseOrganizationId: subscription.organizationId,
-        enterpriseRole: role,
-        enterpriseModuleAccess: moduleAccess,
-        individualProLicense: Boolean(individualProLicense),
-        updatedAt: Date.now(),
-      },
-    }
+      hasNgoModuleAccess: subscription.features.canAccessNGOSaaS && !!ngoAccessLevel,
+      ngoAccessLevel: subscription.features.canAccessNGOSaaS ? ngoAccessLevel : undefined,
+      ngoTeamAdminId: subscription.features.canAccessNGOSaaS && ngoAccessLevel ? subscription.ownerId : undefined,
+      enterpriseOrganizationId: subscription.organizationId,
+      enterpriseRole: role,
+      enterpriseModuleAccess: moduleAccess,
+      individualProLicense: Boolean(individualProLicense),
+      updatedAt: Date.now(),
+    },
+  }
 
   await kv.set(USERS_STORAGE_KEY, users)
 }
