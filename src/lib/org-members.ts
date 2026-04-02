@@ -70,7 +70,7 @@ export async function createOrganizationMember(payload: {
 export async function bootstrapOrganization(payload: {
   name: string
   tier?: string
-}): Promise<{ success: boolean; organization?: Record<string, unknown>; error?: string }> {
+}): Promise<{ success: boolean; organization?: { id: string; [key: string]: unknown }; error?: string }> {
   try {
     const res = await fetch(`${getBackendBaseUrl()}/api/sentinel/org/bootstrap`, {
       method: "POST",
