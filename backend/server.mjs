@@ -1307,11 +1307,16 @@ async function handleGetOrgMembers(req, res, user) {
 }
 
 async function handleCreateOrgMember(req, res, actor) {
-  if (!actor.organizationId) {
+  const fullActor = await getUserById(actor.userId).catch(() => null)
+  const actorOrganizationId = fullActor?.organizationId || actor.organizationId || null
+
+  if (!actorOrganizationId) {
     return sendJson(res, 400, { ok: false, error: "User not in an organization" }, req)
   }
 
-  if (!canPerformAction(actor.role, ACTIONS.TEAM_ADD_MEMBER)) {
+  const actorRole = fullActor?.role || actor.role
+
+  if (!canPerformAction(actorRole, ACTIONS.TEAM_ADD_MEMBER)) {
     return sendJson(res, 403, { ok: false, error: "Insufficient permissions" }, req)
   }
 
@@ -1347,7 +1352,7 @@ async function handleCreateOrgMember(req, res, actor) {
         fullName,
         passwordHash,
         role: nextRole,
-        organizationId: actor.organizationId,
+        organizationId: actorOrganizationId,
       })
 
       if (!user) {
@@ -1359,7 +1364,7 @@ async function handleCreateOrgMember(req, res, actor) {
       return sendJson(res, 500, { ok: false, error: "Failed to create organization member" }, req)
     }
 
-    const assignedUser = await assignUserToOrganization(user.id, actor.organizationId, nextRole)
+    const assignedUser = await assignUserToOrganization(user.id, actorOrganizationId, nextRole)
     if (!assignedUser) {
       return sendJson(res, 500, { ok: false, error: "Failed to assign member to organization" }, req)
     }
@@ -1369,7 +1374,7 @@ async function handleCreateOrgMember(req, res, actor) {
       action: "CREATE",
       resource: "organization-member",
       resourceId: assignedUser.id,
-      metadata: { email, organizationId: actor.organizationId, role: nextRole },
+      metadata: { email, organizationId: actorOrganizationId, role: nextRole },
       ipAddress: getClientIp(req),
       success: true,
     }).catch(() => {})
@@ -1382,13 +1387,17 @@ async function handleCreateOrgMember(req, res, actor) {
 }
 
 async function handleBootstrapOrganization(req, res, actor) {
-  if (!hasMinimumRole(actor.role, "ORG_ADMIN")) {
+  const fullActor = await getUserById(actor.userId).catch(() => null)
+  const actorRole = fullActor?.role || actor.role
+  const actorOrganizationId = fullActor?.organizationId || actor.organizationId || null
+
+  if (!hasMinimumRole(actorRole, "ORG_ADMIN")) {
     return sendJson(res, 403, { ok: false, error: "Insufficient permissions" }, req)
   }
 
-  if (actor.organizationId) {
-    const existingOrg = await getOrganization(actor.organizationId).catch(() => null)
-    return sendJson(res, 200, { ok: true, organization: existingOrg || { id: actor.organizationId } }, req)
+  if (actorOrganizationId) {
+    const existingOrg = await getOrganization(actorOrganizationId).catch(() => null)
+    return sendJson(res, 200, { ok: true, organization: existingOrg || { id: actorOrganizationId } }, req)
   }
 
   const parsed = await parseJsonBody(req)
