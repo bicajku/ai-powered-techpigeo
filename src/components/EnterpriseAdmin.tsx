@@ -85,15 +85,21 @@ export function EnterpriseAdmin({ user, organizationId }: EnterpriseAdminProps) 
           })
           if (bootstrap.success && bootstrap.organization?.id && bootstrap.organization.id !== organizationId) {
              // A new backend organization was created, or it differs from our KV org ID.
-             // We should update the KV subscription to use the correct backend ID.
-             await saveEnterpriseSubscription({
-               ...sub,
-               organizationId: bootstrap.organization.id
-             })
-             // Also reconcile entitlements for the new org
+             // Update the KV subscription to use the correct backend ID.
+             const repairedSub = { ...sub, organizationId: bootstrap.organization.id }
+             await saveEnterpriseSubscription(repairedSub)
              await reconcileEnterpriseMemberEntitlements(bootstrap.organization.id)
-             // Force reload to get updated auth state
-             window.location.reload()
+             // Continue loading with repaired subscription (no reload needed)
+             setSubscription(repairedSub)
+             setSetupPlan(repairedSub.plan)
+             setSetupTier(repairedSub.tier)
+             setSetupBillingCycle(repairedSub.billingCycle)
+             setSetupMaxMembers(repairedSub.features.maxTeamMembers)
+             setSetupRenewalDate(new Date(repairedSub.renewalDate).toISOString().slice(0, 10))
+             setSetupActive(repairedSub.isActive)
+             const usage = await listEnterpriseCreditUsage(bootstrap.organization.id)
+             setCreditUsage(usage)
+             setLoading(false)
              return
           }
         } catch (e) {
@@ -237,8 +243,7 @@ export function EnterpriseAdmin({ user, organizationId }: EnterpriseAdminProps) 
 
       await saveEnterpriseSubscription(created)
       await reconcileEnterpriseMemberEntitlements(backendOrganizationId)
-      // We must reload the page so the app context picks up the newly created DB organizationId
-      window.location.reload()
+      await loadSubscription()
     } catch (err) {
       setError("Failed to create subscription")
       console.error(err)

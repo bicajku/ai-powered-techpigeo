@@ -251,7 +251,11 @@ function App() {
         if (currentUser) {
           setUserIdForKV(currentUser.id)
           setShowLandingPage(false)
-          setActiveTab(getDefaultSignedInTab(getEnvConfig().enableRagChat))
+          // Respect persisted tab on reload; only default on fresh sessions
+          const persisted = loadPersistedUIState().activeTab
+          if (!persisted) {
+            setActiveTab(getDefaultSignedInTab(getEnvConfig().enableRagChat))
+          }
           setHasShownWelcomeThisSession((alreadyShown) => {
             if (!alreadyShown) {
               setShowExpandedWelcome(true)
