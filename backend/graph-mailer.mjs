@@ -140,6 +140,30 @@ export async function sendPasswordResetEmail({ to, fullName, resetCode, expiresM
   })
 }
 
+export async function sendNewUserAdminNotification({ adminEmail, newUserEmail, newUserName, source = "signup" }) {
+  const safeName = escapeHtml(newUserName || "Unknown")
+  const safeEmail = escapeHtml(newUserEmail)
+  const safeSource = escapeHtml(source)
+  const timestamp = new Date().toISOString()
+  await sendGraphMail({
+    to: adminEmail,
+    subject: `New user registered: ${newUserEmail}`,
+    text: `A new user has registered on NovusSparks.\n\nName: ${newUserName || "Unknown"}\nEmail: ${newUserEmail}\nSource: ${source}\nTime: ${timestamp}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; color: #1c1414; line-height: 1.55;">
+        <h2 style="margin: 0 0 12px; color: #0f766e;">New User Registration</h2>
+        <p>A new user has registered on NovusSparks.</p>
+        <table style="border-collapse: collapse; margin: 12px 0;">
+          <tr><td style="padding: 4px 12px 4px 0; font-weight: 600;">Name:</td><td style="padding: 4px 0;">${safeName}</td></tr>
+          <tr><td style="padding: 4px 12px 4px 0; font-weight: 600;">Email:</td><td style="padding: 4px 0;">${safeEmail}</td></tr>
+          <tr><td style="padding: 4px 12px 4px 0; font-weight: 600;">Source:</td><td style="padding: 4px 0;">${safeSource}</td></tr>
+          <tr><td style="padding: 4px 12px 4px 0; font-weight: 600;">Time:</td><td style="padding: 4px 0;">${timestamp}</td></tr>
+        </table>
+      </div>
+    `,
+  })
+}
+
 export async function sendInviteEmail({ to, inviterName, inviteLink, organizationName }) {
   const safeInviter = escapeHtml(inviterName || "A NovusSparks admin")
   const safeOrg = escapeHtml(organizationName || "NovusSparks")

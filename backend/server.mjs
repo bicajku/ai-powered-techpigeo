@@ -91,6 +91,7 @@ import {
   sendWelcomeEmail,
   sendPasswordResetEmail,
   sendInviteEmail,
+  sendNewUserAdminNotification,
 } from "./graph-mailer.mjs"
 
 // ─────────────────────────── Config ──────────────────────────────
@@ -100,6 +101,7 @@ const HOST = process.env.HOST || "0.0.0.0"
 const REQUIRE_AUTH =
   String(process.env.BACKEND_REQUIRE_AUTH || "false").toLowerCase() === "true"
 const BACKEND_API_KEY = process.env.BACKEND_API_KEY || ""
+const ADMIN_NOTIFICATION_EMAIL = process.env.ADMIN_NOTIFICATION_EMAIL || process.env.M365_SENDER_EMAIL || "admin@novussparks.com"
 
 /**
  * Feature flag: when true, sentinel auth routes are enabled.
@@ -794,6 +796,15 @@ async function handleRegister(req, res) {
       }).catch((err) => {
         console.warn("[mail/welcome] send failed:", err.message)
       })
+
+      sendNewUserAdminNotification({
+        adminEmail: ADMIN_NOTIFICATION_EMAIL,
+        newUserEmail: newUser.email,
+        newUserName: fullName,
+        source: "signup",
+      }).catch((err) => {
+        console.warn("[mail/admin-notify] send failed:", err.message)
+      })
     }
 
     return sendJson(res, 201, {
@@ -1342,6 +1353,7 @@ async function handleCreateOrgMember(req, res, actor) {
 
   try {
     let user = await getUserByEmailForLogin(email)
+    let isNewUser = false
 
     if (!user) {
       const passwordHash = await hashPassword(password)
@@ -1357,6 +1369,8 @@ async function handleCreateOrgMember(req, res, actor) {
 
       if (!user) {
         user = await getUserByEmailForLogin(email)
+      } else {
+        isNewUser = true
       }
     }
 
@@ -1378,6 +1392,27 @@ async function handleCreateOrgMember(req, res, actor) {
       ipAddress: getClientIp(req),
       success: true,
     }).catch(() => {})
+
+    // Send welcome email to newly created members and notify admin
+    if (isGraphMailConfigured()) {
+      if (isNewUser) {
+        sendWelcomeEmail({
+          to: email,
+          fullName,
+        }).catch((err) => {
+          console.warn("[mail/welcome:org-member] send failed:", err.message)
+        })
+      }
+
+      sendNewUserAdminNotification({
+        adminEmail: ADMIN_NOTIFICATION_EMAIL,
+        newUserEmail: email,
+        newUserName: fullName,
+        source: isNewUser ? "enterprise-member-created" : "enterprise-member-added",
+      }).catch((err) => {
+        console.warn("[mail/admin-notify:org-member] send failed:", err.message)
+      })
+    }
 
     return sendJson(res, 201, { ok: true, member: assignedUser }, req)
   } catch (err) {

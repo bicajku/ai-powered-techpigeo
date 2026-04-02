@@ -228,7 +228,7 @@ export function AuthForm({ onAuthSuccess, initialMode }: AuthFormProps) {
               </div>
               {isSignUp && (
                 <p className="text-xs text-muted-foreground">
-                  Password must be at least 6 characters
+                  Password must be at least 8 characters
                 </p>
               )}
             </div>
