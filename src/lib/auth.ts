@@ -240,6 +240,13 @@ export const authService = {
         return { success: true, user: normalizedUser }
       }
 
+      // When the backend is reachable but auth fails, do not fall back to the
+      // legacy client-side login flow because that produces a UI session with
+      // no valid JWT for backend-protected proxy routes.
+      if (sentinelResult.error) {
+        return { success: false, error: sentinelResult.error }
+      }
+
       const kv = getSafeKVClient()
       const credentials = await kv.get<Record<string, StoredCredential>>(USER_CREDENTIALS_KEY) || {}
       const credential = credentials[email.toLowerCase()]

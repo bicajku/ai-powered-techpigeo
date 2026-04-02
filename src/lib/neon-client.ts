@@ -117,7 +117,14 @@ export async function getNeonClient(): Promise<ReturnType<typeof neon>> {
         const data = await resp.json()
         if (data.ok) return data.rows || []
       }
-    } catch {
+
+      if (resp.status === 401 || resp.status === 403) {
+        throw new Error("Authentication required for database proxy")
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message === "Authentication required for database proxy") {
+        throw error
+      }
       // Backend unavailable, fall through to direct connection
     }
 
