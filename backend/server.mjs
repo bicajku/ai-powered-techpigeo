@@ -281,6 +281,7 @@ const CSRF_EXEMPT_PATHS = new Set([
   "/api/auth/password-reset/request",
   "/api/auth/password-reset/verify",
   "/api/auth/password-reset/confirm",
+  "/api/auth/admin/set-password",
   "/health",
   "/api/proxy/db/query", // Database proxy - relies on JWT authentication instead
   "/api/proxy/db/test",
@@ -943,6 +944,52 @@ async function handlePasswordResetConfirm(req, res) {
     return sendJson(res, 200, { ok: true }, req)
   } catch (err) {
     console.error("[auth/password-reset/confirm] error:", err)
+    return sendJson(res, 500, { ok: false, error: "Internal server error" }, req)
+  }
+}
+
+async function handleAdminSetPassword(req, res, authUser) {
+  if (!authUser || authUser.role !== "SENTINEL_COMMANDER") {
+    return sendJson(res, 403, { ok: false, error: "Forbidden" }, req)
+  }
+
+  const parsed = await parseJsonBody(req)
+  if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+
+  const body = parsed.data
+  const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : ""
+  const newPassword = typeof body.newPassword === "string" ? body.newPassword : ""
+
+  if (!email || !newPassword) {
+    return sendJson(res, 400, { ok: false, error: "Email and new password are required" }, req)
+  }
+
+  if (newPassword.length < 8) {
+    return sendJson(res, 400, { ok: false, error: "Password must be at least 8 characters" }, req)
+  }
+
+  try {
+    const user = await getUserByEmailForLogin(email)
+    if (!user || !user.isActive) {
+      return sendJson(res, 404, { ok: false, error: "User not found" }, req)
+    }
+
+    const newHash = await hashPassword(newPassword)
+    await updatePasswordHash(user.id, newHash)
+
+    await writeAuditLog({
+      userId: authUser.userId,
+      action: "UPDATE",
+      resource: "admin-password-set",
+      resourceId: user.id,
+      ipAddress: getClientIp(req),
+      success: true,
+      metadata: { targetEmail: email },
+    }).catch(() => {})
+
+    return sendJson(res, 200, { ok: true }, req)
+  } catch (err) {
+    console.error("[auth/admin-set-password] error:", err)
     return sendJson(res, 500, { ok: false, error: "Internal server error" }, req)
   }
 }
@@ -2433,6 +2480,15 @@ const server = http.createServer(async (req, res) => {
     // ── POST /api/auth/password-reset/confirm ──
     if (method === "POST" && reqPathname === "/api/auth/password-reset/confirm") {
       return handlePasswordResetConfirm(req, res)
+    }
+
+    // ── POST /api/auth/admin/set-password ──
+    if (method === "POST" && reqPathname === "/api/auth/admin/set-password") {
+      const auth = authorize(req)
+      if (!auth.authorized || !auth.user) {
+        return sendJson(res, 401, { ok: false, error: "Unauthorized" }, req)
+      }
+      return handleAdminSetPassword(req, res, auth.user)
     }
 
     // ── GET /api/auth/verify ──

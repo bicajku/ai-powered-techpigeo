@@ -10,6 +10,49 @@ interface StoredCredential {
   userId: string
 }
 
+function getBackendBaseUrl(): string {
+  if (typeof import.meta !== "undefined" && import.meta.env?.VITE_BACKEND_API_BASE_URL) {
+    return import.meta.env.VITE_BACKEND_API_BASE_URL as string
+  }
+  return ""
+}
+
+async function postBackend(path: string, payload: unknown): Promise<{ ok: boolean; status: number; data?: Record<string, unknown> | null }> {
+  try {
+    const token = typeof localStorage !== "undefined"
+      ? localStorage.getItem("sentinel-auth-token") || localStorage.getItem("sentinel_token")
+      : null
+
+    const headers: Record<string, string> = { "Content-Type": "application/json" }
+    if (token) {
+      headers.Authorization = `Bearer ${token}`
+    }
+
+    try {
+      const csrfMatch = document.cookie
+        .split(";")
+        .map((c) => c.trim())
+        .find((c) => c.startsWith("__csrf="))
+      if (csrfMatch) {
+        headers["X-CSRF-Token"] = csrfMatch.slice("__csrf=".length)
+      }
+    } catch {
+      // Cookie access unavailable
+    }
+
+    const res = await fetch(`${getBackendBaseUrl()}${path}`, {
+      method: "POST",
+      headers,
+      credentials: "include",
+      body: JSON.stringify(payload),
+    })
+    const data = await res.json().catch(() => null)
+    return { ok: res.ok, status: res.status, data }
+  } catch {
+    return { ok: false, status: 0 }
+  }
+}
+
 function getCurrentMonthKey(prefix: string): string {
   const now = new Date()
   const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
@@ -209,8 +252,16 @@ export const adminService = {
 
   async updateUserPassword(email: string, newPassword: string): Promise<{ success: boolean; error?: string }> {
     try {
-      if (!newPassword || newPassword.length < 6) {
-        return { success: false, error: "Password must be at least 6 characters" }
+      if (!newPassword || newPassword.length < 8) {
+        return { success: false, error: "Password must be at least 8 characters" }
+      }
+
+      const backendRes = await postBackend("/api/auth/admin/set-password", { email, newPassword })
+      if (backendRes.status !== 0) {
+        if (backendRes.ok && backendRes.data?.ok) {
+          return { success: true }
+        }
+        return { success: false, error: (backendRes.data?.error as string) || "Failed to update password" }
       }
 
       const users = await getSafeKVClient().get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}

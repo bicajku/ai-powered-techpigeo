@@ -74,9 +74,22 @@ function getBackendBaseUrl(): string {
 
 async function postBackend(path: string, payload: unknown): Promise<{ ok: boolean; status: number; data?: Record<string, unknown> | null }> {
   try {
+    const headers: Record<string, string> = { "Content-Type": "application/json" }
+    try {
+      const csrfMatch = document.cookie
+        .split(";")
+        .map((c) => c.trim())
+        .find((c) => c.startsWith("__csrf="))
+      if (csrfMatch) {
+        headers["X-CSRF-Token"] = csrfMatch.slice("__csrf=".length)
+      }
+    } catch {
+      // Cookie access unavailable
+    }
+
     const res = await fetch(`${getBackendBaseUrl()}${path}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       credentials: "include",
       body: JSON.stringify(payload),
     })
@@ -360,6 +373,21 @@ export async function addEnterpriseTeamMember(
       const existing = users[userId]
       if (existing) {
         await syncMemberSubscription(userId, sub, ngoAccessLevel)
+      }
+
+      if (password && password.trim().length >= 8) {
+        const registerResult = await postBackend("/api/auth/register", {
+          email: normalizedEmail,
+          password: password.trim(),
+          fullName,
+        })
+
+        if (!registerResult.ok && registerResult.status !== 409) {
+          return {
+            success: false,
+            error: (registerResult.data?.error as string) || "Failed to create backend account for member",
+          }
+        }
       }
 
       if (!existingByCredential) {
