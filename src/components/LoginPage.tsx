@@ -73,7 +73,7 @@ export function LoginPage({ onAuthSuccess }: LoginPageProps) {
           <div className="absolute bottom-[10%] right-[10%] w-64 md:w-80 h-64 md:h-80 bg-[#6ee7a0]/8 rounded-full blur-[100px]" />
         </div>
         <div className="relative z-10">
-          <PasswordResetFlow onBack={() => setShowPasswordReset(false)} />
+          <PasswordResetFlow onBack={() => setShowPasswordReset(false)} initialEmail={email} />
         </div>
       </div>
     )

@@ -10,13 +10,14 @@ import { toast } from "sonner"
 
 interface PasswordResetFlowProps {
   onBack: () => void
+  initialEmail?: string
 }
 
 type ResetStep = "request" | "verify" | "reset" | "success"
 
-export function PasswordResetFlow({ onBack }: PasswordResetFlowProps) {
+export function PasswordResetFlow({ onBack, initialEmail }: PasswordResetFlowProps) {
   const [currentStep, setCurrentStep] = useState<ResetStep>("request")
-  const [email, setEmail] = useState("")
+  const [email, setEmail] = useState(initialEmail || "")
   const [resetCode, setResetCode] = useState("")
   const [newPassword, setNewPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")

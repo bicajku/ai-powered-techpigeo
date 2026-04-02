@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Button } from "@/components/ui/button"
-import { Sparkle, Target, Lightbulb, ShieldCheck, Quotes, Brain, ChartBar, Presentation, Rocket, Lightning, ArrowRight, CheckCircle, ArrowLeft, UserCircle, CursorClick, Bank, Heartbeat, Buildings, HandHeart, RocketLaunch, TreeStructure, ArrowsOut, TerminalWindow, Shield, HardDrives } from "@phosphor-icons/react"
+import { Sparkle, Target, Lightbulb, ShieldCheck, Quotes, Brain, ChartBar, Presentation, Rocket, Lightning, ArrowRight, CheckCircle, ArrowLeft, UserCircle, CursorClick, Bank, Heartbeat, Buildings, HandHeart, RocketLaunch, TreeStructure, ArrowsOut, TerminalWindow, Shield, HardDrives, Crown, Users, Star, X } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
 import faviconImg from "@/assets/images/novussparks-icon.svg"
 import techpigeonLogo from "@/assets/images/techpigeon-logo.png"
@@ -60,6 +60,76 @@ const COLOR_MAP: Record<string, { bg: string; text: string; glow: string }> = {
   gold: { bg: "bg-[#e5a932]/20", text: "text-[#e5a932]", glow: "shadow-[#e5a932]/30" },
 }
 
+// ── Pricing Data ──
+const PRICING_PLANS = [
+  {
+    id: "basic",
+    name: "Basic",
+    price: 0,
+    priceLabel: "Free",
+    period: "",
+    description: "Get started with AI-powered strategy tools at no cost.",
+    icon: Star,
+    color: "gray",
+    highlighted: false,
+    features: [
+      { text: "AI Strategy Generation", included: true },
+      { text: "Idea Cooking & Canvas", included: true },
+      { text: "Pitch Deck Generation", included: true },
+      { text: "Dashboard & Timeline", included: true },
+      { text: "Save Strategies & Ideas", included: true },
+      { text: "3 exports/month", included: true },
+      { text: "Document Review", included: false },
+      { text: "AI Humanizer", included: false },
+      { text: "Team Collaboration", included: false },
+    ],
+  },
+  {
+    id: "pro",
+    name: "Pro",
+    price: 20,
+    priceLabel: "$20",
+    period: "/month",
+    description: "Unlock review, humanizer, and export power for professionals.",
+    icon: Crown,
+    color: "sky",
+    highlighted: true,
+    features: [
+      { text: "Everything in Basic", included: true },
+      { text: "Document Review & Plagiarism Checker", included: true },
+      { text: "AI Humanize Module", included: true },
+      { text: "50 review credits/month", included: true },
+      { text: "Advanced review filters", included: true },
+      { text: "30 exports/month", included: true },
+      { text: "PDF/PPTX exports for all features", included: true },
+      { text: "Team Collaboration", included: false },
+      { text: "NGO-SAAS Module", included: false },
+    ],
+  },
+  {
+    id: "team",
+    name: "Team / Enterprise",
+    price: 50,
+    priceLabel: "$50",
+    period: "/month",
+    description: "Full platform access with team management, NGO module, and dedicated support.",
+    icon: Users,
+    color: "gold",
+    highlighted: false,
+    features: [
+      { text: "Everything in Pro", included: true },
+      { text: "200+ review credits/month", included: true },
+      { text: "Unlimited exports", included: true },
+      { text: "Priority AI processing", included: true },
+      { text: "Team collaboration & admin dashboard", included: true },
+      { text: "NGO-SAAS Module (exclusive)", included: true },
+      { text: "Enterprise Project Workspace", included: true },
+      { text: "Custom branding & reporting", included: true },
+      { text: "Dedicated support", included: true },
+    ],
+  },
+]
+
 export function LandingPage({ user, onBackToDashboard, onNavigate }: LandingPageProps) {
   const [activeQuote, setActiveQuote] = useState<QuoteNode | null>(null)
   const [hoveredPill, setHoveredPill] = useState<string | null>(null)
@@ -96,6 +166,7 @@ export function LandingPage({ user, onBackToDashboard, onNavigate }: LandingPage
         <div className="absolute top-[50%] right-[5%] w-64 md:w-80 h-64 md:h-80 bg-[#6ee7a0]/8 rounded-full blur-[100px]" />
         <div className="absolute bottom-[10%] left-[40%] w-80 h-80 bg-[#e5a932]/6 rounded-full blur-[140px]" />
       </div>
+
       {/* === Header === */}
       <header className="relative z-50 flex items-center justify-between px-4 sm:px-6 md:px-12 py-4 md:py-6">
         <div className="flex items-center gap-2.5">
@@ -105,6 +176,11 @@ export function LandingPage({ user, onBackToDashboard, onNavigate }: LandingPage
             <span className="text-[9px] sm:text-[10px] text-gray-500 font-medium tracking-wider">Enterprise AI Platform</span>
           </div>
         </div>
+        <nav className="hidden md:flex items-center gap-6 mr-4">
+          <a href="#features" className="text-sm text-gray-400 hover:text-white transition-colors">Features</a>
+          <a href="#pricing" className="text-sm text-gray-400 hover:text-white transition-colors">Pricing</a>
+          <a href="#industries" className="text-sm text-gray-400 hover:text-white transition-colors">Industries</a>
+        </nav>
         <div className="flex items-center gap-2 sm:gap-4">
           {user ? (
             <>
@@ -136,6 +212,7 @@ export function LandingPage({ user, onBackToDashboard, onNavigate }: LandingPage
           )}
         </div>
       </header>
+
       {/* === Hero Section with Globe + Orbiting Pills === */}
       <section className="relative z-10 flex flex-col items-center pt-4 md:pt-8 px-4 sm:px-6">
 
@@ -404,8 +481,10 @@ export function LandingPage({ user, onBackToDashboard, onNavigate }: LandingPage
           </div>
         </motion.div>
       </section>
+
       {/* === Core Capabilities === */}
       <motion.section
+        id="features"
         className="relative z-10 border-y border-white/[0.06] bg-white/[0.02] backdrop-blur-sm"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -435,6 +514,7 @@ export function LandingPage({ user, onBackToDashboard, onNavigate }: LandingPage
           </div>
         </div>
       </motion.section>
+
       {/* === Product Suite Breakdown === */}
       <section className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 py-16 md:py-24">
         <motion.div
@@ -505,8 +585,152 @@ export function LandingPage({ user, onBackToDashboard, onNavigate }: LandingPage
           })}
         </div>
       </section>
+
+      {/* === Pricing Section === */}
+      <section id="pricing" className="relative z-10 border-t border-white/[0.06] bg-gradient-to-b from-black/20 to-transparent">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-16 md:py-24">
+          <motion.div
+            className="text-center mb-12 md:mb-16"
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+          >
+            <motion.div
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#e5a932]/10 border border-[#e5a932]/20 text-[#e5a932] text-xs sm:text-sm font-medium mb-4"
+              initial={{ opacity: 0, scale: 0.9 }}
+              whileInView={{ opacity: 1, scale: 1 }}
+              viewport={{ once: true }}
+            >
+              <Crown weight="fill" className="w-3.5 h-3.5" />
+              Simple, transparent pricing
+            </motion.div>
+            <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-4">
+              <span className="bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400">Choose Your </span>
+              <span className="bg-clip-text text-transparent bg-gradient-to-r from-[#38bdf8] to-[#6ee7a0]">Plan</span>
+            </h2>
+            <p className="text-sm sm:text-base text-gray-400 max-w-2xl mx-auto">
+              Start free, upgrade when you need more power. All plans include core AI strategy tools.
+            </p>
+          </motion.div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8 max-w-5xl mx-auto">
+            {PRICING_PLANS.map((plan, i) => (
+              <motion.div
+                key={plan.id}
+                initial={{ opacity: 0, y: 30 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: i * 0.12 }}
+                className={cn(
+                  "relative rounded-2xl border p-6 sm:p-8 flex flex-col transition-all",
+                  plan.highlighted
+                    ? "bg-gradient-to-b from-[#38bdf8]/10 via-[#38bdf8]/5 to-transparent border-[#38bdf8]/30 shadow-[0_0_40px_rgba(56,189,248,0.12)]"
+                    : "bg-white/[0.02] border-white/[0.08] hover:border-white/[0.15]"
+                )}
+              >
+                {/* Popular badge */}
+                {plan.highlighted && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                    <span className="bg-gradient-to-r from-[#38bdf8] to-[#6ee7a0] text-white text-[10px] sm:text-xs font-bold px-4 py-1 rounded-full shadow-lg shadow-[#38bdf8]/25 uppercase tracking-wider">
+                      Most Popular
+                    </span>
+                  </div>
+                )}
+
+                {/* Plan header */}
+                <div className="mb-6">
+                  <div className={cn(
+                    "w-10 h-10 rounded-xl flex items-center justify-center mb-4",
+                    plan.highlighted ? "bg-[#38bdf8]/20" : plan.color === "gold" ? "bg-[#e5a932]/20" : "bg-white/10"
+                  )}>
+                    <plan.icon
+                      weight="duotone"
+                      className={cn(
+                        "w-5 h-5",
+                        plan.highlighted ? "text-[#38bdf8]" : plan.color === "gold" ? "text-[#e5a932]" : "text-gray-400"
+                      )}
+                    />
+                  </div>
+                  <h3 className="text-lg sm:text-xl font-bold text-white mb-1">{plan.name}</h3>
+                  <p className="text-xs sm:text-sm text-gray-500 leading-relaxed">{plan.description}</p>
+                </div>
+
+                {/* Price */}
+                <div className="mb-6">
+                  <div className="flex items-baseline gap-1">
+                    <span className={cn(
+                      "text-4xl sm:text-5xl font-extrabold",
+                      plan.highlighted ? "text-white" : "text-gray-200"
+                    )}>
+                      {plan.priceLabel}
+                    </span>
+                    {plan.period && (
+                      <span className="text-sm text-gray-500 font-medium">{plan.period}</span>
+                    )}
+                  </div>
+                  {plan.price === 0 && (
+                    <p className="text-xs text-gray-500 mt-1">No credit card required</p>
+                  )}
+                </div>
+
+                {/* CTA */}
+                <Button
+                  onClick={() => user ? onBackToDashboard?.() : openAuth("signup")}
+                  className={cn(
+                    "w-full mb-6 font-semibold",
+                    plan.highlighted
+                      ? "bg-gradient-to-r from-[#38bdf8] to-[#6ee7a0] hover:opacity-90 text-white shadow-lg shadow-[#38bdf8]/20"
+                      : "bg-white/[0.06] hover:bg-white/[0.1] text-white border border-white/10"
+                  )}
+                  size="lg"
+                >
+                  {user ? "Go to Dashboard" : plan.price === 0 ? "Get Started Free" : "Get Started"}
+                  <ArrowRight className="w-4 h-4 ml-1.5" />
+                </Button>
+
+                {/* Features */}
+                <div className="flex-1">
+                  <p className="text-[10px] sm:text-xs text-gray-600 font-semibold uppercase tracking-wider mb-3">What's included</p>
+                  <ul className="space-y-2.5">
+                    {plan.features.map((feature) => (
+                      <li key={feature.text} className="flex items-start gap-2.5">
+                        {feature.included ? (
+                          <CheckCircle weight="fill" className="w-4 h-4 text-[#6ee7a0] shrink-0 mt-0.5" />
+                        ) : (
+                          <X weight="bold" className="w-4 h-4 text-gray-600 shrink-0 mt-0.5" />
+                        )}
+                        <span className={cn(
+                          "text-xs sm:text-sm leading-relaxed",
+                          feature.included ? "text-gray-300" : "text-gray-600"
+                        )}>
+                          {feature.text}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+
+          {/* Pricing footer note */}
+          <motion.div
+            className="text-center mt-10 md:mt-14"
+            initial={{ opacity: 0 }}
+            whileInView={{ opacity: 1 }}
+            viewport={{ once: true }}
+            transition={{ delay: 0.4 }}
+          >
+            <p className="text-xs sm:text-sm text-gray-500 max-w-xl mx-auto">
+              All plans are billed monthly. Need a custom solution?{" "}
+              <a href="mailto:admin@novussparks.com" className="text-[#38bdf8] hover:underline">Contact us</a> for tailored enterprise packages.
+            </p>
+          </motion.div>
+        </div>
+      </section>
+
       {/* === Industry Solutions === */}
-      <section className="relative z-10 border-t border-white/[0.06] bg-black/20">
+      <section id="industries" className="relative z-10 border-t border-white/[0.06] bg-black/20">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-16 md:py-24">
           <motion.div
             className="text-center mb-12 md:mb-16"
@@ -586,6 +810,7 @@ export function LandingPage({ user, onBackToDashboard, onNavigate }: LandingPage
           </div>
         </div>
       </section>
+
       {/* === Final CTA === */}
       <section className="relative z-10 border-t border-white/[0.06]">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 py-16 md:py-24 text-center">
@@ -616,6 +841,7 @@ export function LandingPage({ user, onBackToDashboard, onNavigate }: LandingPage
           </motion.div>
         </div>
       </section>
+
       {/* === Footer === */}
       <footer className="relative z-10 border-t border-white/[0.06] py-6 px-4 sm:px-6">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-[10px] sm:text-xs text-gray-600">
@@ -632,6 +858,7 @@ export function LandingPage({ user, onBackToDashboard, onNavigate }: LandingPage
           </div>
           <div className="flex items-center gap-4">
             <a href="/privacy" className="hover:text-gray-400 transition-colors text-gray-500">Privacy Policy</a>
+            <a href="#pricing" className="hover:text-gray-400 transition-colors text-gray-500">Pricing</a>
             {user ? (
               <button onClick={onBackToDashboard} className="hover:text-gray-400 transition-colors text-slate-50">Dashboard</button>
             ) : (

@@ -55,7 +55,7 @@ export function AuthForm({ onAuthSuccess, initialMode }: AuthFormProps) {
   }, [])
 
   if (showPasswordReset) {
-    return <PasswordResetFlow onBack={() => setShowPasswordReset(false)} />
+    return <PasswordResetFlow onBack={() => setShowPasswordReset(false)} initialEmail={email} />
   }
 
   const handleGitHubLogin = () => {
@@ -94,6 +94,16 @@ export function AuthForm({ onAuthSuccess, initialMode }: AuthFormProps) {
 
         toast.success(`Welcome, ${result.user.fullName}!`)
         onAuthSuccess(result.user)
+      } else if (
+        isSignUp &&
+        result.error &&
+        result.error.toLowerCase().includes("already exists")
+      ) {
+        // Account already exists — redirect to password reset flow
+        toast.info(
+          "An account with this email already exists. Please reset your password to sign in."
+        )
+        setShowPasswordReset(true)
       } else {
         toast.error(result.error || "Authentication failed")
       }
