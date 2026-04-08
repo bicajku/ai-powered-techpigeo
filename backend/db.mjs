@@ -279,6 +279,70 @@ export async function ensureSentinelTables() {
       ON CONFLICT (module_name) DO NOTHING
     `
 
+    // Skills registry (shadow-mode capable)
+    await sql`
+      CREATE TABLE IF NOT EXISTS sentinel_skills_registry (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        version TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        file_name TEXT NOT NULL,
+        stored_zip_path TEXT NOT NULL,
+        manifest_path TEXT,
+        frontmatter JSONB NOT NULL DEFAULT '{}'::jsonb,
+        entries_count INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'validated',
+        uploaded_by TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `
+
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_sentinel_skills_registry_created
+      ON sentinel_skills_registry (created_at DESC)
+    `
+
+    await sql`
+      CREATE TABLE IF NOT EXISTS sentinel_skills_bindings (
+        module_name TEXT PRIMARY KEY,
+        skill_id TEXT NOT NULL REFERENCES sentinel_skills_registry(id) ON DELETE CASCADE,
+        enabled BOOLEAN NOT NULL DEFAULT true,
+        mode TEXT NOT NULL DEFAULT 'shadow',
+        rollout_percent INTEGER NOT NULL DEFAULT 0,
+        updated_by TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `
+
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_sentinel_skills_bindings_skill
+      ON sentinel_skills_bindings (skill_id)
+    `
+
+    await sql`
+      CREATE TABLE IF NOT EXISTS sentinel_skills_execution_logs (
+        id TEXT PRIMARY KEY,
+        module_name TEXT NOT NULL,
+        skill_id TEXT REFERENCES sentinel_skills_registry(id) ON DELETE SET NULL,
+        skill_name TEXT,
+        mode TEXT NOT NULL DEFAULT 'shadow',
+        changed BOOLEAN NOT NULL DEFAULT false,
+        ai_signal_before INTEGER,
+        ai_signal_after INTEGER,
+        actor TEXT,
+        input_preview TEXT,
+        metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `
+
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_sentinel_skills_execution_logs_module_created
+      ON sentinel_skills_execution_logs (module_name, created_at DESC)
+    `
+
     console.log("[db] Sentinel tables verified")
   } catch (err) {
     console.warn("[db] Sentinel tables not found — run migrations first:", err.message)
@@ -561,6 +625,217 @@ export async function getProviderBudgetSnapshot({ moduleName = "global" } = {}) 
     dailyCostUsd: Number(dailyRows[0]?.cost || 0),
     monthlyCostUsd: Number(monthlyRows[0]?.cost || 0),
   }
+}
+
+function normalizeSkillRegistryRow(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    version: row.version,
+    description: row.description || "",
+    fileName: row.file_name,
+    storedZipPath: row.stored_zip_path,
+    manifestPath: row.manifest_path,
+    frontmatter: typeof row.frontmatter === "string" ? JSON.parse(row.frontmatter) : (row.frontmatter || {}),
+    entriesCount: Number(row.entries_count) || 0,
+    status: row.status || "validated",
+    uploadedBy: row.uploaded_by || null,
+    createdAt: Number(row.createdAt) || Number(row.created_at) || 0,
+    updatedAt: Number(row.updatedAt) || Number(row.updated_at) || 0,
+  }
+}
+
+function normalizeSkillBindingRow(row) {
+  return {
+    moduleName: row.module_name,
+    skillId: row.skill_id,
+    enabled: Boolean(row.enabled),
+    mode: row.mode || "shadow",
+    rolloutPercent: Number(row.rollout_percent) || 0,
+    updatedBy: row.updated_by || null,
+    createdAt: Number(row.createdAt) || Number(row.created_at) || 0,
+    updatedAt: Number(row.updatedAt) || Number(row.updated_at) || 0,
+  }
+}
+
+function normalizeSkillExecutionLogRow(row) {
+  return {
+    id: row.id,
+    moduleName: row.module_name,
+    skillId: row.skill_id || null,
+    skillName: row.skill_name || null,
+    mode: row.mode || "shadow",
+    changed: Boolean(row.changed),
+    aiSignalBefore: row.ai_signal_before == null ? null : Number(row.ai_signal_before),
+    aiSignalAfter: row.ai_signal_after == null ? null : Number(row.ai_signal_after),
+    actor: row.actor || null,
+    inputPreview: row.input_preview || "",
+    metadata: typeof row.metadata === "string" ? JSON.parse(row.metadata) : (row.metadata || {}),
+    createdAt: Number(row.createdAt) || Number(row.created_at) || 0,
+  }
+}
+
+export async function createSkillRegistryEntry({
+  id,
+  name,
+  version,
+  description = "",
+  fileName,
+  storedZipPath,
+  manifestPath = null,
+  frontmatter = {},
+  entriesCount = 0,
+  status = "validated",
+  uploadedBy = null,
+}) {
+  const sql = getSql()
+  const skillId = id || `skill_${crypto.randomUUID()}`
+  const rows = await sql`
+    INSERT INTO sentinel_skills_registry
+      (id, name, version, description, file_name, stored_zip_path, manifest_path, frontmatter, entries_count, status, uploaded_by)
+    VALUES
+      (${skillId}, ${name}, ${version}, ${description}, ${fileName}, ${storedZipPath}, ${manifestPath}, ${JSON.stringify(frontmatter)}, ${entriesCount}, ${status}, ${uploadedBy})
+    RETURNING *,
+      EXTRACT(EPOCH FROM created_at)::BIGINT * 1000 AS "createdAt",
+      EXTRACT(EPOCH FROM updated_at)::BIGINT * 1000 AS "updatedAt"
+  `
+  return normalizeSkillRegistryRow(rows[0])
+}
+
+export async function listSkillRegistryEntries({ limit = 200 } = {}) {
+  const sql = getSql()
+  const rows = await sql.unsafe(
+    `SELECT *,
+        EXTRACT(EPOCH FROM created_at)::BIGINT * 1000 AS "createdAt",
+        EXTRACT(EPOCH FROM updated_at)::BIGINT * 1000 AS "updatedAt"
+     FROM sentinel_skills_registry
+     ORDER BY created_at DESC
+     LIMIT $1`,
+    [Math.max(1, Math.min(500, Number(limit) || 200))]
+  )
+  return rows.map(normalizeSkillRegistryRow)
+}
+
+export async function getSkillRegistryEntryById(id) {
+  const sql = getSql()
+  const rows = await sql`
+    SELECT *,
+      EXTRACT(EPOCH FROM created_at)::BIGINT * 1000 AS "createdAt",
+      EXTRACT(EPOCH FROM updated_at)::BIGINT * 1000 AS "updatedAt"
+    FROM sentinel_skills_registry
+    WHERE id = ${id}
+    LIMIT 1
+  `
+  return rows.length > 0 ? normalizeSkillRegistryRow(rows[0]) : null
+}
+
+export async function upsertSkillBinding({
+  moduleName,
+  skillId,
+  enabled = true,
+  mode = "shadow",
+  rolloutPercent = 0,
+  updatedBy = null,
+}) {
+  const sql = getSql()
+  const rows = await sql`
+    INSERT INTO sentinel_skills_bindings
+      (module_name, skill_id, enabled, mode, rollout_percent, updated_by)
+    VALUES
+      (${moduleName}, ${skillId}, ${enabled}, ${mode}, ${rolloutPercent}, ${updatedBy})
+    ON CONFLICT (module_name) DO UPDATE SET
+      skill_id = EXCLUDED.skill_id,
+      enabled = EXCLUDED.enabled,
+      mode = EXCLUDED.mode,
+      rollout_percent = EXCLUDED.rollout_percent,
+      updated_by = EXCLUDED.updated_by,
+      updated_at = NOW()
+    RETURNING *,
+      EXTRACT(EPOCH FROM created_at)::BIGINT * 1000 AS "createdAt",
+      EXTRACT(EPOCH FROM updated_at)::BIGINT * 1000 AS "updatedAt"
+  `
+  return normalizeSkillBindingRow(rows[0])
+}
+
+export async function getSkillBinding(moduleName) {
+  const sql = getSql()
+  const rows = await sql`
+    SELECT *,
+      EXTRACT(EPOCH FROM created_at)::BIGINT * 1000 AS "createdAt",
+      EXTRACT(EPOCH FROM updated_at)::BIGINT * 1000 AS "updatedAt"
+    FROM sentinel_skills_bindings
+    WHERE module_name = ${moduleName}
+    LIMIT 1
+  `
+  return rows.length > 0 ? normalizeSkillBindingRow(rows[0]) : null
+}
+
+export async function listSkillBindings({ moduleName } = {}) {
+  const sql = getSql()
+  const rows = moduleName
+    ? await sql`
+        SELECT *,
+          EXTRACT(EPOCH FROM created_at)::BIGINT * 1000 AS "createdAt",
+          EXTRACT(EPOCH FROM updated_at)::BIGINT * 1000 AS "updatedAt"
+        FROM sentinel_skills_bindings
+        WHERE module_name = ${moduleName}
+        ORDER BY module_name ASC
+      `
+    : await sql`
+        SELECT *,
+          EXTRACT(EPOCH FROM created_at)::BIGINT * 1000 AS "createdAt",
+          EXTRACT(EPOCH FROM updated_at)::BIGINT * 1000 AS "updatedAt"
+        FROM sentinel_skills_bindings
+        ORDER BY module_name ASC
+      `
+  return rows.map(normalizeSkillBindingRow)
+}
+
+export async function createSkillExecutionLog({
+  id,
+  moduleName,
+  skillId = null,
+  skillName = null,
+  mode = "shadow",
+  changed = false,
+  aiSignalBefore = null,
+  aiSignalAfter = null,
+  actor = null,
+  inputPreview = "",
+  metadata = {},
+}) {
+  const sql = getSql()
+  const rowId = id || `sklog_${crypto.randomUUID()}`
+  const rows = await sql`
+    INSERT INTO sentinel_skills_execution_logs
+      (id, module_name, skill_id, skill_name, mode, changed, ai_signal_before, ai_signal_after, actor, input_preview, metadata)
+    VALUES
+      (${rowId}, ${moduleName}, ${skillId}, ${skillName}, ${mode}, ${changed}, ${aiSignalBefore}, ${aiSignalAfter}, ${actor}, ${inputPreview}, ${JSON.stringify(metadata)})
+    RETURNING *, EXTRACT(EPOCH FROM created_at)::BIGINT * 1000 AS "createdAt"
+  `
+  return normalizeSkillExecutionLogRow(rows[0])
+}
+
+export async function listSkillExecutionLogs({ moduleName, limit = 50 } = {}) {
+  const sql = getSql()
+  const capped = Math.max(1, Math.min(500, Number(limit) || 50))
+  const rows = moduleName
+    ? await sql.unsafe(
+        `SELECT *, EXTRACT(EPOCH FROM created_at)::BIGINT * 1000 AS "createdAt"
+         FROM sentinel_skills_execution_logs
+         WHERE module_name = $1
+         ORDER BY created_at DESC
+         LIMIT $2`,
+        [moduleName, capped]
+      )
+    : await sql.unsafe(
+        `SELECT *, EXTRACT(EPOCH FROM created_at)::BIGINT * 1000 AS "createdAt"
+         FROM sentinel_skills_execution_logs
+         ORDER BY created_at DESC
+         LIMIT $1`,
+        [capped]
+      )
+  return rows.map(normalizeSkillExecutionLogRow)
 }
 
 // ─────────────────────────── User Queries ────────────────────────
