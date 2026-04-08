@@ -70,9 +70,9 @@ export function SaveReviewDialog({ open, onOpenChange, onSave, onDiscard }: Save
             <AlertDescription className="text-xs space-y-2">
               <p className="font-medium">Important Information:</p>
               <ul className="list-disc list-inside space-y-1 ml-2">
-                <li>All data is stored locally in your browser</li>
-                <li>Reviews are private and only visible to you</li>
-                <li>Your content is never sent to external servers</li>
+                <li>Saved review records are stored in your workspace storage</li>
+                <li>Access is limited to your account context in this app</li>
+                <li>Analysis features may use configured AI or backend services during processing</li>
               </ul>
             </AlertDescription>
           </Alert>
@@ -87,7 +87,7 @@ export function SaveReviewDialog({ open, onOpenChange, onSave, onDiscard }: Save
               htmlFor="consent"
               className="text-sm font-normal leading-relaxed cursor-pointer"
             >
-              I understand that this review will be stored locally in my browser and can be deleted at any time.
+              I understand that this review will be saved in app storage for my account context and can be deleted later.
             </Label>
           </div>
         </div>

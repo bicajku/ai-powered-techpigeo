@@ -267,6 +267,22 @@ export interface HumanizedResult {
   timestamp: number
 }
 
+export interface HumanizerCandidateReview {
+  id: string
+  humanizedText: string
+  changes: { original: string; humanized: string }[]
+  strategy?: string
+  scores: {
+    aiLikelihood: number
+    similarityRisk: number
+    preservationScore: number
+    variationScore: number
+    readabilityScore: number
+    overallScore: number
+    notes: string[]
+  }
+}
+
 export interface CookedIdea {
   originalIdea: string
   refinedIdea: string

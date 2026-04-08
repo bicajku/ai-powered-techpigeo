@@ -584,6 +584,172 @@ function estimateHumanizerMeters(text) {
   }
 }
 
+function tokenizeHumanizerText(input) {
+  return String(input || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((token) => token.length >= 3)
+}
+
+function calculateTokenOverlap(left, right) {
+  const leftTokens = new Set(tokenizeHumanizerText(left))
+  const rightTokens = new Set(tokenizeHumanizerText(right))
+  if (leftTokens.size === 0 || rightTokens.size === 0) return 0
+
+  let overlap = 0
+  leftTokens.forEach((token) => {
+    if (rightTokens.has(token)) overlap += 1
+  })
+
+  return (overlap / Math.max(leftTokens.size, rightTokens.size)) * 100
+}
+
+function calculateReadabilityBalance(text) {
+  const normalized = String(text || "").trim()
+  if (!normalized) return 0
+  const words = normalized.split(/\s+/).filter(Boolean)
+  const sentences = normalized.split(/[.!?]+/).map((part) => part.trim()).filter(Boolean)
+  const avgSentenceLength = sentences.length > 0 ? words.length / sentences.length : words.length
+  if (avgSentenceLength < 8) return 55
+  if (avgSentenceLength < 14) return 82
+  if (avgSentenceLength < 20) return 92
+  if (avgSentenceLength < 26) return 78
+  return 60
+}
+
+function scoreHumanizerCandidate(originalText, candidateText) {
+  const candidateMeters = estimateHumanizerMeters(candidateText)
+  const overlap = calculateTokenOverlap(originalText, candidateText)
+  const originalWords = String(originalText || "").trim().split(/\s+/).filter(Boolean)
+  const candidateWords = String(candidateText || "").trim().split(/\s+/).filter(Boolean)
+  const lengthDelta = originalWords.length > 0
+    ? Math.abs(candidateWords.length - originalWords.length) / originalWords.length
+    : 0
+
+  let preservationScore = 55
+  preservationScore += Math.min(35, overlap * 0.35)
+  preservationScore -= Math.min(20, lengthDelta * 100)
+
+  const variationScore = Math.max(
+    0,
+    Math.min(100, Math.round((100 - candidateMeters.aiLikelihood) * 0.6 + (100 - candidateMeters.similarityRisk) * 0.4))
+  )
+  const readabilityScore = calculateReadabilityBalance(candidateText)
+  const overallScore = Math.max(
+    1,
+    Math.min(99, Math.round(preservationScore * 0.42 + variationScore * 0.4 + readabilityScore * 0.18))
+  )
+
+  const notes = []
+  if (candidateMeters.aiLikelihood <= 35) notes.push("Lower detector-pattern estimate")
+  if (candidateMeters.similarityRisk <= 35) notes.push("Lower surface-similarity estimate")
+  if (preservationScore >= 75) notes.push("Meaning preservation stayed strong")
+  if (readabilityScore >= 85) notes.push("Sentence flow stayed balanced")
+
+  return {
+    ...candidateMeters,
+    preservationScore: clampScore(preservationScore),
+    variationScore: clampScore(variationScore),
+    readabilityScore: clampScore(readabilityScore),
+    overallScore,
+    notes: notes.slice(0, 3),
+  }
+}
+
+function buildReviewScorePayload(text, rawResult, filters = {}) {
+  const normalizedText = String(text || "")
+  const highlights = Array.isArray(rawResult?.highlights) ? rawResult.highlights : []
+  const aiHighlights = Array.isArray(rawResult?.aiHighlights) ? rawResult.aiHighlights : []
+  const validReferences = Array.isArray(rawResult?.validReferences) ? rawResult.validReferences : []
+  const detectedSources = Array.isArray(rawResult?.detectedSources) ? rawResult.detectedSources : []
+  const plagiarismPercentage = Math.max(0, Math.min(100, Number(rawResult?.plagiarismPercentage || 0)))
+  const aiContentPercentage = Math.max(0, Math.min(100, Number(rawResult?.aiContentPercentage || 0)))
+  const invalidReferences = validReferences.filter((ref) => ref && ref.isValid === false).length
+  const citationRisk = validReferences.length > 0 ? (invalidReferences / validReferences.length) * 100 : 25
+  const integrityScore = Math.max(0, Math.min(100, Math.round(100 - (0.55 * plagiarismPercentage + 0.3 * aiContentPercentage + 0.15 * citationRisk))))
+  const spread = Math.max(4, Math.min(12, Math.round(4 + highlights.length * 0.8)))
+  const confidenceReasons = []
+  const wordCount = normalizedText.trim().split(/\s+/).filter(Boolean).length
+
+  if (normalizedText.length >= 3000) confidenceReasons.push("Document length is sufficient for stable scoring")
+  else confidenceReasons.push("Shorter text reduces reliability of automated scoring")
+
+  if (validReferences.length >= 3) confidenceReasons.push("Multiple references detected for citation validation")
+  else confidenceReasons.push("Limited references reduce citation confidence")
+
+  if (detectedSources.length >= 2) confidenceReasons.push("Detected sources provide cross-check evidence")
+  else confidenceReasons.push("Few detected sources may underrepresent overlap")
+
+  const signalScore = (normalizedText.length >= 3000 ? 1 : 0) + (validReferences.length >= 3 ? 1 : 0) + (detectedSources.length >= 2 ? 1 : 0)
+  const confidenceLabel = signalScore <= 1 ? "low" : signalScore === 3 ? "high" : "medium"
+
+  const evidenceItems = [
+    {
+      label: "Document length",
+      impact: normalizedText.length >= 1800 ? "positive" : normalizedText.length >= 800 ? "neutral" : "risk",
+      detail: `${wordCount} words analysed for scoring stability.`,
+    },
+    {
+      label: "Similarity evidence",
+      impact: highlights.length === 0 ? "positive" : highlights.length <= 2 ? "neutral" : "risk",
+      detail: `${highlights.length} overlap highlight${highlights.length === 1 ? "" : "s"} remained after active filters.`,
+    },
+    {
+      label: "AI-pattern evidence",
+      impact: aiHighlights.length === 0 ? "positive" : aiHighlights.length <= 2 ? "neutral" : "risk",
+      detail: `${aiHighlights.length} AI-pattern segment${aiHighlights.length === 1 ? "" : "s"} contributed to the estimate.`,
+    },
+    {
+      label: "Citation evidence",
+      impact: validReferences.some((ref) => ref && ref.isValid === false) ? "risk" : validReferences.length > 0 ? "positive" : "neutral",
+      detail: `${validReferences.filter((ref) => ref && ref.isValid).length}/${validReferences.length} references validated successfully.`,
+    },
+  ]
+
+  if (filters.excludeQuotes || filters.excludeReferences || filters.minMatchWords > 0) {
+    evidenceItems.push({
+      label: "Filter impact",
+      impact: "neutral",
+      detail: `Filters active: quotes ${filters.excludeQuotes ? "excluded" : "included"}, references ${filters.excludeReferences ? "excluded" : "included"}, minimum match words ${Number(filters.minMatchWords || 0)}.`,
+    })
+  }
+
+  return {
+    integrityScore,
+    confidenceLabel,
+    confidenceReasons,
+    likelyTurnitinRange: {
+      min: Math.max(0, Math.min(100, Math.round(plagiarismPercentage - spread))),
+      max: Math.max(0, Math.min(100, Math.round(plagiarismPercentage + spread))),
+    },
+    scoringProfile: filters.excludeQuotes || filters.excludeReferences || filters.minMatchWords > 0 ? "institutional-adjusted" : "institutional-baseline",
+    profileVersion: "review-v2",
+    evidenceItems,
+    provenance: [
+      {
+        label: "Local structural analysis",
+        status: "verified",
+        detail: "Sentence, repetition, and stylometric heuristics were computed in the scoring pipeline.",
+      },
+      {
+        label: "Reference validation",
+        status: validReferences.length > 0 ? "partial" : "missing",
+        detail: validReferences.length > 0
+          ? `${validReferences.length} references were checked for formatting and completeness.`
+          : "No usable references were available for validation.",
+      },
+      {
+        label: "Source attribution",
+        status: detectedSources.length > 0 ? "partial" : "missing",
+        detail: detectedSources.length > 0
+          ? `${detectedSources.length} likely source contribution${detectedSources.length === 1 ? " was" : "s were"} estimated.`
+          : "No explicit source attribution evidence was available.",
+      },
+    ],
+  }
+}
+
 // ─────────────────────────── Route Handlers ──────────────────────
 
 /**
@@ -3201,9 +3367,35 @@ const server = http.createServer(async (req, res) => {
   if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
   const body = parsed.data
       const text = typeof body.text === "string" ? body.text : ""
+      const originalText = typeof body.originalText === "string" ? body.originalText : ""
+      const candidates = Array.isArray(body.candidates) ? body.candidates : null
 
-      if (!text.trim()) {
+      if (!text.trim() && !(originalText.trim() && candidates && candidates.length > 0)) {
         return sendJson(res, 400, { error: "Missing required field: text" }, req)
+      }
+
+      if (originalText.trim() && candidates && candidates.length > 0) {
+        const ranked = candidates
+          .map((candidate, index) => {
+            const humanizedText = typeof candidate?.humanizedText === "string" ? candidate.humanizedText : ""
+            return {
+              id: typeof candidate?.id === "string" ? candidate.id : `candidate-${index + 1}`,
+              humanizedText,
+              strategy: typeof candidate?.strategy === "string" ? candidate.strategy : undefined,
+              changes: Array.isArray(candidate?.changes) ? candidate.changes : [],
+              scores: scoreHumanizerCandidate(originalText, humanizedText),
+            }
+          })
+          .filter((candidate) => candidate.humanizedText.trim().length > 0)
+          .sort((left, right) => right.scores.overallScore - left.scores.overallScore)
+
+        return sendJson(res, 200, {
+          ok: true,
+          source: "server-ranked",
+          profileVersion: "humanizer-v2",
+          ranked,
+          bestId: ranked[0]?.id || null,
+        }, req)
       }
 
       const scores = estimateHumanizerMeters(text)
@@ -3217,6 +3409,39 @@ const server = http.createServer(async (req, res) => {
       console.error("[humanizer/score] error:", error instanceof Error ? error.message : error)
       return sendJson(res, 500, {
         error: "Humanizer scoring failed",
+      }, req)
+    }
+  }
+
+  // ── POST /api/review/score ──
+  if (method === "POST" && reqPathname === "/api/review/score") {
+    const auth = authorize(req)
+    if (!auth.authorized) {
+      return sendJson(res, 401, { error: "Unauthorized" }, req)
+    }
+
+    try {
+      const parsed = await parseJsonBody(req)
+      if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+      const body = parsed.data
+      const text = typeof body.text === "string" ? body.text : ""
+      const rawResult = body.rawResult && typeof body.rawResult === "object" ? body.rawResult : null
+      const filters = body.filters && typeof body.filters === "object" ? body.filters : {}
+
+      if (!text.trim() || !rawResult) {
+        return sendJson(res, 400, { error: "Missing required fields: text and rawResult" }, req)
+      }
+
+      const meta = buildReviewScorePayload(text, rawResult, filters)
+      return sendJson(res, 200, {
+        ok: true,
+        source: "server-review-profile",
+        meta,
+      }, req)
+    } catch (error) {
+      console.error("[review/score] error:", error instanceof Error ? error.message : error)
+      return sendJson(res, 500, {
+        error: "Review scoring failed",
       }, req)
     }
   }

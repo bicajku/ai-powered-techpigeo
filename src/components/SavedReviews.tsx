@@ -106,7 +106,7 @@ export function SavedReviews({ reviews, onDelete, onArchive, onUnarchive, onView
                       {review.plagiarismResult.turnitinReady && (
                         <Badge variant="default" className="gap-1 flex-shrink-0">
                           <CheckCircle size={14} weight="fill" />
-                          Turnitin Ready
+                          Lower Submission Risk
                         </Badge>
                       )}
                     </div>

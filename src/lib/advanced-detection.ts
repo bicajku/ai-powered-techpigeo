@@ -353,8 +353,8 @@ export function calculateAIDetectionScore(text: string): number {
     inverseTokenLikelihood * weights.tokenLikelihood +
     inverseRepetition * weights.repetition +
     inverseConsistency * weights.semanticConsistency
-  ) / 100
-  
+  )
+
   return Math.max(0, Math.min(aiScore, 100))
 }
 
@@ -430,10 +430,154 @@ export function calculateCitationQualityScore(text: string): number {
   return Math.max(0, qualityScore)
 }
 
+interface SentenceSpan {
+  text: string
+  start: number
+  end: number
+}
+
+function getSentenceSpans(text: string): SentenceSpan[] {
+  const matches = text.matchAll(/[^.!?]+[.!?]+|[^.!?]+$/g)
+  return Array.from(matches)
+    .map((match) => {
+      const value = match[0]?.trim() || ""
+      const start = match.index || 0
+      return {
+        text: value,
+        start,
+        end: start + value.length,
+      }
+    })
+    .filter((span) => span.text.length > 0)
+}
+
+function calculateSentenceAIPatternScore(sentence: string): { score: number; indicators: string[] } {
+  const words = sentence.match(/\b\w+\b/gi) || []
+  if (words.length === 0) {
+    return { score: 0, indicators: [] }
+  }
+
+  const normalizedWords = words.map((word) => word.toLowerCase())
+  const lexicalDiversity = new Set(normalizedWords).size / words.length
+  const avgWordLength = words.reduce((sum, word) => sum + word.length, 0) / words.length
+  const longTransitionHits = (sentence.match(/\b(furthermore|moreover|in addition|therefore|consequently|thus|however)\b/gi) || []).length
+  const punctuationCount = (sentence.match(/[,:;()]/g) || []).length
+  const contractionHits = (sentence.match(/\b\w+'(t|re|ve|ll|d|s)\b/gi) || []).length
+
+  const indicators: string[] = []
+  let score = 28
+
+  if (words.length >= 28) {
+    score += 16
+    indicators.push("Long, highly structured sentence")
+  }
+
+  if (lexicalDiversity < 0.68) {
+    score += 18
+    indicators.push("Low lexical variation")
+  }
+
+  if (avgWordLength >= 5.7) {
+    score += 12
+    indicators.push("Dense formal vocabulary")
+  }
+
+  if (longTransitionHits > 0) {
+    score += Math.min(18, longTransitionHits * 8)
+    indicators.push("Formulaic academic transitions")
+  }
+
+  if (punctuationCount >= 4) {
+    score += 8
+    indicators.push("Heavy clause punctuation")
+  }
+
+  if (contractionHits > 0) {
+    score -= Math.min(10, contractionHits * 4)
+  }
+
+  return {
+    score: Math.max(0, Math.min(Math.round(score), 100)),
+    indicators: indicators.slice(0, 3),
+  }
+}
+
+function detectAISuspiciousSections(text: string, aiProbability: number): AdvancedDetectionResult["aiDetectedSections"] {
+  if (aiProbability < 35) {
+    return []
+  }
+
+  return getSentenceSpans(text)
+    .map((span) => {
+      const analysis = calculateSentenceAIPatternScore(span.text)
+      const confidence = Math.max(0, Math.min(100, Math.round(analysis.score * 0.65 + aiProbability * 0.35)))
+      return {
+        start: span.start,
+        end: span.end,
+        confidence,
+        indicators: analysis.indicators,
+      }
+    })
+    .filter((span) => span.end - span.start >= 60 && span.confidence >= Math.max(52, aiProbability - 10))
+    .sort((left, right) => right.confidence - left.confidence)
+    .slice(0, 5)
+}
+
+function detectPlagiarismSections(text: string, plagiarismProbability: number): AdvancedDetectionResult["plagiarismSections"] {
+  if (plagiarismProbability < 30) {
+    return []
+  }
+
+  const paragraphs = text
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter((paragraph) => paragraph.length >= 80)
+
+  let cursor = 0
+
+  return paragraphs
+    .map((paragraph) => {
+      const start = text.indexOf(paragraph, cursor)
+      const safeStart = start >= 0 ? start : cursor
+      cursor = safeStart + paragraph.length
+
+      const formalPatterns = (paragraph.match(/\b(furthermore|moreover|in addition|consequently|therefore|thus|hence)\b/gi) || []).length
+      const academicPhrases = (paragraph.match(/\b(is defined as|can be seen|as mentioned|it is argued|context of)\b/gi) || []).length
+      const citationHits = (paragraph.match(/\([^)]*\d{4}[^)]*\)/g) || []).length
+      const likelihood = Math.max(
+        0,
+        Math.min(
+          100,
+          Math.round(plagiarismProbability * 0.55 + formalPatterns * 8 + academicPhrases * 10 + citationHits * 4)
+        )
+      )
+
+      return {
+        start: safeStart,
+        end: safeStart + paragraph.length,
+        riskLevel: likelihood > 70 ? "high" as const : likelihood > 48 ? "medium" as const : "low" as const,
+        likelihood,
+      }
+    })
+    .filter((section) => section.likelihood >= Math.max(40, plagiarismProbability - 8))
+    .sort((left, right) => right.likelihood - left.likelihood)
+    .slice(0, 4)
+}
+
+function determineDetectionConfidence(text: string, sentenceCount: number): AdvancedDetectionResult["confidenceLevel"] {
+  if (text.length < 400 || sentenceCount < 4) return "very-low"
+  if (text.length < 900 || sentenceCount < 7) return "low"
+  if (text.length < 1800 || sentenceCount < 12) return "medium"
+  if (text.length < 3200 || sentenceCount < 18) return "high"
+  return "very-high"
+}
+
 /**
  * Main function for advanced detection
  */
 export function performAdvancedDetection(text: string): AdvancedDetectionResult {
+  const stats = calculateTextStats(text)
+
   if (text.length < 100) {
     return {
       aiProbability: 0,
@@ -468,16 +612,7 @@ export function performAdvancedDetection(text: string): AdvancedDetectionResult 
   const aiProbability = calculateAIDetectionScore(text)
   const plagiarismProbability = calculateAdvancedPlagiarismScore(text)
   const citationQualityScore = calculateCitationQualityScore(text)
-  
-  // Determine confidence level
-  const avgScore = (entropyScore + burstinessScore + stylometricScore + tokenLikelihoodScore) / 4
-  let confidenceLevel: "very-low" | "low" | "medium" | "high" | "very-high"
-  
-  if (avgScore < 20) confidenceLevel = "very-low"
-  else if (avgScore < 40) confidenceLevel = "low"
-  else if (avgScore < 60) confidenceLevel = "medium"
-  else if (avgScore < 80) confidenceLevel = "high"
-  else confidenceLevel = "very-high"
+  const confidenceLevel = determineDetectionConfidence(text, stats.sentenceCount)
   
   // Calculate integrity score
   const integrityScore = Math.max(0, Math.min(
@@ -485,25 +620,8 @@ export function performAdvancedDetection(text: string): AdvancedDetectionResult 
     100
   ))
   
-  // Generate AI-detected sections
-  const aiDetectedSections = text.length > 500 ? [
-    {
-      start: 0,
-      end: Math.min(200, text.length),
-      confidence: Math.floor(aiProbability * 0.7), 
-      indicators: []
-    }
-  ] : []
-  
-  // Generate plagiarism sections
-  const plagiarismSections = plagiarismProbability > 30 ? [
-    {
-      start: 0,
-      end: Math.min(300, text.length),
-      riskLevel: plagiarismProbability > 70 ? "high" : plagiarismProbability > 45 ? "medium" : "low",
-      likelihood: plagiarismProbability
-    }
-  ] : []
+  const aiDetectedSections = detectAISuspiciousSections(text, aiProbability)
+  const plagiarismSections = detectPlagiarismSections(text, plagiarismProbability)
   
   // Generate recommendations
   const recommendations: string[] = []
@@ -541,7 +659,7 @@ export function performAdvancedDetection(text: string): AdvancedDetectionResult 
     integrityScore: Math.round(integrityScore),
     confidenceLevel,
     aiDetectedSections,
-    plagiarismSections: plagiarismSections as AdvancedDetectionResult["plagiarismSections"],
+    plagiarismSections,
     recommendations: recommendations.length > 0 ? recommendations : ["Content appears authentic based on advanced analysis."],
     riskFactors
   }

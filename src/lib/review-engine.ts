@@ -8,6 +8,18 @@ export interface ReviewComputationMeta {
     min: number
     max: number
   }
+  scoringProfile: string
+  profileVersion: string
+  evidenceItems: Array<{
+    label: string
+    impact: "positive" | "neutral" | "risk"
+    detail: string
+  }>
+  provenance: Array<{
+    label: string
+    status: "verified" | "partial" | "missing"
+    detail: string
+  }>
 }
 
 export interface ReviewFilters {
@@ -179,6 +191,68 @@ function buildConfidenceMeta(text: string, result: PlagiarismResult): Pick<Revie
   return { confidenceLabel, confidenceReasons: reasons }
 }
 
+function buildEvidenceItems(text: string, result: PlagiarismResult, filters: ReviewFilters): ReviewComputationMeta["evidenceItems"] {
+  const items: ReviewComputationMeta["evidenceItems"] = []
+
+  items.push({
+    label: "Document length",
+    impact: text.length >= 1800 ? "positive" : text.length >= 800 ? "neutral" : "risk",
+    detail: `${wordCount(text)} words analysed for scoring stability.`,
+  })
+
+  items.push({
+    label: "Similarity evidence",
+    impact: result.highlights.length === 0 ? "positive" : result.highlights.length <= 2 ? "neutral" : "risk",
+    detail: `${result.highlights.length} overlap highlight${result.highlights.length === 1 ? "" : "s"} remained after active filters.`,
+  })
+
+  items.push({
+    label: "AI-pattern evidence",
+    impact: result.aiHighlights.length === 0 ? "positive" : result.aiHighlights.length <= 2 ? "neutral" : "risk",
+    detail: `${result.aiHighlights.length} AI-pattern segment${result.aiHighlights.length === 1 ? "" : "s"} contributed to the estimate.`,
+  })
+
+  items.push({
+    label: "Citation evidence",
+    impact: result.validReferences.some((ref) => !ref.isValid) ? "risk" : result.validReferences.length > 0 ? "positive" : "neutral",
+    detail: `${result.validReferences.filter((ref) => ref.isValid).length}/${result.validReferences.length} references validated successfully.`,
+  })
+
+  if (filters.excludeQuotes || filters.excludeReferences || filters.minMatchWords > 0) {
+    items.push({
+      label: "Filter impact",
+      impact: "neutral",
+      detail: `Filters active: quotes ${filters.excludeQuotes ? "excluded" : "included"}, references ${filters.excludeReferences ? "excluded" : "included"}, minimum match words ${filters.minMatchWords}.`,
+    })
+  }
+
+  return items
+}
+
+function buildProvenance(result: PlagiarismResult): ReviewComputationMeta["provenance"] {
+  return [
+    {
+      label: "Local structural analysis",
+      status: "verified",
+      detail: "Sentence, repetition, and stylometric heuristics were computed locally.",
+    },
+    {
+      label: "Reference validation",
+      status: result.validReferences.length > 0 ? "partial" : "missing",
+      detail: result.validReferences.length > 0
+        ? `${result.validReferences.length} references were checked for formatting and completeness.`
+        : "No usable references were available for validation.",
+    },
+    {
+      label: "Source attribution",
+      status: result.detectedSources.length > 0 ? "partial" : "missing",
+      detail: result.detectedSources.length > 0
+        ? `${result.detectedSources.length} likely source contribution${result.detectedSources.length === 1 ? " was" : "s were"} estimated.`
+        : "No explicit source attribution evidence was available.",
+    },
+  ]
+}
+
 export function enrichReviewResult(text: string, rawResult: PlagiarismResult): ReviewComputation {
   return computeReviewAnalysis(text, rawResult, {
     excludeQuotes: false,
@@ -268,6 +342,10 @@ export function computeReviewAnalysis(
       confidenceLabel,
       confidenceReasons,
       likelyTurnitinRange,
+      scoringProfile: filters.excludeQuotes || filters.excludeReferences || filters.minMatchWords > 0 ? "institutional-adjusted" : "institutional-baseline",
+      profileVersion: "review-v2",
+      evidenceItems: buildEvidenceItems(text, filteredResult, filters),
+      provenance: buildProvenance(filteredResult),
     },
     sections: extractSectionSummaries(text),
   }

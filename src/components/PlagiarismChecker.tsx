@@ -22,7 +22,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion"
 import { toast } from "sonner"
 import { sentinelQuery } from "@/lib/sentinel-query-pipeline"
-import { DocumentFingerprintRecord, PlagiarismResult, DocumentReviewResult, ExternalSourceCheckResult, HumanizedResult, SavedReviewDocument, UserProfile } from "@/types"
+import { DocumentFingerprintRecord, PlagiarismResult, DocumentReviewResult, ExternalSourceCheckResult, HumanizedResult, HumanizerCandidateReview, SavedReviewDocument, UserProfile } from "@/types"
 import { useSafeKV } from "@/hooks/useSafeKV"
 import { SaveReviewDialog } from "@/components/SaveReviewDialog"
 import { SavedReviews } from "@/components/SavedReviews"
@@ -36,7 +36,8 @@ import { addProCredits, consumeProCredits, consumeReviewCredit, getFeatureEntitl
 import { UpgradePaywall } from "@/components/UpgradePaywall"
 import type { SubscriptionPlan } from "@/types"
 import { getCurrentMonthKey, getExportPlanConfig } from "@/lib/strategy-governance"
-import { estimateHumanizerMeters, getHumanizerScoringModeLabel, scoreHumanizerMeters } from "@/lib/humanizer-metrics"
+import { estimateHumanizerMeters, getHumanizerScoringModeLabel, rankHumanizerCandidatesOnServer, scoreHumanizerMeters, selectBestHumanizerCandidate } from "@/lib/humanizer-metrics"
+import { scoreReviewMetaOnServer } from "@/lib/review-scoring"
 import mammoth from "mammoth"
 import { GlobalWorkerOptions, getDocument } from "pdfjs-dist"
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url"
@@ -77,6 +78,12 @@ type HumanizerDraft = {
   similarityAfter: number
   updatedAt: number
   isFinal: boolean
+}
+
+type HumanizerCandidatePayload = {
+  humanizedText: string
+  changes: Array<{ original: string; humanized: string }>
+  strategy: string | undefined
 }
 
 const DEFAULT_HUMANIZER_SETTINGS: HumanizerBehaviorSettings = {
@@ -121,6 +128,8 @@ function PlagiarismCheckerInner({ user, mode }: { user: UserProfile; mode: "revi
   const [isHumanizing, setIsHumanizing] = useState(false)
   const [result, setResult] = useState<PlagiarismResult | null>(null)
   const [humanizedResult, setHumanizedResult] = useState<HumanizedResult | null>(null)
+  const [humanizerCandidates, setHumanizerCandidates] = useState<HumanizerCandidateReview[]>([])
+  const [selectedHumanizerCandidateId, setSelectedHumanizerCandidateId] = useState<string | null>(null)
   const [humanizerSettings, setHumanizerSettings] = useState<HumanizerBehaviorSettings>(DEFAULT_HUMANIZER_SETTINGS)
   const [humanizerScores, setHumanizerScores] = useState<{
     aiScoreBefore: number
@@ -938,9 +947,11 @@ function PlagiarismCheckerInner({ user, mode }: { user: UserProfile; mode: "revi
     setResult(null)
     setReviewMeta(null)
     setSectionSummaries([])
-    setExternalSourceCheck(null)
-    setHumanizedResult(null)
-    setAdvancedMetrics(null)
+      setExternalSourceCheck(null)
+      setHumanizedResult(null)
+      setHumanizerCandidates([])
+      setSelectedHumanizerCandidateId(null)
+      setAdvancedMetrics(null)
 
     try {
       // Consume review credit (admin is free, trial users decrement, paid plans consume 1 credit)
@@ -976,8 +987,9 @@ function PlagiarismCheckerInner({ user, mode }: { user: UserProfile; mode: "revi
 
       // Further enhance with local review analysis
       const enriched = computeReviewAnalysis(text, enrichedResult, activeReviewFilters)
+      const scoredMeta = await scoreReviewMetaOnServer(text, enriched.result, activeReviewFilters)
       setResult(enriched.result)
-      setReviewMeta(enriched.meta)
+      setReviewMeta(scoredMeta || enriched.meta)
       setSectionSummaries(enriched.sections)
 
       const review: DocumentReviewResult = {
@@ -994,9 +1006,9 @@ function PlagiarismCheckerInner({ user, mode }: { user: UserProfile; mode: "revi
       setDocumentReviews((current) => [review, ...(current || [])].slice(0, 20))
 
       if (enriched.result.turnitinReady) {
-        toast.success("Document analysis complete! ✓ Ready for Turnitin")
+        toast.success("Document analysis complete. Lower submission-risk estimate detected.")
       } else {
-        toast.warning("Document analysis complete. Review recommendations before submission.")
+        toast.warning("Document analysis complete. Review evidence and recommendations before submission.")
       }
 
       setTimeout(() => {
@@ -1085,13 +1097,14 @@ function PlagiarismCheckerInner({ user, mode }: { user: UserProfile; mode: "revi
     toast.success("Re-upload history cleared")
   }
 
-  const handleViewReview = (review: SavedReviewDocument) => {
+  const handleViewReview = async (review: SavedReviewDocument) => {
     setText(review.documentText)
     setFileName(review.fileName)
     setResult(review.plagiarismResult)
     setExternalSourceCheck(review.externalSourceCheck || null)
     const enriched = computeReviewAnalysis(review.documentText, review.plagiarismResult, activeReviewFilters)
-    setReviewMeta(enriched.meta)
+    const scoredMeta = await scoreReviewMetaOnServer(review.documentText, enriched.result, activeReviewFilters)
+    setReviewMeta(scoredMeta || enriched.meta)
     setSectionSummaries(enriched.sections)
     window.scrollTo({ top: 0, behavior: "smooth" })
   }
@@ -1188,6 +1201,73 @@ function PlagiarismCheckerInner({ user, mode }: { user: UserProfile; mode: "revi
     }
   }
 
+  const parseHumanizerResponse = (response: unknown): {
+    candidates: HumanizerCandidatePayload[]
+  } => {
+    let parsed: Record<string, unknown>
+
+    if (typeof response === "object" && response !== null) {
+      parsed = response as Record<string, unknown>
+    } else {
+      let cleaned = String(response || "").trim()
+      if (cleaned.startsWith("```json")) {
+        cleaned = cleaned.replace(/^```json\s*/, "").replace(/```\s*$/, "")
+      } else if (cleaned.startsWith("```")) {
+        cleaned = cleaned.replace(/^```\s*/, "").replace(/```\s*$/, "")
+      }
+
+      cleaned = cleaned.trim()
+      const firstBrace = cleaned.indexOf("{")
+      const lastBrace = cleaned.lastIndexOf("}")
+      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+        cleaned = cleaned.substring(firstBrace, lastBrace + 1)
+      }
+
+      parsed = JSON.parse(cleaned)
+    }
+
+    const rawCandidates = Array.isArray(parsed.candidates)
+      ? parsed.candidates
+      : typeof parsed.humanizedText === "string"
+        ? [{ humanizedText: parsed.humanizedText, changes: parsed.changes, strategy: parsed.strategy }]
+        : []
+
+    const candidates = rawCandidates.reduce<HumanizerCandidatePayload[]>((acc, candidate) => {
+      if (!candidate || typeof candidate !== "object") {
+        return acc
+      }
+
+      const record = candidate as Record<string, unknown>
+      const humanizedText = typeof record.humanizedText === "string" ? record.humanizedText.trim() : ""
+      if (!humanizedText) {
+        return acc
+      }
+
+      const changes = Array.isArray(record.changes)
+        ? record.changes.filter((change): change is { original: string; humanized: string } => {
+          if (!change || typeof change !== "object") {
+            return false
+          }
+          const item = change as Record<string, unknown>
+          return typeof item.original === "string" && typeof item.humanized === "string"
+        })
+        : []
+
+      acc.push({
+        humanizedText,
+        strategy: typeof record.strategy === "string" ? record.strategy : undefined,
+        changes,
+      })
+      return acc
+    }, [])
+
+    if (candidates.length === 0) {
+      throw new Error("No valid humanizer candidates returned")
+    }
+
+    return { candidates }
+  }
+
   const humanizeText = async () => {
     if (!text.trim()) {
       toast.error("Please enter text to humanize")
@@ -1224,9 +1304,11 @@ function PlagiarismCheckerInner({ user, mode }: { user: UserProfile; mode: "revi
     }
 
     setIsHumanizing(true)
+    setHumanizerCandidates([])
+    setSelectedHumanizerCandidateId(null)
 
     try {
-      const strPrompt = `You are an expert text humanizer. Rewrite the following text to sound more natural, authentic, and human-written while preserving the core meaning and information.
+      const strPrompt = `You are an expert text humanizer and rewrite optimizer. Create multiple strong rewrites, then return them as structured JSON for local scoring.
 
 Original text:
 ${text}
@@ -1245,14 +1327,22 @@ Instructions:
 - Maintain the original meaning and key facts
 - Make it sound conversational yet professional
 - Vary sentence length and complexity
+- Preserve numbers, citations, named entities, and critical qualifiers
+- Avoid inventing facts or changing the author's intent
+- Produce 3 distinct rewrite candidates with different rhythm and flow choices
 
 Return ONLY a valid JSON object:
 {
-  "humanizedText": "<the fully rewritten text>",
-  "changes": [
+  "candidates": [
     {
-      "original": "<original phrase>",
-      "humanized": "<humanized version>"
+      "humanizedText": "<fully rewritten text>",
+      "strategy": "<short strategy label>",
+      "changes": [
+        {
+          "original": "<original phrase>",
+          "humanized": "<humanized version>"
+        }
+      ]
     }
   ]
 }`
@@ -1276,31 +1366,32 @@ Return ONLY a valid JSON object:
         throw new Error("AI service unavailable. Please try again.")
       }
 
-      let parsed: Record<string, unknown>
-      if (typeof response === "object" && response !== null) {
-        parsed = response as Record<string, unknown>
-      } else {
-        let cleaned = (response as string).trim()
-        if (cleaned.startsWith("```json")) {
-          cleaned = cleaned.replace(/^```json\s*/, "").replace(/```\s*$/, "")
-        } else if (cleaned.startsWith("```")) {
-          cleaned = cleaned.replace(/^```\s*/, "").replace(/```\s*$/, "")
-        }
-
-        cleaned = cleaned.trim()
-        const firstBrace = cleaned.indexOf("{")
-        const lastBrace = cleaned.lastIndexOf("}")
-        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-          cleaned = cleaned.substring(firstBrace, lastBrace + 1)
-        }
-
-        parsed = JSON.parse(cleaned)
-      }
+      const parsed = parseHumanizerResponse(response)
+      const candidateInputs = parsed.candidates.map((candidate, index) => ({
+        ...candidate,
+        id: `candidate-${index + 1}`,
+      }))
+      const serverRanking = await rankHumanizerCandidatesOnServer(text, candidateInputs)
+      const selection = serverRanking
+        ? {
+            ranked: serverRanking.ranked,
+            score: serverRanking.ranked[0].score,
+            best: serverRanking.ranked[0].candidate,
+          }
+        : selectBestHumanizerCandidate(text, candidateInputs)
+      const selected = selection.best
+      const rankedCandidates: HumanizerCandidateReview[] = selection.ranked.map(({ candidate, score }) => ({
+        id: candidate.id,
+        humanizedText: candidate.humanizedText,
+        changes: candidate.changes || [],
+        strategy: candidate.strategy,
+        scores: score,
+      }))
 
       const humanized: HumanizedResult = {
         originalText: text,
-        humanizedText: typeof parsed.humanizedText === "string" ? parsed.humanizedText : text,
-        changes: Array.isArray(parsed.changes) ? parsed.changes as { original: string; humanized: string }[] : [],
+        humanizedText: selected.humanizedText,
+        changes: Array.isArray(selected.changes) ? selected.changes : [],
         timestamp: Date.now(),
       }
 
@@ -1315,6 +1406,8 @@ Return ONLY a valid JSON object:
         setProCredits(remainingCredits)
       }
 
+      setHumanizerCandidates(rankedCandidates)
+      setSelectedHumanizerCandidateId(selected.id)
       setHumanizedResult(humanized)
 
       const beforeMeters = estimateHumanizerMeters(text)
@@ -1325,7 +1418,10 @@ Return ONLY a valid JSON object:
         similarityBefore: beforeMeters.similarityRisk,
         similarityAfter: afterMeters.similarityRisk,
       })
-      toast.success(`Text humanized successfully! ${remainingCredits} Pro credits left.`)
+      const selectionNote = selection.score.notes.length > 0
+        ? ` ${selection.score.notes[0]}.`
+        : ""
+      toast.success(`Best rewrite candidate selected from ${rankedCandidates.length} options.${selectionNote} ${remainingCredits} Pro credits left.`)
     } catch (error) {
       console.error("Humanization error:", error)
       toast.error("Failed to humanize text. Please try again.")
@@ -1400,6 +1496,8 @@ Return ONLY a valid JSON object:
 
   const loadHumanizerWorkspaceEntry = (entry: HumanizerWorkspaceEntry) => {
     setText(entry.originalText)
+    setHumanizerCandidates([])
+    setSelectedHumanizerCandidateId(null)
     setHumanizedResult({
       originalText: entry.originalText,
       humanizedText: entry.humanizedText,
@@ -1414,6 +1512,23 @@ Return ONLY a valid JSON object:
   const deleteHumanizerWorkspaceEntry = (id: string) => {
     setHumanizerWorkspace((current) => (current || []).filter((entry) => entry.id !== id))
     toast.success("Workspace entry removed")
+  }
+
+  const applyHumanizerCandidate = (candidate: HumanizerCandidateReview) => {
+    setSelectedHumanizerCandidateId(candidate.id)
+    setHumanizedResult({
+      originalText: text,
+      humanizedText: candidate.humanizedText,
+      changes: candidate.changes,
+      timestamp: Date.now(),
+    })
+    setHumanizerScores({
+      aiScoreBefore: humanizerScores?.aiScoreBefore ?? estimateHumanizerMeters(text).aiLikelihood,
+      aiScoreAfter: candidate.scores.aiLikelihood,
+      similarityBefore: humanizerScores?.similarityBefore ?? estimateHumanizerMeters(text).similarityRisk,
+      similarityAfter: candidate.scores.similarityRisk,
+    })
+    toast.success("Candidate applied")
   }
 
   const getScoreColor = (score: number) => {
@@ -1470,6 +1585,8 @@ Return ONLY a valid JSON object:
     })
 
     if (humanizerDraft.lastOutput) {
+      setHumanizerCandidates([])
+      setSelectedHumanizerCandidateId(null)
       setHumanizedResult({
         originalText: humanizerDraft.sourceText,
         humanizedText: humanizerDraft.lastOutput,
@@ -1487,6 +1604,8 @@ Return ONLY a valid JSON object:
     setHumanizerSettings(DEFAULT_HUMANIZER_SETTINGS)
     setHumanizerScores(null)
     setHumanizedResult(null)
+    setHumanizerCandidates([])
+    setSelectedHumanizerCandidateId(null)
     setHumanizerAnalyzed(false)
     toast.success("Draft reset")
   }
@@ -1767,7 +1886,7 @@ Return ONLY a valid JSON object:
                   <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     Humanizer Controls
                   </p>
-                  <Badge variant="outline">Two-stage flow: Analyze -&gt; Humanize</Badge>
+                  <Badge variant="outline">Two-stage flow: Analyze -&gt; Optimize</Badge>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-2">
@@ -1827,7 +1946,7 @@ Return ONLY a valid JSON object:
                 {humanizerScores && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div className="rounded-lg border border-border/50 p-3 space-y-2">
-                      <p className="text-xs font-semibold text-muted-foreground">AI Likelihood Meter</p>
+                      <p className="text-xs font-semibold text-muted-foreground">Estimated AI-Pattern Risk</p>
                       <div>
                         <p className="text-[11px] text-muted-foreground">Before: <span className={getRiskColorClass(humanizerScores.aiScoreBefore)}>{humanizerScores.aiScoreBefore}%</span></p>
                         <Progress value={humanizerScores.aiScoreBefore} className="h-2" />
@@ -1839,7 +1958,7 @@ Return ONLY a valid JSON object:
                     </div>
 
                     <div className="rounded-lg border border-border/50 p-3 space-y-2">
-                      <p className="text-xs font-semibold text-muted-foreground">Similarity Meter</p>
+                      <p className="text-xs font-semibold text-muted-foreground">Estimated Surface Similarity</p>
                       <div>
                         <p className="text-[11px] text-muted-foreground">Before: <span className={getRiskColorClass(humanizerScores.similarityBefore)}>{humanizerScores.similarityBefore}%</span></p>
                         <Progress value={humanizerScores.similarityBefore} className="h-2" />
@@ -1857,7 +1976,7 @@ Return ONLY a valid JSON object:
             {mode !== "humanizer" && <div className="mt-4 p-3 border border-border rounded-lg space-y-3">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Scoring Filters</p>
               <p className="text-xs text-muted-foreground">
-                These controls emulate Turnitin-style exclusions and affect displayed similarity/integrity values.
+                These controls emulate institution-style similarity exclusions and affect displayed similarity and integrity estimates.
               </p>
               {!entitlements.isPaidPlan && user.role !== "admin" && (
                 <p className="text-xs text-primary">
@@ -1949,7 +2068,7 @@ Return ONLY a valid JSON object:
                   {result.turnitinReady ? (
                     <Badge variant="default" className="gap-1">
                       <CheckCircle size={14} weight="fill" />
-                      Turnitin Ready
+                      Lower Submission Risk
                     </Badge>
                   ) : (
                     <Badge variant="destructive" className="gap-1">
@@ -1996,7 +2115,7 @@ Return ONLY a valid JSON object:
 
                   <div className="p-4 bg-card border border-border rounded-lg">
                     <div className="flex items-center justify-between mb-2">
-                      <p className="text-sm font-medium text-muted-foreground">Likely Turnitin Range</p>
+                      <p className="text-sm font-medium text-muted-foreground">Estimated Similarity Range</p>
                       <Badge variant="secondary">Estimate</Badge>
                     </div>
                     <p className="text-2xl font-bold text-foreground">
@@ -2054,11 +2173,12 @@ Return ONLY a valid JSON object:
 
                 <Tabs defaultValue="summary" className="w-full">
                   <div className="overflow-x-auto pb-1">
-                    <TabsList className="grid min-w-[680px] grid-cols-5">
+                    <TabsList className="grid min-w-[820px] grid-cols-6">
                       <TabsTrigger value="summary">Summary</TabsTrigger>
                       <TabsTrigger value="plagiarism">Similarity</TabsTrigger>
                       <TabsTrigger value="ai">AI Detection</TabsTrigger>
                       <TabsTrigger value="references">References</TabsTrigger>
+                      <TabsTrigger value="evidence">Evidence</TabsTrigger>
                       <TabsTrigger value="recommendations">Actions</TabsTrigger>
                     </TabsList>
                   </div>
@@ -2239,6 +2359,52 @@ Return ONLY a valid JSON object:
                     )}
                   </TabsContent>
 
+                  <TabsContent value="evidence" className="space-y-3">
+                    {reviewMeta && (
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div className="p-3 border border-border rounded-lg bg-muted/30 space-y-2">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Scoring Profile</p>
+                            <p className="text-sm text-foreground">{reviewMeta.scoringProfile}</p>
+                            <p className="text-xs text-muted-foreground">Version: {reviewMeta.profileVersion}</p>
+                          </div>
+                          <div className="p-3 border border-border rounded-lg bg-muted/30 space-y-2">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Evidence Provenance</p>
+                            <div className="space-y-1">
+                              {reviewMeta.provenance.map((item) => (
+                                <div key={item.label} className="flex items-start justify-between gap-3 text-xs">
+                                  <span className="text-foreground">{item.label}</span>
+                                  <Badge variant={item.status === "verified" ? "default" : item.status === "partial" ? "secondary" : "outline"}>{item.status}</Badge>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {reviewMeta.evidenceItems.map((item) => (
+                            <div key={item.label} className="p-3 border border-border rounded-lg bg-background/80 space-y-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-sm font-medium text-foreground">{item.label}</p>
+                                <Badge variant={item.impact === "positive" ? "default" : item.impact === "neutral" ? "secondary" : "destructive"}>{item.impact}</Badge>
+                              </div>
+                              <p className="text-xs text-muted-foreground">{item.detail}</p>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="p-3 border border-border rounded-lg bg-muted/20 space-y-2">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Provenance Notes</p>
+                          {reviewMeta.provenance.map((item) => (
+                            <p key={item.label} className="text-xs text-muted-foreground">
+                              <span className="text-foreground font-medium">{item.label}:</span> {item.detail}
+                            </p>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </TabsContent>
+
                   <TabsContent value="recommendations" className="space-y-2">
                     {result.recommendations.map((rec, index) => (
                       <div key={index} className="flex items-start gap-2 p-3 bg-muted/50 rounded-lg">
@@ -2381,13 +2547,67 @@ Return ONLY a valid JSON object:
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Sparkle size={24} weight="duotone" className="text-accent" />
-                  Humanized Text
+                  Optimized Humanized Text
                 </CardTitle>
                 <CardDescription>
-                  Your text has been rewritten to sound more natural and human
+                  Best-scoring rewrite selected from multiple candidates to improve authenticity while preserving meaning
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                {humanizerCandidates.length > 0 && (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="text-sm font-medium">Candidate Comparison</label>
+                      <Badge variant="secondary">{humanizerCandidates.length} scored options</Badge>
+                    </div>
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                      {humanizerCandidates.map((candidate, index) => {
+                        const isSelected = selectedHumanizerCandidateId === candidate.id
+                        return (
+                          <div key={candidate.id} className={`rounded-lg border p-3 space-y-3 ${isSelected ? "border-primary bg-primary/5" : "border-border bg-muted/20"}`}>
+                            <div className="flex items-center justify-between gap-2">
+                              <div>
+                                <p className="text-sm font-medium text-foreground">Candidate {index + 1}</p>
+                                <p className="text-[11px] text-muted-foreground">{candidate.strategy || "Balanced rewrite strategy"}</p>
+                              </div>
+                              <Badge variant={isSelected ? "default" : "outline"}>Score {candidate.scores.overallScore}</Badge>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                              <div className="rounded border border-border p-2">
+                                <p className="text-muted-foreground">Preservation</p>
+                                <p className="font-semibold text-foreground">{candidate.scores.preservationScore}%</p>
+                              </div>
+                              <div className="rounded border border-border p-2">
+                                <p className="text-muted-foreground">Variation</p>
+                                <p className="font-semibold text-foreground">{candidate.scores.variationScore}%</p>
+                              </div>
+                              <div className="rounded border border-border p-2">
+                                <p className="text-muted-foreground">AI risk</p>
+                                <p className={`font-semibold ${getRiskColorClass(candidate.scores.aiLikelihood)}`}>{candidate.scores.aiLikelihood}%</p>
+                              </div>
+                              <div className="rounded border border-border p-2">
+                                <p className="text-muted-foreground">Similarity</p>
+                                <p className={`font-semibold ${getRiskColorClass(candidate.scores.similarityRisk)}`}>{candidate.scores.similarityRisk}%</p>
+                              </div>
+                            </div>
+                            <p className="text-xs text-muted-foreground line-clamp-5">{candidate.humanizedText}</p>
+                            {candidate.scores.notes.length > 0 && (
+                              <div className="space-y-1">
+                                {candidate.scores.notes.map((note) => (
+                                  <p key={note} className="text-[11px] text-muted-foreground">- {note}</p>
+                                ))}
+                              </div>
+                            )}
+                            <Button variant={isSelected ? "default" : "outline"} size="sm" className="w-full" onClick={() => applyHumanizerCandidate(candidate)}>
+                              {isSelected ? "Selected" : "Choose Candidate"}
+                            </Button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 <div>
                   <label className="text-sm font-medium mb-2 block">Humanized Version</label>
                   <Textarea
@@ -2422,7 +2642,7 @@ Return ONLY a valid JSON object:
                   }}
                   className="w-full gap-2"
                 >
-                  Use Humanized Text
+                    Use Selected Rewrite
                 </Button>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   <Button
