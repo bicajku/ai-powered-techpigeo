@@ -35,6 +35,7 @@ function getProviderConfig(): ExternalProviderConfig {
   const env = (import.meta as ImportMeta & { env?: Record<string, string> }).env || {}
   const provider = normalizeProvider(env.VITE_EXTERNAL_SOURCE_PROVIDER)
   const timeoutRaw = Number(env.VITE_EXTERNAL_SOURCE_TIMEOUT_MS)
+  const publicWebFlag = env.VITE_ENABLE_PUBLIC_WEB_SIMILARITY
 
   return {
     provider,
@@ -42,7 +43,8 @@ function getProviderConfig(): ExternalProviderConfig {
     publicWebApiUrl: env.VITE_PUBLIC_WEB_SEARCH_API_URL,
     timeoutMs: Number.isFinite(timeoutRaw) && timeoutRaw > 0 ? timeoutRaw : 15000,
     sendFullText: env.VITE_EXTERNAL_SOURCE_SEND_FULL_TEXT === "true",
-    enablePublicWeb: env.VITE_ENABLE_PUBLIC_WEB_SIMILARITY === "true",
+    // Default ON so integrity checks include public evidence unless explicitly disabled.
+    enablePublicWeb: publicWebFlag ? publicWebFlag === "true" : true,
   }
 }
 
@@ -249,10 +251,16 @@ async function performBuiltinPublicWebCheck(queries: string[], timeoutMs: number
   const tasks = queries.flatMap((query) => [
     searchWikipedia(query, timeoutMs),
     searchCrossref(query, timeoutMs),
+    searchSemanticScholar(query, timeoutMs),
+    searchOpenAlex(query, timeoutMs),
   ])
 
-  const results = await Promise.all(tasks)
-  return dedupeMatches(results.flat()).slice(0, 8)
+  const results = await Promise.allSettled(tasks)
+  const successful = results
+    .filter((result): result is PromiseFulfilledResult<ExternalSourceMatch[]> => result.status === "fulfilled")
+    .map((result) => result.value)
+
+  return dedupeMatches(successful.flat()).slice(0, 12)
 }
 
 async function searchWikipedia(query: string, timeoutMs: number): Promise<ExternalSourceMatch[]> {
@@ -350,13 +358,123 @@ async function searchCrossref(query: string, timeoutMs: number): Promise<Externa
   }
 }
 
+async function searchSemanticScholar(query: string, timeoutMs: number): Promise<ExternalSourceMatch[]> {
+  const controller = new AbortController()
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    const url = new URL("https://api.semanticscholar.org/graph/v1/paper/search")
+    url.searchParams.set("query", query)
+    url.searchParams.set("limit", "5")
+    url.searchParams.set("fields", "title,url,venue,year")
+
+    const response = await fetch(url.toString(), {
+      headers: {
+        Accept: "application/json",
+      },
+      signal: controller.signal,
+    })
+
+    if (!response.ok) {
+      return []
+    }
+
+    const payload = (await response.json()) as {
+      data?: Array<{
+        title?: string
+        url?: string
+        venue?: string
+        year?: number
+      }>
+    }
+
+    return (payload.data || [])
+      .map((item) => {
+        const title = item.title || "Semantic Scholar result"
+        const repository = item.year ? `Semantic Scholar (${item.year})` : "Semantic Scholar"
+        const descriptor = `${title} ${item.venue || ""}`
+        return {
+          source: item.url || title,
+          similarity: calculateTokenOverlapSimilarity(query, descriptor),
+          matchType: "metadata" as const,
+          repository,
+          provider: "public-web" as const,
+          retentionState: "unknown" as const,
+        }
+      })
+      .filter((match) => match.similarity >= 18)
+  } finally {
+    window.clearTimeout(timeoutId)
+  }
+}
+
+async function searchOpenAlex(query: string, timeoutMs: number): Promise<ExternalSourceMatch[]> {
+  const controller = new AbortController()
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    const url = new URL("https://api.openalex.org/works")
+    url.searchParams.set("search", query)
+    url.searchParams.set("per-page", "5")
+
+    const response = await fetch(url.toString(), {
+      headers: {
+        Accept: "application/json",
+      },
+      signal: controller.signal,
+    })
+
+    if (!response.ok) {
+      return []
+    }
+
+    const payload = (await response.json()) as {
+      results?: Array<{
+        title?: string
+        id?: string
+        publication_year?: number
+        host_venue?: {
+          display_name?: string
+        }
+      }>
+    }
+
+    return (payload.results || [])
+      .map((item) => {
+        const title = item.title || "OpenAlex result"
+        const venue = item.host_venue?.display_name || "OpenAlex"
+        const repository = item.publication_year ? `${venue} (${item.publication_year})` : venue
+        return {
+          source: item.id || title,
+          similarity: calculateTokenOverlapSimilarity(query, `${title} ${venue}`),
+          matchType: "metadata" as const,
+          repository,
+          provider: "public-web" as const,
+          retentionState: "unknown" as const,
+        }
+      })
+      .filter((match) => match.similarity >= 18)
+  } finally {
+    window.clearTimeout(timeoutId)
+  }
+}
+
 function buildRepresentativeQueries(text: string): string[] {
-  return text
+  const sentenceQueries = text
     .split(/(?<=[.!?])\s+/)
     .map((sentence) => sentence.trim())
-    .filter((sentence) => sentence.length >= 80 && sentence.length <= 240)
+    .filter((sentence) => sentence.length >= 60 && sentence.length <= 280)
     .sort((left, right) => scoreSentence(right) - scoreSentence(left))
-    .slice(0, 2)
+    .slice(0, 3)
+
+  const titleLikeQuery = text
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .slice(0, 16)
+    .join(" ")
+
+  return Array.from(new Set([titleLikeQuery, ...sentenceQueries].filter((item) => item.length >= 40))).slice(0, 4)
 }
 
 function scoreSentence(sentence: string): number {
@@ -446,7 +564,7 @@ export async function performExternalSourceCheck(
       summary: "No public-web or private-provider integration is configured. Only the internal fingerprint registry was checked.",
       warnings: ["Private repositories such as Turnitin and iThenticate require a licensed backend integration."],
       nextSteps: [
-        "Enable VITE_ENABLE_PUBLIC_WEB_SIMILARITY for public web lookups.",
+        "Enable VITE_ENABLE_PUBLIC_WEB_SIMILARITY for public web lookups (Wikipedia, Crossref, Semantic Scholar, OpenAlex).",
         "Configure VITE_EXTERNAL_SOURCE_PROVIDER and VITE_EXTERNAL_SOURCE_API_URL when your private-provider backend is ready.",
       ],
       matches: [],

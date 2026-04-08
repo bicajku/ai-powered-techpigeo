@@ -1897,8 +1897,6 @@ Return ONLY a valid JSON object:
     })
 
     if (humanizerDraft.lastOutput) {
-      setHumanizerCandidates([])
-      setSelectedHumanizerCandidateId(null)
       setHumanizedResult({
         originalText: humanizerDraft.sourceText,
         humanizedText: humanizerDraft.lastOutput,

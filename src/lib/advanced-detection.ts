@@ -75,7 +75,7 @@ export function calculateTextStats(text: string): TextStats {
     avgWordLength: words.reduce((sum, w) => sum + w.length, 0) / (words.length || 1),
     avgSentenceLength: words.length / (sentences.length || 1),
     uniqueWords: uniqueWords,
-    typeTokenRatio: uniqueWords / words.length,
+    typeTokenRatio: uniqueWords / (words.length || 1),
     characterCount: text.length
   }
 }
@@ -363,10 +363,14 @@ export function calculateAIDetectionScore(text: string): number {
  */
 export function calculateAdvancedPlagiarismScore(text: string): number {
   const stats = calculateTextStats(text)
+
+  if (stats.wordCount < 40) {
+    return 20
+  }
   
   // Analyze sentence structure patterns that indicate plagiarism
   let plagiarismIndicators = 0
-  const totalSentences = stats.sentences.length
+  const totalSentences = Math.max(stats.sentences.length, 1)
   
   // Check for overly formal language patterns (typical of copied academic text)
   const formalPatterns = (text.match(/\b(furthermore|moreover|in addition|consequently|therefore|thus|hence)\b/gi) || []).length
@@ -376,15 +380,17 @@ export function calculateAdvancedPlagiarismScore(text: string): number {
   
   // Check for sudden shifts in vocabulary (indicates copying)
   const sentenceLengths = stats.sentences.map(s => s.split(/\s+/).length)
-  const variance = sentenceLengths.reduce((sum, len) => sum + Math.pow(len - stats.avgSentenceLength, 2), 0) / totalSentences
-  const stdDev = Math.sqrt(variance)
+  if (sentenceLengths.length >= 2) {
+    const variance = sentenceLengths.reduce((sum, len) => sum + Math.pow(len - stats.avgSentenceLength, 2), 0) / totalSentences
+    const stdDev = Math.sqrt(variance)
   
-  // AI-generated or plagiarized text often has more uniform sentence lengths
-  if (stdDev < stats.avgSentenceLength * 0.3) plagiarismIndicators++
+    // AI-generated or plagiarized text often has more uniform sentence lengths
+    if (stdDev < stats.avgSentenceLength * 0.3) plagiarismIndicators++
+  }
   
   // Check academic phrase density
   const academicPhrases = (text.match(/\b(is defined as|can be seen|as mentioned|it is argued|context of)\b/gi) || []).length
-  const academicDensity = academicPhrases / stats.wordCount
+  const academicDensity = academicPhrases / Math.max(stats.wordCount, 1)
   
   if (academicDensity > 0.02) plagiarismIndicators++
   

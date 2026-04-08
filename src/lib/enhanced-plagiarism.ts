@@ -138,7 +138,9 @@ ADVANCED DETECTION FEATURES:
 - Semantic consistency (${advancedMetrics.semanticConsistencyScore}%)
 
 Return ONLY a valid JSON object with NO markdown, NO code blocks, NO text before or after.
-Keep all string values short (1-2 sentences max). Limit highlights to 3 items, aiHighlights to 3 items, recommendations to 4 items, validReferences to 3 items, detectedSources to 3 items.
+Keep all string values concise (1-3 sentences max). Include sufficient evidence for accuracy.
+For long documents, include up to 8 highlights and up to 8 aiHighlights when relevant.
+You may include up to 8 recommendations, up to 8 validReferences, and up to 8 detectedSources.
 
 {
   "overallScore": <0-100>,

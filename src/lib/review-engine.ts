@@ -253,6 +253,19 @@ function buildProvenance(result: PlagiarismResult): ReviewComputationMeta["prove
   ]
 }
 
+function getHighlightWeight(highlight: PlagiarismResult["highlights"][number]): number {
+  const span = Math.max(1, (highlight.endIndex || 0) - (highlight.startIndex || 0))
+  const wordSpan = Math.max(1, wordCount(highlight.text || ""))
+  const severityWeight =
+    highlight.severity === "high"
+      ? 1.45
+      : highlight.severity === "medium"
+        ? 1.15
+        : 0.9
+
+  return Math.max(1, Math.min(3000, (span * 0.4 + wordSpan * 8) * severityWeight))
+}
+
 export function enrichReviewResult(text: string, rawResult: PlagiarismResult): ReviewComputation {
   return computeReviewAnalysis(text, rawResult, {
     excludeQuotes: false,
@@ -281,10 +294,9 @@ export function computeReviewAnalysis(
     return true
   })
 
-  const reductionRatio =
-    sanitized.highlights.length > 0
-      ? keptHighlights.length / sanitized.highlights.length
-      : 1
+  const totalHighlightWeight = sanitized.highlights.reduce((sum, highlight) => sum + getHighlightWeight(highlight), 0)
+  const keptHighlightWeight = keptHighlights.reduce((sum, highlight) => sum + getHighlightWeight(highlight), 0)
+  const reductionRatio = totalHighlightWeight > 0 ? keptHighlightWeight / totalHighlightWeight : 1
 
   const adjustedPlagiarism = clamp(round(sanitized.plagiarismPercentage * reductionRatio), 0, 100)
 

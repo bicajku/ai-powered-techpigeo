@@ -170,8 +170,7 @@ export function estimateHumanizerMeters(input: string): HumanizerMeterScores {
 function canUseServerScoring(): boolean {
   const config = getEnvConfig()
   return Boolean(
-    config.enableServerHumanizerScoring &&
-    config.useBackendLlm &&
+    (config.enableServerHumanizerScoring || config.useBackendLlm) &&
     config.backendApiBaseUrl
   )
 }
