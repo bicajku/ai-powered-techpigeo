@@ -20,7 +20,19 @@ export default tseslint.config(
     },
   },
   {
-    files: ["**/*.{js,mjs,cjs}"],
+    files: ["**/*.mjs"],
+    extends: [js.configs.recommended],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: "module",
+      globals: {
+        ...globals.node,
+      },
+    },
+  },
+  {
+    files: ["**/*.{js,cjs}"],
+    ignores: ["public/sw.js"],
     extends: [js.configs.recommended],
     languageOptions: {
       ecmaVersion: 2020,
