@@ -650,26 +650,22 @@ export async function exportBusinessCanvasAsPDF(canvas: BusinessCanvasModel, ide
   const brand = REPORT_BRAND
   const logoHtml = await reportLogoMarkupAsync(42)
 
-  const sections = [
-    { title: "Value Proposition", content: canvas.valueProposition, color: brand.colors.primary },
-    { title: "Key Partners", content: canvas.keyPartners, color: brand.colors.secondary },
-    { title: "Key Activities", content: canvas.keyActivities, color: brand.colors.accent },
-    { title: "Key Resources", content: canvas.keyResources, color: brand.colors.secondary },
-    { title: "Customer Segments", content: canvas.customerSegments, color: brand.colors.primary },
-    { title: "Customer Relationships", content: canvas.customerRelationships, color: brand.colors.accent },
-    { title: "Channels", content: canvas.channels, color: brand.colors.secondary },
-    { title: "Cost Structure", content: canvas.costStructure, color: "#c0392b" },
-    { title: "Revenue Streams", content: canvas.revenueStreams, color: brand.colors.primary },
+  const stickySections = [
+    { title: "Key Resources", content: canvas.keyResources },
+    { title: "Customer Relationships", content: canvas.customerRelationships },
+    { title: "Channels", content: canvas.channels },
   ]
 
-  const sectionsHtml = sections.map(s => `
-    <div class="canvas-section">
-      <div class="section-header" style="background: ${s.color}; color: white; padding: 10px 16px; font-weight: 700; font-size: 15px;">${escapeHtml(s.title)}</div>
-      <div class="section-body" style="padding: 16px; background: #f8f9fa; border: 1px solid #e0e0e0; border-top: none;">
-        <p style="margin: 0; line-height: 1.7; white-space: pre-wrap;">${escapeHtml(s.content)}</p>
-      </div>
+  const stickyHtml = stickySections
+    .map(
+      (section, idx) => `
+    <div class="sticky" style="transform: rotate(${idx % 2 === 0 ? "-0.8deg" : "0.8deg"});">
+      <h4>${escapeHtml(section.title)}</h4>
+      <p>${escapeHtml(section.content)}</p>
     </div>
-  `).join('')
+  `
+    )
+    .join("")
 
   const htmlContent = `
 <!DOCTYPE html>
@@ -678,29 +674,52 @@ export async function exportBusinessCanvasAsPDF(canvas: BusinessCanvasModel, ide
   <meta charset="UTF-8">
   <title>Business Model Canvas - ${escapeHtml(ideaName)}</title>
   <style>
-    body { font-family: Inter, sans-serif; padding: 40px; max-width: 1000px; margin: 0 auto; color: ${brand.colors.text}; }
-    .header { border-bottom: 3px solid ${brand.colors.accent}; padding-bottom: 16px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; }
-    h1 { color: ${brand.colors.primary}; font-size: 28px; }
-    .meta { font-size: 13px; color: ${brand.colors.muted}; margin-bottom: 24px; }
-    .canvas-section { margin-bottom: 16px; page-break-inside: avoid; }
-    .footer { margin-top: 50px; border-top: 2px solid ${brand.colors.accent}; padding-top: 20px; text-align: center; font-size: 12px; color: ${brand.colors.muted}; }
-    @media print { body { padding: 20px; } }
+    body { font-family: Calibri, Arial, sans-serif; padding: 28px; max-width: 1100px; margin: 0 auto; color: #272727; background: #f7f9fb; }
+    .top-strip { background: #3B8E7E; color: #fff; padding: 10px 16px; border-radius: 12px 12px 0 0; display: flex; justify-content: space-between; align-items: center; }
+    .top-strip .badge { background: #FF6600; color: #fff; font-size: 10px; font-weight: 700; padding: 5px 9px; border-radius: 999px; }
+    .pattern { height: 26px; border-radius: 0 0 12px 12px; margin-bottom: 18px; background-color: #3B8E7E; background-image: radial-gradient(circle at 15% 50%, rgba(255,255,255,0.12) 0, rgba(255,255,255,0.12) 14px, transparent 15px), radial-gradient(circle at 45% 50%, rgba(255,255,255,0.08) 0, rgba(255,255,255,0.08) 12px, transparent 13px), radial-gradient(circle at 78% 50%, rgba(255,255,255,0.1) 0, rgba(255,255,255,0.1) 14px, transparent 15px); }
+    h1 { color: #FF6600; font-size: 31px; margin: 10px 0 8px; }
+    .meta { font-size: 13px; color: #555; margin-bottom: 20px; }
+    .canvas-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+    .box { border: 1px solid #27272766; border-radius: 9px; background: #fff; min-height: 164px; padding: 10px; }
+    .box h3 { margin: 0 0 8px; font-size: 13px; color: #272727; }
+    .box p { margin: 0; white-space: pre-wrap; line-height: 1.55; font-size: 11px; color: #272727dd; }
+    .box.vp { background: #fff7ef; }
+    .row-bottom { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+    .row-bottom .box { min-height: 110px; }
+    .row-bottom .rev h3 { color: #FF6600; }
+    .sticky-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 16px; }
+    .sticky { background: #fff5bf; border: 1px solid #E8D892; border-radius: 8px; padding: 12px; box-shadow: 0 5px 10px rgba(0,0,0,0.08); }
+    .sticky h4 { margin: 0 0 6px; font-size: 12px; color: #272727; }
+    .sticky p { margin: 0; font-size: 11px; white-space: pre-wrap; color: #272727dd; line-height: 1.55; }
+    .footer { margin-top: 28px; border-top: 2px solid #FF6600; padding-top: 14px; text-align: center; font-size: 12px; color: #666; }
+    @media print { body { padding: 16px; background: #fff; } }
   </style>
 </head>
 <body>
-  <div class="header">
-    <div>
-      <div style="font-weight: 700; color: ${brand.colors.primary}; font-size: 18px;">${escapeHtml(brand.companyName)}</div>
-      <div style="font-size: 12px; color: ${brand.colors.muted};">${escapeHtml(brand.projectName)}</div>
-    </div>
-    ${logoHtml}
+  <div class="top-strip">
+    <div><strong>Business Model Development</strong></div>
+    <div class="badge">TEMPLATE MODE</div>
   </div>
+  <div class="pattern"></div>
+  <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">${logoHtml}<div></div></div>
   <h1>Business Model Canvas</h1>
   <div class="meta">
     <strong>Business Idea:</strong> ${escapeHtml(ideaName)}<br>
     <strong>Generated:</strong> ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
   </div>
-  ${sectionsHtml}
+  <div class="canvas-grid">
+    <div class="box"><h3>KP - Key Partners</h3><p>${escapeHtml(canvas.keyPartners)}</p></div>
+    <div class="box"><h3>KA - Key Activities</h3><p>${escapeHtml(canvas.keyActivities)}</p></div>
+    <div class="box vp"><h3>VP - Value Proposition</h3><p>${escapeHtml(canvas.valueProposition)}</p></div>
+    <div class="box"><h3>CR - Customer Relationships</h3><p>${escapeHtml(canvas.customerRelationships)}</p></div>
+    <div class="box"><h3>CS - Customer Segments</h3><p>${escapeHtml(canvas.customerSegments)}</p></div>
+  </div>
+  <div class="row-bottom">
+    <div class="box"><h3>C$ - Cost Structure</h3><p>${escapeHtml(canvas.costStructure)}</p></div>
+    <div class="box rev"><h3>R$ - Revenue Streams</h3><p>${escapeHtml(canvas.revenueStreams)}</p></div>
+  </div>
+  <div class="sticky-row">${stickyHtml}</div>
   <div class="footer">
     <strong>${escapeHtml(brand.companyName)}</strong><br>
     ${escapeHtml(brand.projectName)}<br>
@@ -737,10 +756,10 @@ export async function exportPitchDeckAsPDF(pitchDeck: PitchDeck, ideaName: strin
 
   const slidesHtml = pitchDeck.slides.map((slide, index) => `
     <div class="slide" style="page-break-inside: avoid; margin-bottom: 24px;">
-      <div style="background: ${index % 2 === 0 ? brand.colors.primary : brand.colors.secondary}; color: white; padding: 12px 18px; font-weight: 700; font-size: 16px;">Slide ${slide.slideNumber}: ${escapeHtml(slide.title)}</div>
-      <div style="padding: 18px; background: #f8f9fa; border: 1px solid #e0e0e0; border-top: none;">
-        <p style="margin: 0 0 12px 0; line-height: 1.7; white-space: pre-wrap;">${escapeHtml(slide.content)}</p>
-        ${slide.notes ? `<div style="margin-top: 12px; padding: 12px; background: #f0f0f0; border-left: 4px solid ${brand.colors.accent};"><strong>Speaker Notes:</strong><br><span style="font-style: italic; color: #666;">${escapeHtml(slide.notes)}</span></div>` : ''}
+      <div style="background: ${index % 2 === 0 ? "#FF6600" : "#3B8E7E"}; color: white; padding: 11px 16px; font-weight: 700; font-size: 16px; border-radius: 10px 10px 0 0;">Slide ${slide.slideNumber}: ${escapeHtml(slide.title)}</div>
+      <div style="padding: 16px; background: #fff; border: 1px solid #d9dde3; border-top: none; border-radius: 0 0 10px 10px;">
+        <p style="margin: 0 0 12px 0; line-height: 1.7; white-space: pre-wrap; color: #272727;">${escapeHtml(slide.content)}</p>
+        ${slide.notes ? `<div style="margin-top: 12px; padding: 12px; background: #f4f9f7; border-left: 4px solid #3B8E7E; border-radius: 6px;"><strong style="color:#3B8E7E;">Speaker Notes:</strong><br><span style="font-style: italic; color: #4f4f4f;">${escapeHtml(slide.notes)}</span></div>` : ''}
       </div>
     </div>
   `).join('')
@@ -752,23 +771,24 @@ export async function exportPitchDeckAsPDF(pitchDeck: PitchDeck, ideaName: strin
   <meta charset="UTF-8">
   <title>Pitch Deck - ${escapeHtml(ideaName)}</title>
   <style>
-    body { font-family: Inter, sans-serif; padding: 40px; max-width: 1000px; margin: 0 auto; color: ${brand.colors.text}; }
-    .header { border-bottom: 3px solid ${brand.colors.accent}; padding-bottom: 16px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; }
-    h1 { color: ${brand.colors.primary}; font-size: 28px; }
-    .meta { font-size: 13px; color: ${brand.colors.muted}; margin-bottom: 24px; }
-    .summary { padding: 18px; background: ${brand.colors.panel}; border-left: 4px solid ${brand.colors.accent}; margin-bottom: 24px; }
-    .footer { margin-top: 50px; border-top: 2px solid ${brand.colors.accent}; padding-top: 20px; text-align: center; font-size: 12px; color: ${brand.colors.muted}; }
-    @media print { body { padding: 20px; } }
+    body { font-family: Calibri, Arial, sans-serif; padding: 28px; max-width: 1000px; margin: 0 auto; color: #272727; background: #f7f9fb; }
+    .top-strip { background: #3B8E7E; color: #fff; padding: 10px 16px; border-radius: 12px 12px 0 0; display: flex; justify-content: space-between; align-items: center; }
+    .top-strip .badge { background: #FF6600; color: #fff; font-size: 10px; font-weight: 700; padding: 5px 9px; border-radius: 999px; }
+    .pattern { height: 26px; border-radius: 0 0 12px 12px; margin-bottom: 18px; background-color: #3B8E7E; background-image: radial-gradient(circle at 15% 50%, rgba(255,255,255,0.12) 0, rgba(255,255,255,0.12) 14px, transparent 15px), radial-gradient(circle at 45% 50%, rgba(255,255,255,0.08) 0, rgba(255,255,255,0.08) 12px, transparent 13px), radial-gradient(circle at 78% 50%, rgba(255,255,255,0.1) 0, rgba(255,255,255,0.1) 14px, transparent 15px); }
+    h1 { color: #FF6600; font-size: 31px; margin: 10px 0 8px; }
+    .meta { font-size: 13px; color: #555; margin-bottom: 20px; }
+    .summary { padding: 18px; background: #fff7ef; border-left: 4px solid #FF6600; margin-bottom: 22px; border-radius: 8px; }
+    .footer { margin-top: 34px; border-top: 2px solid #FF6600; padding-top: 16px; text-align: center; font-size: 12px; color: #666; }
+    @media print { body { padding: 16px; background: #fff; } }
   </style>
 </head>
 <body>
-  <div class="header">
-    <div>
-      <div style="font-weight: 700; color: ${brand.colors.primary}; font-size: 18px;">${escapeHtml(brand.companyName)}</div>
-      <div style="font-size: 12px; color: ${brand.colors.muted};">${escapeHtml(brand.projectName)}</div>
-    </div>
-    ${logoHtml}
+  <div class="top-strip">
+    <div><strong>Business Model Development</strong></div>
+    <div class="badge">PITCH TEMPLATE</div>
   </div>
+  <div class="pattern"></div>
+  <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">${logoHtml}<div></div></div>
   <h1>Pitch Deck: ${escapeHtml(ideaName)}</h1>
   <div class="meta">
     <strong>Slides:</strong> ${pitchDeck.slides.length}<br>

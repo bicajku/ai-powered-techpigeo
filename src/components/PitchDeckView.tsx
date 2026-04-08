@@ -2,11 +2,11 @@ import { useState } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { FileDoc, FilePdf, CaretLeft, CaretRight } from "@phosphor-icons/react"
+import { FileDoc, FilePdf, Slideshow, CaretLeft, CaretRight } from "@phosphor-icons/react"
 import { motion, AnimatePresence } from "framer-motion"
 import { PitchDeck } from "@/types"
 import { toast } from "sonner"
-import { exportPitchDeckAsWord } from "@/lib/document-export"
+import { exportPitchDeckAsWord, exportPitchDeckAsPPTX } from "@/lib/document-export"
 import { exportPitchDeckAsPDF } from "@/lib/pdf-export"
 
 interface PitchDeckViewProps {
@@ -38,6 +38,16 @@ export function PitchDeckView({ pitchDeck, ideaName }: PitchDeckViewProps) {
     }
   }
 
+  const handleExportPPTX = async () => {
+    try {
+      await exportPitchDeckAsPPTX(pitchDeck, ideaName)
+      toast.success("Pitch Deck exported to PPTX successfully!")
+    } catch (error) {
+      console.error("Error exporting PPTX:", error)
+      toast.error("Failed to export PPTX. Please try again.")
+    }
+  }
+
   const nextSlide = () => {
     if (hasSlides && currentSlide < pitchDeck.slides.length - 1) {
       setCurrentSlide(currentSlide + 1)
@@ -59,9 +69,29 @@ export function PitchDeckView({ pitchDeck, ideaName }: PitchDeckViewProps) {
       className="space-y-6 mt-8"
       data-pitch-view
     >
+      <div className="rounded-2xl overflow-hidden border border-[#3B8E7E]/20 shadow-lg">
+        <div className="bg-[#3B8E7E] px-5 py-3 flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <h3 className="text-xl md:text-2xl font-bold text-white">Business Model Development</h3>
+            <p className="text-xs md:text-sm text-white/85">Pitch narrative for {ideaName}</p>
+          </div>
+          <div className="rounded-full bg-[#FF6600] px-3 py-1 text-[11px] text-white font-semibold tracking-wide">
+            PITCH TEMPLATE
+          </div>
+        </div>
+        <div
+          className="h-9"
+          style={{
+            backgroundColor: "#3B8E7E",
+            backgroundImage:
+              "radial-gradient(circle at 15% 50%, rgba(255,255,255,0.12) 0, rgba(255,255,255,0.12) 18px, transparent 19px), radial-gradient(circle at 45% 50%, rgba(255,255,255,0.08) 0, rgba(255,255,255,0.08) 14px, transparent 15px), radial-gradient(circle at 78% 50%, rgba(255,255,255,0.1) 0, rgba(255,255,255,0.1) 16px, transparent 17px)",
+          }}
+        />
+      </div>
+
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h3 className="text-2xl font-bold text-foreground">Investor Pitch Deck</h3>
+          <h4 className="text-2xl font-bold text-foreground">Investor Pitch Deck</h4>
           <p className="text-sm text-muted-foreground mt-1">
             {pitchDeck.slides.length} slides ready for your presentation
           </p>
@@ -71,6 +101,10 @@ export function PitchDeckView({ pitchDeck, ideaName }: PitchDeckViewProps) {
             <FilePdf weight="bold" size={16} />
             Export PDF
           </Button>
+          <Button size="sm" variant="default" className="gap-2" onClick={handleExportPPTX}>
+            <Slideshow weight="bold" size={16} />
+            Export PPTX
+          </Button>
           <Button size="sm" variant="outline" className="gap-2" onClick={handleExportWord}>
             <FileDoc weight="bold" size={16} />
             Export Word
@@ -78,15 +112,15 @@ export function PitchDeckView({ pitchDeck, ideaName }: PitchDeckViewProps) {
         </div>
       </div>
 
-      <Card className="p-6 bg-gradient-to-br from-primary/5 to-accent/5 border-primary/20">
-        <h4 className="font-semibold text-foreground mb-3">Executive Summary</h4>
-        <p className="text-muted-foreground leading-relaxed whitespace-pre-wrap">
+      <Card className="p-6 bg-gradient-to-br from-[#fff7ef] to-[#fffef7] border-[#FF6600]/30">
+        <h4 className="font-semibold text-[#FF6600] mb-3">Executive Summary</h4>
+        <p className="text-[#272727]/90 leading-relaxed whitespace-pre-wrap">
           {pitchDeck.executiveSummary}
         </p>
       </Card>
 
-      <Card className="p-0 overflow-hidden">
-        <div className="bg-gradient-to-r from-primary/20 via-accent/20 to-primary/20 p-4 flex items-center justify-between">
+      <Card className="p-0 overflow-hidden border-[#272727]/20">
+        <div className="bg-gradient-to-r from-[#3B8E7E]/20 via-[#5CC4EB]/20 to-[#3B8E7E]/20 p-4 flex items-center justify-between">
           <Button
             onClick={prevSlide}
             disabled={!hasSlides || currentSlide === 0}
@@ -99,7 +133,7 @@ export function PitchDeckView({ pitchDeck, ideaName }: PitchDeckViewProps) {
           </Button>
           
           <div className="flex items-center gap-2">
-            <Badge variant="secondary" className="text-sm">
+            <Badge variant="secondary" className="text-sm bg-[#fff3bf] text-[#272727] border border-[#E6CC74]">
               Slide {hasSlides ? currentSlide + 1 : 0} of {pitchDeck.slides.length}
             </Badge>
           </div>
@@ -129,11 +163,11 @@ export function PitchDeckView({ pitchDeck, ideaName }: PitchDeckViewProps) {
               {slide ? (
                 <>
                   <div className="flex items-center gap-3 mb-4">
-                    <Badge className="text-xs">{slide.slideNumber}</Badge>
-                    <h4 className="text-2xl font-bold text-foreground">{slide.title}</h4>
+                    <Badge className="text-xs bg-[#FF6600] text-white">{slide.slideNumber}</Badge>
+                    <h4 className="text-2xl font-bold text-[#272727]">{slide.title}</h4>
                   </div>
                   <div className="prose prose-sm max-w-none">
-                    <p className="text-foreground leading-relaxed whitespace-pre-wrap text-base">
+                    <p className="text-[#272727] leading-relaxed whitespace-pre-wrap text-base">
                       {slide.content}
                     </p>
                   </div>
@@ -143,9 +177,9 @@ export function PitchDeckView({ pitchDeck, ideaName }: PitchDeckViewProps) {
               )}
             </div>
 
-            <div className="border-t border-border pt-4 mt-6">
-              <h5 className="text-sm font-semibold text-muted-foreground mb-2">Speaker Notes</h5>
-              <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
+            <div className="border-t border-[#3B8E7E]/30 pt-4 mt-6 bg-[#f4f9f7] rounded-lg px-4 py-3">
+              <h5 className="text-sm font-semibold text-[#3B8E7E] mb-2">Speaker Notes</h5>
+              <p className="text-sm text-[#272727]/85 leading-relaxed whitespace-pre-wrap">
                 {slide?.notes || "No speaker notes available."}
               </p>
             </div>
@@ -159,8 +193,8 @@ export function PitchDeckView({ pitchDeck, ideaName }: PitchDeckViewProps) {
               onClick={() => setCurrentSlide(idx)}
               className={`px-3 py-2 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
                 idx === currentSlide
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-card hover:bg-secondary text-muted-foreground'
+                  ? "bg-[#FF6600] text-white"
+                  : "bg-card hover:bg-[#fff3bf] text-muted-foreground"
               }`}
             >
               {idx + 1}. {s.title}

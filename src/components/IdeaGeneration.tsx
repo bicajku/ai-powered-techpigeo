@@ -733,6 +733,26 @@ CRITICAL: Return ONLY valid JSON with no markdown.`
                   animate={{ opacity: 1, y: 0 }}
                   className="space-y-6"
                 >
+                  <div className="rounded-2xl overflow-hidden border border-[#3B8E7E]/20 shadow-lg">
+                    <div className="bg-[#3B8E7E] px-5 py-3 flex items-center justify-between gap-3 flex-wrap">
+                      <div>
+                        <h2 className="text-xl md:text-2xl font-bold text-white">Business Model Development</h2>
+                        <p className="text-xs md:text-sm text-white/85">Template aligned view for cooked idea and knowledge base output</p>
+                      </div>
+                      <div className="rounded-full bg-[#FF6600] px-3 py-1 text-[11px] text-white font-semibold tracking-wide">
+                        IDEA TEMPLATE
+                      </div>
+                    </div>
+                    <div
+                      className="h-9"
+                      style={{
+                        backgroundColor: "#3B8E7E",
+                        backgroundImage:
+                          "radial-gradient(circle at 15% 50%, rgba(255,255,255,0.12) 0, rgba(255,255,255,0.12) 18px, transparent 19px), radial-gradient(circle at 45% 50%, rgba(255,255,255,0.08) 0, rgba(255,255,255,0.08) 14px, transparent 15px), radial-gradient(circle at 78% 50%, rgba(255,255,255,0.1) 0, rgba(255,255,255,0.1) 16px, transparent 17px)",
+                      }}
+                    />
+                  </div>
+
                   <div className="flex items-center justify-between flex-wrap gap-3">
                     <h2 className="text-2xl font-bold text-foreground">Your Refined Idea</h2>
                     <div className="flex items-center gap-2">
@@ -757,9 +777,9 @@ CRITICAL: Return ONLY valid JSON with no markdown.`
                     </div>
                   </div>
 
-                  <Card className="p-6 bg-gradient-to-br from-primary/5 to-accent/5 border-primary/20">
-                    <h3 className="text-lg font-semibold text-foreground mb-3">Refined Concept</h3>
-                    <p className="text-muted-foreground leading-relaxed whitespace-pre-wrap">
+                  <Card className="p-6 bg-gradient-to-br from-[#fff7ef] to-[#fffef7] border-[#FF6600]/30">
+                    <h3 className="text-lg font-semibold text-[#FF6600] mb-3">Refined Concept</h3>
+                    <p className="text-[#272727]/90 leading-relaxed whitespace-pre-wrap">
                       {cookedIdea.refinedIdea}
                     </p>
                   </Card>
@@ -797,7 +817,7 @@ CRITICAL: Return ONLY valid JSON with no markdown.`
                   </div>
 
                   <h3 className="text-xl font-semibold text-foreground pt-4">Key Insights</h3>
-                  <Card className="p-6">
+                  <Card className="p-6 bg-[#fff7cc] border-[#E4D391] rotate-[-0.4deg]">
                     <ul className="space-y-2">
                       {cookedIdea.keyInsights.map((insight, index) => (
                         <li key={index} className="flex items-start gap-2">
@@ -809,7 +829,7 @@ CRITICAL: Return ONLY valid JSON with no markdown.`
                   </Card>
 
                   <h3 className="text-xl font-semibold text-foreground pt-2">Key Risks</h3>
-                  <Card className="p-6">
+                  <Card className="p-6 bg-[#fff4f2] border-[#f1b6ad] rotate-[0.4deg]">
                     <ul className="space-y-2">
                       {cookedIdea.keyRisks.map((risk, index) => (
                         <li key={index} className="flex items-start gap-2">
@@ -821,7 +841,7 @@ CRITICAL: Return ONLY valid JSON with no markdown.`
                   </Card>
 
                   <h3 className="text-xl font-semibold text-foreground pt-2">Next Steps</h3>
-                  <Card className="p-6">
+                  <Card className="p-6 bg-[#f4f9f7] border-[#b8ddd5]">
                     <ul className="space-y-2">
                       {cookedIdea.nextSteps.map((step, index) => (
                         <li key={index} className="flex items-start gap-2">
