@@ -85,18 +85,25 @@ export async function fetchProviderRouting(moduleName?: string): Promise<Provide
   const base = getBaseUrl()
   const query = moduleName ? `?module=${encodeURIComponent(moduleName)}` : ""
   const headers = getAuthHeaders()
-  let response = await fetch(`${base}/api/sentinel/admin/provider-routing${query}`, {
-    method: "GET",
-    headers,
-    credentials: "include",
-  })
-
-  if (response.status === 403 || response.status === 404) {
-    response = await fetch(`${base}/api/providers/routing${query}`, {
+  const fetchAdmin = () =>
+    fetch(`${base}/api/sentinel/admin/provider-routing${query}`, {
       method: "GET",
       headers,
       credentials: "include",
     })
+
+  const fetchPublic = () =>
+    fetch(`${base}/api/providers/routing${query}`, {
+      method: "GET",
+      headers,
+      credentials: "include",
+    })
+
+  // Non-admin module lookups should avoid admin-first probing to reduce noisy 403 logs.
+  let response = moduleName ? await fetchPublic() : await fetchAdmin()
+
+  if (response.status === 403 || response.status === 404) {
+    response = moduleName ? await fetchAdmin() : await fetchPublic()
   }
 
   const data = await parseJsonResponse<{ ok: boolean; config?: ProviderRoutingConfig; configs?: ProviderRoutingConfig[] }>(response)

@@ -18,6 +18,16 @@ let sqlClient: ReturnType<typeof neon> | null = null
 
 const NEON_DB_URL_KEY = "sentinel-neon-db-url"
 
+function allowDirectNeonFallback(): boolean {
+  if (typeof import.meta !== "undefined" && import.meta.env?.VITE_ENABLE_DIRECT_NEON_FALLBACK === "true") {
+    return true
+  }
+  if (typeof import.meta !== "undefined" && Boolean(import.meta.env?.DEV)) {
+    return true
+  }
+  return false
+}
+
 /** Get the backend API base URL */
 function getBackendUrl(): string {
   if (typeof import.meta !== "undefined" && import.meta.env?.VITE_BACKEND_API_BASE_URL) {
@@ -104,6 +114,8 @@ export async function getNeonClient(): Promise<ReturnType<typeof neon>> {
       }
     }
 
+    let proxyError: string | null = null
+
     // Try backend proxy first
     try {
       const resp = await fetch(`${getBackendUrl()}/api/proxy/db/query`, {
@@ -121,11 +133,16 @@ export async function getNeonClient(): Promise<ReturnType<typeof neon>> {
       if (resp.status === 401 || resp.status === 403) {
         throw new Error("Authentication required for database proxy")
       }
+      proxyError = `Database proxy request failed with status ${resp.status}`
     } catch (error) {
       if (error instanceof Error && error.message === "Authentication required for database proxy") {
         throw error
       }
-      // Backend unavailable, fall through to direct connection
+      proxyError = error instanceof Error ? error.message : "Database proxy unavailable"
+    }
+
+    if (!allowDirectNeonFallback()) {
+      throw new Error(proxyError || "Database proxy unavailable")
     }
 
     // Fallback: direct Neon connection (backward compatibility)
@@ -156,6 +173,8 @@ export async function getNeonClient(): Promise<ReturnType<typeof neon>> {
 }
 
 export async function testConnection(): Promise<{ ok: boolean; error?: string }> {
+  let proxyError: string | null = null
+
   // Try backend proxy test first
   try {
     const resp = await fetch(`${getBackendUrl()}/api/proxy/db/test`, {
@@ -166,8 +185,13 @@ export async function testConnection(): Promise<{ ok: boolean; error?: string }>
     if (resp.ok) {
       return await resp.json()
     }
-  } catch {
-    // Backend unavailable, fall through
+    proxyError = `Database proxy test failed with status ${resp.status}`
+  } catch (err) {
+    proxyError = err instanceof Error ? err.message : "Database proxy test unavailable"
+  }
+
+  if (!allowDirectNeonFallback()) {
+    return { ok: false, error: proxyError || "Database proxy unavailable" }
   }
 
   // Fallback: direct connection test

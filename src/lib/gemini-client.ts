@@ -19,6 +19,16 @@ let geminiInstance: GoogleGenerativeAI | null = null
 
 const GEMINI_KEY_STORAGE = "sentinel-gemini-api-key"
 
+function allowDirectGeminiFallback(): boolean {
+  if (typeof import.meta !== "undefined" && import.meta.env?.VITE_ENABLE_DIRECT_GEMINI_FALLBACK === "true") {
+    return true
+  }
+  if (typeof import.meta !== "undefined" && Boolean(import.meta.env?.DEV)) {
+    return true
+  }
+  return false
+}
+
 /** Get the backend API base URL */
 function getBackendUrl(): string {
   if (typeof import.meta !== "undefined" && import.meta.env?.VITE_BACKEND_API_BASE_URL) {
@@ -90,6 +100,8 @@ export async function geminiGenerate(
   prompt: string,
   options?: { model?: string; parseJson?: boolean }
 ): Promise<string> {
+  let proxyError: string | null = null
+
   // Try backend proxy first
   try {
     const resp = await fetch(`${getBackendUrl()}/api/proxy/gemini/generate`, {
@@ -103,8 +115,13 @@ export async function geminiGenerate(
       const data = await resp.json()
       if (data.ok && data.text) return data.text
     }
-  } catch {
-    // Backend unavailable, fall through to direct API
+    proxyError = `Gemini proxy request failed with status ${resp.status}`
+  } catch (err) {
+    proxyError = err instanceof Error ? err.message : "Gemini proxy request failed"
+  }
+
+  if (!allowDirectGeminiFallback()) {
+    throw new Error(proxyError || "Gemini proxy unavailable")
   }
 
   // Fallback: direct Gemini API (backward compatibility)
@@ -115,6 +132,8 @@ export async function geminiGenerate(
 }
 
 export async function geminiEmbed(text: string): Promise<number[]> {
+  let proxyError: string | null = null
+
   // Try backend proxy first
   try {
     const resp = await fetch(`${getBackendUrl()}/api/proxy/gemini/embed`, {
@@ -128,8 +147,13 @@ export async function geminiEmbed(text: string): Promise<number[]> {
       const data = await resp.json()
       if (data.ok && data.embeddings) return data.embeddings
     }
-  } catch {
-    // Backend unavailable, fall through
+    proxyError = `Gemini embedding proxy failed with status ${resp.status}`
+  } catch (err) {
+    proxyError = err instanceof Error ? err.message : "Gemini embedding proxy unavailable"
+  }
+
+  if (!allowDirectGeminiFallback()) {
+    throw new Error(proxyError || "Gemini embedding proxy unavailable")
   }
 
   // Fallback: direct Gemini API
@@ -140,6 +164,8 @@ export async function geminiEmbed(text: string): Promise<number[]> {
 }
 
 export async function geminiEmbedBatch(texts: string[]): Promise<number[][]> {
+  let proxyError: string | null = null
+
   // Try backend proxy first (batch mode)
   try {
     const resp = await fetch(`${getBackendUrl()}/api/proxy/gemini/embed`, {
@@ -153,8 +179,13 @@ export async function geminiEmbedBatch(texts: string[]): Promise<number[][]> {
       const data = await resp.json()
       if (data.ok && data.embeddings && data.batch) return data.embeddings
     }
-  } catch {
-    // Backend unavailable, fall through
+    proxyError = `Gemini batch embedding proxy failed with status ${resp.status}`
+  } catch (err) {
+    proxyError = err instanceof Error ? err.message : "Gemini batch embedding proxy unavailable"
+  }
+
+  if (!allowDirectGeminiFallback()) {
+    throw new Error(proxyError || "Gemini batch embedding proxy unavailable")
   }
 
   // Fallback: direct sequential embedding
@@ -167,6 +198,8 @@ export async function geminiEmbedBatch(texts: string[]): Promise<number[][]> {
 }
 
 export async function testGeminiConnection(): Promise<{ ok: boolean; error?: string }> {
+  let proxyError: string | null = null
+
   // Try backend proxy test first
   try {
     const resp = await fetch(`${getBackendUrl()}/api/proxy/gemini/test`, {
@@ -177,8 +210,13 @@ export async function testGeminiConnection(): Promise<{ ok: boolean; error?: str
     if (resp.ok) {
       return await resp.json()
     }
-  } catch {
-    // Backend unavailable, fall through
+    proxyError = `Gemini test proxy failed with status ${resp.status}`
+  } catch (err) {
+    proxyError = err instanceof Error ? err.message : "Gemini test proxy unavailable"
+  }
+
+  if (!allowDirectGeminiFallback()) {
+    return { ok: false, error: proxyError || "Gemini proxy unavailable" }
   }
 
   // Fallback: direct test

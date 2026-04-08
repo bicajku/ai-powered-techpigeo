@@ -19,7 +19,7 @@ export type QueryProvider = "gemini" | "copilot" | "spark" | "backend" | "brain"
 
 const DEFAULT_ROUTING: ProviderRoutingConfig = {
   moduleName: "global",
-  providerOrder: ["copilot", "groq", "spark", "gemini", "sentinel"],
+  providerOrder: ["copilot", "spark", "groq", "gemini", "sentinel"],
   webProviderOrder: ["searchcans", "serpapi", "duckduckgo", "sentinel"],
   enabledProviders: { copilot: true, groq: true, spark: true, gemini: true, sentinel: true },
   enabledWebProviders: { searchcans: true, serpapi: true, duckduckgo: true, sentinel: true },
@@ -287,7 +287,13 @@ export async function sentinelQuery(
 
   // Step 2: Search Sentinel Brain for relevant knowledge
   let brainContextStr = ""
-  if (neonReady && geminiReady) {
+  const shouldUseGeminiRetrieval =
+    geminiReady &&
+    useGeminiByPolicy &&
+    orderedProviders.includes("gemini") &&
+    orderedProviders.indexOf("gemini") <= 1
+
+  if (neonReady && shouldUseGeminiRetrieval) {
     const retrievalStart = Date.now()
     try {
       const queryEmbedding = await geminiEmbed(queryText)
@@ -383,7 +389,13 @@ export async function sentinelQuery(
   }
   
   if (options?.useConsensus) {
-    if (geminiReady || copilotReady) {
+    const consensusProviders = orderedProviders
+      .filter((name): name is "copilot" | "spark" | "gemini" =>
+        name === "copilot" || name === "spark" || name === "gemini"
+      )
+      .slice(0, 2)
+
+    if (consensusProviders.length > 0) {
       try {
         const generationStart = Date.now()
         const contextBlocks = [brainContextStr, webSearchContextStr].filter(Boolean).join("\n\n")
@@ -391,25 +403,27 @@ export async function sentinelQuery(
           ? `Use the following context to inform your response. If any context is not relevant, ignore it and continue with best effort reasoning.\n\n${contextBlocks}\n\nUser query: ${queryText}`
           : queryText
 
-        // Run all available primary models in parallel
+        // Run top-priority models in parallel (favoring Copilot/Spark before Gemini).
         const generationPromises: Promise<{ provider: string, text: string }>[] = []
-        
-        if (geminiReady) {
-          generationPromises.push(
-            geminiGenerate(augmentedPrompt).then(text => ({ provider: 'gemini', text })).catch(() => ({ provider: 'gemini', text: '' }))
-          )
-        }
-        
-        if (copilotReady) {
-          generationPromises.push(
-            copilotGenerate(augmentedPrompt).then(text => ({ provider: 'copilot', text })).catch(() => ({ provider: 'copilot', text: '' }))
-          )
-        }
-        
-        if (options?.sparkFallback) {
-          generationPromises.push(
-            options.sparkFallback().then(text => ({ provider: 'spark', text })).catch(() => ({ provider: 'spark', text: '' }))
-          )
+
+        for (const providerName of consensusProviders) {
+          if (providerName === "copilot") {
+            generationPromises.push(
+              copilotGenerate(augmentedPrompt).then(text => ({ provider: "copilot", text })).catch(() => ({ provider: "copilot", text: "" }))
+            )
+          }
+
+          if (providerName === "spark" && options?.sparkFallback) {
+            generationPromises.push(
+              options.sparkFallback().then(text => ({ provider: "spark", text })).catch(() => ({ provider: "spark", text: "" }))
+            )
+          }
+
+          if (providerName === "gemini") {
+            generationPromises.push(
+              geminiGenerate(augmentedPrompt).then(text => ({ provider: "gemini", text })).catch(() => ({ provider: "gemini", text: "" }))
+            )
+          }
         }
 
         const results = await Promise.all(generationPromises)
@@ -421,22 +435,39 @@ export async function sentinelQuery(
           
           let synthesizedResponse = validResults[0].text // Fallback if synthesis fails
           
-          // Synthesize using the best available model (Gemini usually better at synthesis)
+          // Synthesize using provider policy order; prefer Copilot/Spark before Gemini.
           if (validResults.length > 1) {
             const synthesisPrompt = `You are the Sentinel Brain Synthesizer. You have received answers from multiple AI models regarding a user's query. Your job is to analyze these responses, extract the best ideas from all of them, resolve any conflicts, and create a single, highly-optimized, natural, and humanized final response.
 
 Original user query: ${queryText}
 
-${validResults.map((r, i) => `--- Model ${i + 1} (${r.provider}) Response ---\n${r.text}`).join('\n\n')}
+${validResults.map((r, i) => `--- Model ${i + 1} (${r.provider}) Response ---\n${r.text}`).join("\n\n")}
 
 Create a unified, humanized response that intelligently combines the best of all models.`
 
-            if (geminiReady) {
-               try { synthesizedResponse = await geminiGenerate(synthesisPrompt); providers.push("gemini" as QueryProvider); } 
-               catch { /* fallback to index 0 */ }
-            } else if (copilotReady) {
-               try { synthesizedResponse = await copilotGenerate(synthesisPrompt); providers.push("copilot" as QueryProvider); }
-               catch { /* fallback to index 0 */ }
+            const synthesisOrder = orderedProviders.filter(
+              (name) => name === "copilot" || name === "spark" || name === "gemini"
+            )
+            for (const providerName of synthesisOrder) {
+              try {
+                if (providerName === "copilot") {
+                  synthesizedResponse = await copilotGenerate(synthesisPrompt)
+                  providers.push("copilot" as QueryProvider)
+                  break
+                }
+                if (providerName === "spark" && options?.sparkFallback) {
+                  synthesizedResponse = await options.sparkFallback()
+                  providers.push("spark" as QueryProvider)
+                  break
+                }
+                if (providerName === "gemini") {
+                  synthesizedResponse = await geminiGenerate(synthesisPrompt)
+                  providers.push("gemini" as QueryProvider)
+                  break
+                }
+              } catch {
+                // try next synthesis provider
+              }
             }
           }
           

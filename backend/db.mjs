@@ -232,7 +232,7 @@ export async function ensureSentinelTables() {
     await sql`
       CREATE TABLE IF NOT EXISTS sentinel_provider_routing (
         module_name TEXT PRIMARY KEY,
-        provider_order TEXT[] NOT NULL DEFAULT ARRAY['copilot','groq','spark','gemini','sentinel'],
+        provider_order TEXT[] NOT NULL DEFAULT ARRAY['copilot','spark','groq','gemini','sentinel'],
         web_provider_order TEXT[] NOT NULL DEFAULT ARRAY['searchcans','serpapi','duckduckgo','sentinel'],
         enabled_providers JSONB NOT NULL DEFAULT '{"copilot":true,"groq":true,"spark":true,"gemini":true,"sentinel":true}'::jsonb,
         enabled_web_providers JSONB NOT NULL DEFAULT '{"searchcans":true,"serpapi":true,"duckduckgo":true,"sentinel":true}'::jsonb,
@@ -277,6 +277,14 @@ export async function ensureSentinelTables() {
       INSERT INTO sentinel_provider_routing (module_name)
       VALUES ('global')
       ON CONFLICT (module_name) DO NOTHING
+    `
+
+    await sql`
+      UPDATE sentinel_provider_routing
+      SET provider_order = ARRAY['copilot','spark','groq','gemini','sentinel'],
+          updated_at = now()
+      WHERE module_name = 'global'
+        AND provider_order = ARRAY['copilot','groq','spark','gemini','sentinel']
     `
 
     // Skills registry (shadow-mode capable)
@@ -352,7 +360,7 @@ export async function ensureSentinelTables() {
 function normalizeRoutingRow(row) {
   const providerOrder = Array.isArray(row.provider_order)
     ? row.provider_order
-    : ["copilot", "groq", "spark", "gemini", "sentinel"]
+    : ["copilot", "spark", "groq", "gemini", "sentinel"]
 
   const webProviderOrder = Array.isArray(row.web_provider_order)
     ? row.web_provider_order
@@ -414,7 +422,7 @@ export async function getProviderRoutingConfig(moduleName = "global") {
   `
   return fallback[0] ? normalizeRoutingRow(fallback[0]) : {
     moduleName: "global",
-    providerOrder: ["copilot", "groq", "spark", "gemini", "sentinel"],
+    providerOrder: ["copilot", "spark", "groq", "gemini", "sentinel"],
     webProviderOrder: ["searchcans", "serpapi", "duckduckgo", "sentinel"],
     enabledProviders: { copilot: true, groq: true, spark: true, gemini: true, sentinel: true },
     enabledWebProviders: { searchcans: true, serpapi: true, duckduckgo: true, sentinel: true },
@@ -433,7 +441,7 @@ export async function upsertProviderRoutingConfig(config) {
   const moduleName = config.moduleName || "global"
   const providerOrder = Array.isArray(config.providerOrder) && config.providerOrder.length > 0
     ? config.providerOrder
-    : ["copilot", "groq", "spark", "gemini", "sentinel"]
+    : ["copilot", "spark", "groq", "gemini", "sentinel"]
   const webProviderOrder = Array.isArray(config.webProviderOrder) && config.webProviderOrder.length > 0
     ? config.webProviderOrder
     : ["searchcans", "serpapi", "duckduckgo", "sentinel"]
