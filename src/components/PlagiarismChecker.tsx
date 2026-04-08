@@ -22,7 +22,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion"
 import { toast } from "sonner"
 import { sentinelQuery } from "@/lib/sentinel-query-pipeline"
-import { DocumentFingerprintRecord, PlagiarismResult, DocumentReviewResult, ExternalSourceCheckResult, HumanizedResult, HumanizerCandidateReview, SavedReviewDocument, UserProfile } from "@/types"
+import { DocumentFingerprintRecord, PlagiarismResult, DocumentReviewResult, ExternalSourceCheckResult, ExternalSourceMatch, HumanizedResult, HumanizerCandidateReview, SavedReviewDocument, UserProfile } from "@/types"
 import { useSafeKV } from "@/hooks/useSafeKV"
 import { SaveReviewDialog } from "@/components/SaveReviewDialog"
 import { SavedReviews } from "@/components/SavedReviews"
@@ -106,6 +106,31 @@ type SourceVerificationSummary = {
   highestSimilarity: number
 }
 
+type RankedExternalMatch = ExternalSourceMatch & {
+  rank: number
+  trustScore: number
+  confidence: "trusted" | "review" | "caution"
+}
+
+type ParaphraseCluster = {
+  id: string
+  provider: string
+  repository: string
+  count: number
+  averageSimilarity: number
+  highestSimilarity: number
+  sampleSources: string[]
+}
+
+type SemanticGuardrailReport = {
+  status: "pass" | "warn" | "fail"
+  score: number
+  missingAnchors: string[]
+  numericDrift: string[]
+  negationDrift: boolean
+  notes: string[]
+}
+
 const DEFAULT_HUMANIZER_SETTINGS: HumanizerBehaviorSettings = {
   tone: "neutral",
   formality: "balanced",
@@ -157,6 +182,7 @@ function PlagiarismCheckerInner({ user, mode }: { user: UserProfile; mode: "revi
     similarityBefore: number
     similarityAfter: number | null
   } | null>(null)
+  const [semanticGuardrailReport, setSemanticGuardrailReport] = useState<SemanticGuardrailReport | null>(null)
   const [humanizerAnalyzed, setHumanizerAnalyzed] = useState(false)
   const [fileName, setFileName] = useState<string | null>(null)
   const [isUploading, setIsUploading] = useState(false)
@@ -243,6 +269,8 @@ function PlagiarismCheckerInner({ user, mode }: { user: UserProfile; mode: "revi
   const totalFingerprintReviews = reuploadHistory.reduce((sum, entry) => sum + entry.reviewCount, 0)
   const evidenceMeters = result ? buildEvidenceMeters(result, reviewMeta) : []
   const sourceVerificationSummary = buildSourceVerificationSummary(externalSourceCheck)
+  const rankedExternalMatches = buildRankedExternalMatches(externalSourceCheck)
+  const paraphraseClusters = buildParaphraseClusters(externalSourceCheck)
 
   const countWords = (input: string) => {
     const normalized = input.trim()
@@ -321,6 +349,160 @@ function PlagiarismCheckerInner({ user, mode }: { user: UserProfile; mode: "revi
     if (tone === "positive") return "bg-green-500"
     if (tone === "neutral") return "bg-amber-500"
     return "bg-red-500"
+  }
+
+  function clampPercent(value: number) {
+    return Math.max(0, Math.min(100, Math.round(value)))
+  }
+
+  function buildRankedExternalMatches(sourceCheck: ExternalSourceCheckResult | null): RankedExternalMatch[] {
+    if (!sourceCheck || !Array.isArray(sourceCheck.matches) || sourceCheck.matches.length === 0) {
+      return []
+    }
+
+    const providerChecks = sourceCheck.providerChecks || []
+    const providerWeight = new Map<string, number>()
+
+    providerChecks.forEach((check) => {
+      const statusWeight = check.status === "completed" ? 12 : check.status === "ready" ? 7 : check.status === "unsupported" ? 2 : 0
+      const liveWeight = check.canPerformLiveCheck ? 6 : 0
+      const retentionWeight = check.canVerifyRetention ? 5 : 1
+      providerWeight.set(check.provider, statusWeight + liveWeight + retentionWeight)
+    })
+
+    const ranked = sourceCheck.matches.map((match) => {
+      const matchTypeWeight =
+        match.matchType === "exact"
+          ? 10
+          : match.matchType === "near-exact"
+            ? 7
+            : match.matchType === "paraphrase"
+              ? 4
+              : 2
+
+      const retentionWeight = match.retentionState === "active" ? 8 : match.retentionState === "unknown" ? 3 : -4
+      const providerScore = providerWeight.get(match.provider || "") || 0
+      const trustScore = clampPercent(match.similarity * 0.62 + providerScore + matchTypeWeight + retentionWeight)
+      const confidence: RankedExternalMatch["confidence"] = trustScore >= 75 ? "trusted" : trustScore >= 45 ? "review" : "caution"
+
+      return {
+        ...match,
+        rank: 0,
+        trustScore,
+        confidence,
+      }
+    })
+
+    ranked.sort((left, right) => {
+      if (right.trustScore !== left.trustScore) return right.trustScore - left.trustScore
+      if (right.similarity !== left.similarity) return right.similarity - left.similarity
+      return left.source.localeCompare(right.source)
+    })
+
+    return ranked.map((match, index) => ({ ...match, rank: index + 1 }))
+  }
+
+  function buildParaphraseClusters(sourceCheck: ExternalSourceCheckResult | null): ParaphraseCluster[] {
+    if (!sourceCheck || !Array.isArray(sourceCheck.matches) || sourceCheck.matches.length === 0) {
+      return []
+    }
+
+    const paraphraseLikeMatches = sourceCheck.matches.filter((match) => match.matchType === "paraphrase" || match.matchType === "near-exact")
+    if (paraphraseLikeMatches.length === 0) {
+      return []
+    }
+
+    const clusterMap = new Map<string, ExternalSourceMatch[]>()
+    paraphraseLikeMatches.forEach((match) => {
+      const key = `${match.provider || "unknown"}::${match.repository || "unspecified"}`
+      const current = clusterMap.get(key) || []
+      clusterMap.set(key, [...current, match])
+    })
+
+    return Array.from(clusterMap.entries())
+      .map(([key, clusterMatches]) => {
+        const [provider, repository] = key.split("::")
+        const highestSimilarity = clusterMatches.reduce((max, item) => Math.max(max, item.similarity), 0)
+        const averageSimilarity = clusterMatches.reduce((sum, item) => sum + item.similarity, 0) / clusterMatches.length
+        return {
+          id: key,
+          provider,
+          repository,
+          count: clusterMatches.length,
+          averageSimilarity: Math.round(averageSimilarity),
+          highestSimilarity,
+          sampleSources: clusterMatches.map((item) => item.source).slice(0, 3),
+        }
+      })
+      .sort((left, right) => {
+        if (right.count !== left.count) return right.count - left.count
+        return right.highestSimilarity - left.highestSimilarity
+      })
+  }
+
+  function extractSemanticAnchors(input: string) {
+    const lower = input.toLowerCase()
+    const longWords = lower.match(/\b[a-z][a-z-]{5,}\b/g) || []
+    const stopwords = new Set(["because", "should", "would", "could", "their", "there", "these", "those", "about", "within", "between", "during", "through", "before", "after"])
+    const anchorFrequency = new Map<string, number>()
+
+    longWords.forEach((word) => {
+      if (stopwords.has(word)) return
+      anchorFrequency.set(word, (anchorFrequency.get(word) || 0) + 1)
+    })
+
+    const anchors = Array.from(anchorFrequency.entries())
+      .sort((left, right) => right[1] - left[1])
+      .map(([word]) => word)
+      .slice(0, 12)
+
+    const numericAnchors = Array.from(new Set(input.match(/\b\d+(?:\.\d+)?%?\b/g) || [])).slice(0, 8)
+    const negationCount = (lower.match(/\b(no|not|never|without|cannot|can't|won't|n't)\b/g) || []).length
+
+    return { anchors, numericAnchors, negationCount }
+  }
+
+  function evaluateSemanticGuardrails(original: string, candidate: string): SemanticGuardrailReport {
+    const { anchors, numericAnchors, negationCount } = extractSemanticAnchors(original)
+    const candidateLower = candidate.toLowerCase()
+    const candidateNegations = (candidateLower.match(/\b(no|not|never|without|cannot|can't|won't|n't)\b/g) || []).length
+
+    const missingAnchors = anchors.filter((anchor) => !candidateLower.includes(anchor)).slice(0, 6)
+    const numericDrift = numericAnchors.filter((token) => !candidate.includes(token))
+    const negationDrift = negationCount > 0 && candidateNegations === 0
+
+    const penalty = missingAnchors.length * 7 + numericDrift.length * 14 + (negationDrift ? 12 : 0)
+    const score = clampPercent(100 - penalty)
+
+    const notes: string[] = []
+    if (missingAnchors.length > 0) {
+      notes.push(`Missing key terms: ${missingAnchors.join(", ")}`)
+    }
+    if (numericDrift.length > 0) {
+      notes.push(`Potential numeric drift: ${numericDrift.join(", ")}`)
+    }
+    if (negationDrift) {
+      notes.push("Negation cues changed; review meaning preservation")
+    }
+    if (notes.length === 0) {
+      notes.push("Meaning-preservation checks passed")
+    }
+
+    const status: SemanticGuardrailReport["status"] =
+      score < 60 || numericDrift.length >= 2
+        ? "fail"
+        : score < 80 || missingAnchors.length >= 3 || negationDrift
+          ? "warn"
+          : "pass"
+
+    return {
+      status,
+      score,
+      missingAnchors,
+      numericDrift,
+      negationDrift,
+      notes,
+    }
   }
 
   function getDiffPreview(original: string, humanized: string) {
@@ -1048,6 +1230,7 @@ function PlagiarismCheckerInner({ user, mode }: { user: UserProfile; mode: "revi
     setSectionSummaries([])
       setExternalSourceCheck(null)
       setHumanizedResult(null)
+      setSemanticGuardrailReport(null)
       setHumanizerCandidates([])
       setSelectedHumanizerCandidateId(null)
       setAdvancedMetrics(null)
@@ -1480,14 +1663,35 @@ Return ONLY a valid JSON object:
             best: serverRanking.ranked[0].candidate,
           }
         : selectBestHumanizerCandidate(text, candidateInputs)
-      const selected = selection.best
-      const rankedCandidates: HumanizerCandidateReview[] = selection.ranked.map(({ candidate, score }) => ({
-        id: candidate.id,
-        humanizedText: candidate.humanizedText,
-        changes: candidate.changes || [],
-        strategy: candidate.strategy,
-        scores: score,
-      }))
+
+      const guardedRanking = selection.ranked
+        .map(({ candidate, score }) => {
+          const guardrail = evaluateSemanticGuardrails(text, candidate.humanizedText)
+          const guardrailPenalty =
+            (guardrail.status === "fail" ? 18 : guardrail.status === "warn" ? 8 : 0) +
+            guardrail.numericDrift.length * 4
+          const adjustedScore = clampPercent(score.overallScore - guardrailPenalty)
+          return {
+            candidate,
+            guardrail,
+            score: {
+              ...score,
+              overallScore: adjustedScore,
+              notes: [`Semantic guardrail: ${guardrail.status.toUpperCase()} (${guardrail.score}%)`, ...score.notes].slice(0, 5),
+            },
+          }
+        })
+        .sort((left, right) => right.score.overallScore - left.score.overallScore)
+
+      const selected = guardedRanking[0].candidate
+      const selectedGuardrail = guardedRanking[0].guardrail
+      const rankedCandidates: HumanizerCandidateReview[] = guardedRanking.map(({ candidate, score }) => ({
+          id: candidate.id,
+          humanizedText: candidate.humanizedText,
+          changes: candidate.changes || [],
+          strategy: candidate.strategy,
+          scores: score,
+        }))
 
       const humanized: HumanizedResult = {
         originalText: text,
@@ -1509,6 +1713,7 @@ Return ONLY a valid JSON object:
 
       setHumanizerCandidates(rankedCandidates)
       setSelectedHumanizerCandidateId(selected.id)
+      setSemanticGuardrailReport(selectedGuardrail)
       setHumanizedResult(humanized)
 
       const beforeMeters = estimateHumanizerMeters(text)
@@ -1519,8 +1724,8 @@ Return ONLY a valid JSON object:
         similarityBefore: beforeMeters.similarityRisk,
         similarityAfter: afterMeters.similarityRisk,
       })
-      const selectionNote = selection.score.notes.length > 0
-        ? ` ${selection.score.notes[0]}.`
+      const selectionNote = rankedCandidates[0].scores.notes.length > 0
+        ? ` ${rankedCandidates[0].scores.notes[0]}.`
         : ""
       toast.success(`Best rewrite candidate selected from ${rankedCandidates.length} options.${selectionNote} ${remainingCredits} Pro credits left.`)
     } catch (error) {
@@ -1607,6 +1812,7 @@ Return ONLY a valid JSON object:
       changes: [],
       timestamp: entry.timestamp,
     })
+    setSemanticGuardrailReport(evaluateSemanticGuardrails(entry.originalText, entry.humanizedText))
     setFileName(entry.sourceName)
     window.scrollTo({ top: 0, behavior: "smooth" })
     toast.success("Workspace entry loaded")
@@ -1625,6 +1831,7 @@ Return ONLY a valid JSON object:
       changes: candidate.changes,
       timestamp: Date.now(),
     })
+    setSemanticGuardrailReport(evaluateSemanticGuardrails(text, candidate.humanizedText))
     setHumanizerScores({
       aiScoreBefore: humanizerScores?.aiScoreBefore ?? estimateHumanizerMeters(text).aiLikelihood,
       aiScoreAfter: candidate.scores.aiLikelihood,
@@ -1698,6 +1905,7 @@ Return ONLY a valid JSON object:
         changes: [],
         timestamp: humanizerDraft.updatedAt,
       })
+      setSemanticGuardrailReport(evaluateSemanticGuardrails(humanizerDraft.sourceText, humanizerDraft.lastOutput))
     }
 
     setHumanizerAnalyzed(true)
@@ -1711,6 +1919,7 @@ Return ONLY a valid JSON object:
     setHumanizedResult(null)
     setHumanizerCandidates([])
     setSelectedHumanizerCandidateId(null)
+    setSemanticGuardrailReport(null)
     setHumanizerAnalyzed(false)
     toast.success("Draft reset")
   }
@@ -1900,6 +2109,7 @@ Return ONLY a valid JSON object:
                       setFileName(null)
                       setResult(null)
                       setHumanizedResult(null)
+                      setSemanticGuardrailReport(null)
                       toast.info("Text cleared")
                     }}
                     variant="ghost"
@@ -2576,6 +2786,42 @@ Return ONLY a valid JSON object:
                                 <p className="font-semibold text-foreground">{sourceVerificationSummary.highestSimilarity}%</p>
                               </div>
                             </div>
+
+                            {rankedExternalMatches.length > 0 && (
+                              <div className="space-y-2">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Ranked Source Signals</p>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                  {rankedExternalMatches.slice(0, 4).map((match) => (
+                                    <div key={`${match.source}-${match.rank}`} className="rounded border border-border bg-background/80 p-2 text-xs space-y-1">
+                                      <div className="flex items-center justify-between gap-2">
+                                        <p className="font-medium text-foreground truncate">#{match.rank} {match.source}</p>
+                                        <Badge variant={match.confidence === "trusted" ? "default" : match.confidence === "review" ? "secondary" : "outline"}>
+                                          {match.trustScore}
+                                        </Badge>
+                                      </div>
+                                      <p className="text-muted-foreground">{match.matchType} • {match.similarity}% similarity</p>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {paraphraseClusters.length > 0 && (
+                              <div className="space-y-2">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Paraphrase Clusters</p>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                  {paraphraseClusters.slice(0, 4).map((cluster) => (
+                                    <div key={cluster.id} className="rounded border border-border bg-background/80 p-2 text-xs space-y-1">
+                                      <div className="flex items-center justify-between gap-2">
+                                        <p className="font-medium text-foreground truncate">{cluster.provider} / {cluster.repository}</p>
+                                        <Badge variant="outline">{cluster.count} links</Badge>
+                                      </div>
+                                      <p className="text-muted-foreground">Avg {cluster.averageSimilarity}% • Peak {cluster.highestSimilarity}%</p>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -2690,6 +2936,42 @@ Return ONLY a valid JSON object:
                 {externalSourceCheck && externalSourceCheck.matches.length > 0 && (
                   <div className="pt-4 border-t">
                     <h4 className="text-sm font-semibold mb-3">External Repository Matches</h4>
+                    {rankedExternalMatches.length > 0 && (
+                      <div className="mb-3 p-3 border border-border rounded-lg bg-muted/20 space-y-2">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Top Ranked Sources</p>
+                        <div className="space-y-2">
+                          {rankedExternalMatches.slice(0, 6).map((match) => (
+                            <div key={`${match.rank}-${match.source}`} className="flex items-center justify-between gap-3 text-xs">
+                              <p className="text-foreground truncate">#{match.rank} {match.source}</p>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <Badge variant={match.confidence === "trusted" ? "default" : match.confidence === "review" ? "secondary" : "outline"}>
+                                  Trust {match.trustScore}
+                                </Badge>
+                                <Badge variant="outline">{match.similarity}%</Badge>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {paraphraseClusters.length > 0 && (
+                      <div className="mb-3 p-3 border border-border rounded-lg bg-muted/20 space-y-2">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Paraphrase Cluster Groups</p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          {paraphraseClusters.slice(0, 6).map((cluster) => (
+                            <div key={cluster.id} className="rounded border border-border bg-background/80 p-2 text-xs space-y-1">
+                              <p className="font-medium text-foreground truncate">{cluster.provider} / {cluster.repository}</p>
+                              <p className="text-muted-foreground">{cluster.count} related matches • Peak {cluster.highestSimilarity}%</p>
+                              {cluster.sampleSources.length > 0 && (
+                                <p className="text-muted-foreground truncate">Examples: {cluster.sampleSources.join(", ")}</p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     {externalSourceCheck.providerChecks.length > 0 && (
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
                         {externalSourceCheck.providerChecks.map((check) => (
@@ -2754,6 +3036,7 @@ Return ONLY a valid JSON object:
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
                       {humanizerCandidates.map((candidate, index) => {
                         const isSelected = selectedHumanizerCandidateId === candidate.id
+                        const guardrail = evaluateSemanticGuardrails(text, candidate.humanizedText)
                         return (
                           <div key={candidate.id} className={`rounded-lg border p-3 space-y-3 ${isSelected ? "border-primary bg-primary/5" : "border-border bg-muted/20"}`}>
                             <div className="flex items-center justify-between gap-2">
@@ -2762,6 +3045,12 @@ Return ONLY a valid JSON object:
                                 <p className="text-[11px] text-muted-foreground">{candidate.strategy || "Balanced rewrite strategy"}</p>
                               </div>
                               <Badge variant={isSelected ? "default" : "outline"}>Score {candidate.scores.overallScore}</Badge>
+                            </div>
+                            <div className="flex items-center justify-between gap-2 text-xs">
+                              <p className="text-muted-foreground">Semantic guardrail</p>
+                              <Badge variant={guardrail.status === "pass" ? "default" : guardrail.status === "warn" ? "secondary" : "destructive"}>
+                                {guardrail.status.toUpperCase()} {guardrail.score}%
+                              </Badge>
                             </div>
                             <div className="grid grid-cols-2 gap-2 text-xs">
                               <div className="rounded border border-border p-2">
@@ -2807,6 +3096,20 @@ Return ONLY a valid JSON object:
                     className="min-h-64 resize-none"
                   />
                 </div>
+
+                {semanticGuardrailReport && (
+                  <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="text-sm font-medium">Semantic Rewrite Guardrails</label>
+                      <Badge variant={semanticGuardrailReport.status === "pass" ? "default" : semanticGuardrailReport.status === "warn" ? "secondary" : "destructive"}>
+                        {semanticGuardrailReport.status.toUpperCase()} {semanticGuardrailReport.score}%
+                      </Badge>
+                    </div>
+                    {semanticGuardrailReport.notes.map((note) => (
+                      <p key={note} className="text-xs text-muted-foreground">- {note}</p>
+                    ))}
+                  </div>
+                )}
                 {humanizedResult.changes.length > 0 && (
                   <div className="space-y-2">
                     <label className="text-sm font-medium block">Rewrite Diffs</label>
@@ -2852,6 +3155,7 @@ Return ONLY a valid JSON object:
                     setText(humanizedResult.humanizedText)
                     setHumanizerDraft((current) => current ? { ...current, isFinal: true, updatedAt: Date.now() } : current)
                     setHumanizedResult(null)
+                    setSemanticGuardrailReport(null)
                     toast.success("Humanized text copied to editor")
                   }}
                   className="w-full gap-2"
