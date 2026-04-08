@@ -1,13 +1,15 @@
 import { resolveSentinelSessionUserIfTokenPresent } from "@/lib/auth"
+import type { SentinelUser } from "@/sentinel/types"
 
-const baseUser = {
+const baseUser: SentinelUser = {
   id: "user-123",
   email: "client@example.com",
   fullName: "Client User",
-  role: "CLIENT",
+  role: "USER",
   organizationId: "org-1",
   createdAt: Date.now(),
   lastLoginAt: Date.now(),
+  isActive: true,
 }
 
 export const authTokenPriorityTests = {
