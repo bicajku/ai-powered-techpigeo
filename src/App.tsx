@@ -625,6 +625,12 @@ function App() {
             throw new Error("Spark fallback unavailable")
           },
         })
+        // Reject plain-prose responses before they enter the parse/retry loop.
+        // If the pipeline returns a response with no JSON braces at all, it is
+        // unacceptable for strategy generation — fall through to the Spark path.
+        if (!(pipelineResult.response || "").includes("{")) {
+          throw new Error("Pipeline returned a non-JSON response — falling through to Spark")
+        }
         return { response: pipelineResult.response, modelUsed: pipelineResult.model || "sentinel-pipeline" }
       } catch {
         // Fall through to Spark-only path
@@ -668,6 +674,11 @@ function App() {
           if (typeof asObj.text === "string") {
             const nestedFromText = parseEmbeddedObject(asObj.text)
             if (nestedFromText) return nestedFromText
+            // If the only key is "text" and it didn't yield usable JSON, this is a
+            // BackendLlmResponse text-wrapper — not a strategy object. Return null so
+            // the retry loop falls through to the Spark shim instead of propagating
+            // a {text: "..."} object that fails the required-fields check.
+            if (Object.keys(asObj).length === 1) return null
           }
 
           const keys = Object.keys(asObj)
@@ -703,7 +714,16 @@ function App() {
           .replace(/,\s*]/g, "]")
 
         const parsed = JSON.parse(repaired) as Record<string, unknown>
-        return parsed && typeof parsed === "object" ? parsed : null
+        if (parsed && typeof parsed === "object") {
+          const pKeys = Object.keys(parsed)
+          // Unwrap BackendLlmResponse {text: "..."} wrappers — extract nested JSON
+          // from the value rather than returning a single-key text object.
+          if (pKeys.length === 1 && pKeys[0] === "text" && typeof parsed.text === "string") {
+            return parseEmbeddedObject(parsed.text)
+          }
+          return parsed
+        }
+        return null
       } catch {
         return null
       }
