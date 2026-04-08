@@ -12,7 +12,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+        with:
+          fetch-depth: 0
+
+      - name: Show deploy commit
+        run: |
+          echo "Deploying commit: $GITHUB_SHA"
+          git rev-parse --short HEAD
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+
+      - name: Deploy preflight (lockfile + install)
+        run: |
+          npm run guard:lockfile
+          npm ci --ignore-scripts
+
       - name: Install Heroku CLI
         run: curl https://cli-assets.heroku.com/install.sh | sh
 
@@ -30,7 +47,24 @@ jobs:
     environment: production
     steps:
       - uses: actions/checkout@v4
-      
+        with:
+          fetch-depth: 0
+
+      - name: Show deploy commit
+        run: |
+          echo "Deploying commit: $GITHUB_SHA"
+          git rev-parse --short HEAD
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+
+      - name: Deploy preflight (lockfile + install)
+        run: |
+          npm run guard:lockfile
+          npm ci --ignore-scripts
+
       - name: Install Heroku CLI
         run: curl https://cli-assets.heroku.com/install.sh | sh
 
