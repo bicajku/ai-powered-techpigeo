@@ -3372,7 +3372,8 @@ const server = http.createServer(async (req, res) => {
         return res.end(generateOAuthCallbackHtml(token, user));
       } catch (err) {
         console.error("Google OAuth error:", err);
-        res.writeHead(302, { Location: "/?error=oauth_failed" });
+        const msg = encodeURIComponent(err?.message || "Google sign-in failed")
+        res.writeHead(302, { Location: `/?error=oauth_failed&reason=${msg}` });
         return res.end();
       }
     }
@@ -3396,7 +3397,8 @@ const server = http.createServer(async (req, res) => {
         return res.end(generateOAuthCallbackHtml(token, user));
       } catch (err) {
         console.error("GitHub OAuth error:", err);
-        res.writeHead(302, { Location: "/?error=oauth_failed" });
+        const msg = encodeURIComponent(err?.message || "GitHub sign-in failed")
+        res.writeHead(302, { Location: `/?error=oauth_failed&reason=${msg}` });
         return res.end();
       }
     }

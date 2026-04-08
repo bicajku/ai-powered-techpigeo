@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -29,6 +29,17 @@ export function LoginPage({ onAuthSuccess }: LoginPageProps) {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [showPasswordReset, setShowPasswordReset] = useState(false)
+
+  // Show OAuth error if redirected back with ?error=oauth_failed
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get("error") === "oauth_failed") {
+      const reason = params.get("reason")
+      toast.error(reason ? `Sign-in failed: ${reason}` : "Sign-in failed. Please try again.")
+      // Clean the URL
+      window.history.replaceState({}, "", window.location.pathname)
+    }
+  }, [])
 
   const handleGitHubLogin = () => {
     setIsLoading(true)
