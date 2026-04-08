@@ -101,6 +101,17 @@ function findStoredUserBySentinelUser(
   ) || null
 }
 
+export async function resolveSentinelSessionUserIfTokenPresent(
+  readToken: () => string | null,
+  readSession: () => Promise<{ user?: SentinelUser } | null>
+): Promise<SentinelUser | null> {
+  const token = readToken()
+  if (!token) return null
+
+  const session = await readSession()
+  return session?.user ?? null
+}
+
 async function simpleHash(text: string): Promise<string> {
   const encoder = new TextEncoder()
   // Salt the password to prevent rainbow table attacks
@@ -428,20 +439,20 @@ export const authService = {
       // return that user FIRST — before consulting the Spark KV store — so that the OAuth
       // user is never shadowed by a stale KV-stored admin/previous session.
       try {
-        const localToken = localStorage.getItem("sentinel-auth-token")
-        if (localToken) {
-          const sentinelSession = await sentinelAuth.getSession()
-          if (sentinelSession?.user) {
-            const kv = getSafeKVClient()
-            const users = await kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
-            const existingUser = findStoredUserBySentinelUser(users, sentinelSession.user)
-            const normalized = mergeUserProfileWithStoredState(sentinelSession.user, existingUser)
-            users[normalized.id] = normalized
-            await kv.set(USERS_STORAGE_KEY, users)
-            await kv.set(CURRENT_USER_KEY, normalized.id)
-            saveCurrentUserIdLocal(normalized.id)
-            return normalized
-          }
+        const sentinelUser = await resolveSentinelSessionUserIfTokenPresent(
+          () => localStorage.getItem("sentinel-auth-token"),
+          () => sentinelAuth.getSession()
+        )
+        if (sentinelUser) {
+          const kv = getSafeKVClient()
+          const users = await kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
+          const existingUser = findStoredUserBySentinelUser(users, sentinelUser)
+          const normalized = mergeUserProfileWithStoredState(sentinelUser, existingUser)
+          users[normalized.id] = normalized
+          await kv.set(USERS_STORAGE_KEY, users)
+          await kv.set(CURRENT_USER_KEY, normalized.id)
+          saveCurrentUserIdLocal(normalized.id)
+          return normalized
         }
       } catch {
         // Sentinel token check failed — fall through to KV lookup

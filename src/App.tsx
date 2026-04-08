@@ -15,7 +15,8 @@ import { UserMenu } from "@/components/UserMenu"
 import { WelcomeBanner } from "@/components/WelcomeBanner"
 import { TopNotchBanner } from "@/components/TopNotchBanner"
 import { Footer } from "@/components/Footer"
-import { MobileNav } from "@/components/MobileNav"
+import { AppSidebar } from "@/components/AppSidebar"
+import { ProfileEdit } from "@/components/ProfileEdit"
 import faviconImg from "@/assets/images/novussparks-icon.svg"
 import techpigeonLogo from "@/assets/images/techpigeon-logo.png"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -299,6 +300,8 @@ function App() {
   const [showHistoryDialog, setShowHistoryDialog] = useState(false)
   const [historyStrategy, setHistoryStrategy] = useState<SavedStrategy | null>(null)
   const [showTemplatesBrowser, setShowTemplatesBrowser] = useState(false)
+  const [showProfileEdit, setShowProfileEdit] = useState(false)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [conceptMode, setConceptMode] = useState<ConceptMode>("auto")
   const [showPromptSuggestions, setShowPromptSuggestions] = useState(false)
   const [openConceptSelector, setOpenConceptSelector] = useState(false)
@@ -1739,6 +1742,11 @@ ${JSON.stringify(candidate)}`
     setUser(updatedUser)
   }
 
+  const handleSidebarSignOut = async () => {
+    await authService.logout()
+    handleLogout()
+  }
+
   const resultReadiness = useMemo(() => {
     if (!result) return null
     return evaluateStrategyReadiness(result, guidedBriefCompletion)
@@ -1887,7 +1895,13 @@ ${JSON.stringify(candidate)}`
           </Suspense>
         )}
       </AnimatePresence>
-      <div className="min-h-screen bg-gradient-to-br from-background via-secondary/20 to-background relative overflow-hidden font-sans pb-24 md:pb-0">
+      <ProfileEdit
+        user={user}
+        open={showProfileEdit}
+        onOpenChange={setShowProfileEdit}
+        onProfileUpdate={handleProfileUpdate}
+      />
+      <div className="min-h-screen bg-gradient-to-br from-background via-secondary/20 to-background relative overflow-hidden font-sans">
         <div
           className="absolute inset-0 pointer-events-none"
           style={{
@@ -1895,8 +1909,19 @@ ${JSON.stringify(candidate)}`
               "radial-gradient(circle at 30% 20%, var(--brand-glow-primary) 0%, transparent 50%), radial-gradient(circle at 70% 80%, var(--brand-glow-secondary) 0%, transparent 50%)",
           }}
         />
+
+        <AppSidebar
+          user={user}
+          activeTab={activeTab}
+          collapsed={isSidebarCollapsed}
+          onToggleCollapsed={() => setIsSidebarCollapsed((prev) => !prev)}
+          onTabChange={setActiveTab}
+          onOpenProfile={() => setShowProfileEdit(true)}
+          onSignOut={handleSidebarSignOut}
+        />
         
-        <div className="relative max-w-6xl mx-auto px-6 md:px-8 py-12 md:py-16">
+        <div className={cn("relative transition-all duration-300", isSidebarCollapsed ? "lg:pl-24" : "lg:pl-80")}>
+          <div className="max-w-6xl mx-auto px-6 md:px-8 py-12 md:py-16">
           <motion.header
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -1949,8 +1974,8 @@ ${JSON.stringify(candidate)}`
           </AnimatePresence>
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            {/* Desktop/Tablet Tabs Navigation */}
-            <div className="hidden md:block w-full mb-8 py-2">
+            {/* Horizontal tabs for all modules except sidebar-owned pages */}
+            <div className="w-full mb-8 py-2">
               <div className="w-full max-w-7xl mx-auto px-2 md:px-4">
                 <TabsList className="w-full h-auto bg-card/80 backdrop-blur-sm rounded-2xl border border-border/60 shadow-sm flex flex-nowrap gap-1 md:gap-2 p-2 md:p-3 justify-start overflow-x-auto overflow-y-hidden whitespace-nowrap">
                   <TabsTrigger value="generate" className="gap-1.5 text-xs md:text-sm px-3 md:px-4 py-2 md:py-2.5 whitespace-nowrap flex-shrink-0 rounded-lg hover:bg-accent/50 transition-colors data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
@@ -1983,32 +2008,10 @@ ${JSON.stringify(candidate)}`
                     )}
                     <span className="hidden sm:inline">Humanizer</span>
                   </TabsTrigger>
-                  <TabsTrigger value="dashboard" className="gap-1.5 text-xs md:text-sm px-3 md:px-4 py-2 md:py-2.5 whitespace-nowrap flex-shrink-0 rounded-lg hover:bg-accent/50 transition-colors data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                    <ChartBar size={16} weight="bold" className="flex-shrink-0" />
-                    <span className="hidden sm:inline">Dashboard</span>
-                  </TabsTrigger>
-                  {user.role === "admin" && (
-                    <TabsTrigger value="sentinel-brain" className="gap-1.5 text-xs md:text-sm px-3 md:px-4 py-2 md:py-2.5 whitespace-normal flex-shrink-0 rounded-lg hover:bg-accent/50 transition-colors data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                      <Brain size={16} weight="bold" className="flex-shrink-0" />
-                      <span className="text-center leading-tight">Sentinel Brain</span>
-                    </TabsTrigger>
-                  )}
                   {canAccessNGOSaaS && (
                     <TabsTrigger value="ngo-saas" className="gap-1.5 text-xs md:text-sm px-3 md:px-4 py-2 md:py-2.5 whitespace-normal flex-shrink-0 rounded-lg hover:bg-accent/50 transition-colors data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
                       <Target size={16} weight="bold" className="flex-shrink-0" />
                       <span className="text-center leading-tight">NGO-SAAS</span>
-                    </TabsTrigger>
-                  )}
-                  {user.role === "admin" && (
-                    <TabsTrigger value="admin" className="gap-1.5 text-xs md:text-sm px-3 md:px-4 py-2 md:py-2.5 whitespace-nowrap flex-shrink-0 rounded-lg hover:bg-accent/50 transition-colors data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                      <ShieldCheck size={16} weight="bold" className="flex-shrink-0" />
-                      <span className="hidden sm:inline">Admin</span>
-                    </TabsTrigger>
-                  )}
-                  {user.role === "admin" && (
-                    <TabsTrigger value="enterprise" className="gap-1.5 text-xs md:text-sm px-3 md:px-4 py-2 md:py-2.5 whitespace-nowrap flex-shrink-0 rounded-lg hover:bg-accent/50 transition-colors data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                      <ShieldCheck size={16} weight="bold" className="flex-shrink-0" />
-                      <span className="hidden sm:inline">Enterprise</span>
                     </TabsTrigger>
                   )}
                   <TabsTrigger value="integrations" className="gap-1.5 text-xs md:text-sm px-3 md:px-4 py-2 md:py-2.5 whitespace-nowrap flex-shrink-0 rounded-lg hover:bg-accent/50 transition-colors data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
@@ -3312,17 +3315,7 @@ ${JSON.stringify(candidate)}`
             )}
           </Tabs>
         </div>
-        
-        <MobileNav
-          activeTab={activeTab}
-          onTabChange={setActiveTab}
-          isAdmin={user.role === "admin"}
-          savedCount={savedStrategies?.length || 0}
-          canAccessReview={canUseReviewModule}
-          canUseHumanizer={canUseHumanizerModule}
-          canAccessNGOSaaS={canAccessNGOSaaS}
-          canAccessRagChat={ragChatEnabled}
-        />
+        </div>
         
         <Footer />
       </div>
