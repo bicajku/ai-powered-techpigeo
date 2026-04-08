@@ -2,6 +2,7 @@ import http from "node:http"
 import crypto from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
+import { spawnSync } from "node:child_process"
 import { fileURLToPath } from "node:url"
 
 const __filename = fileURLToPath(import.meta.url)
@@ -137,6 +138,104 @@ const TRUSTED_PROXIES = new Set(
 /** In-memory token blocklist. In production, use Redis or a DB table. */
 const _revokedTokens = new Map() // jti/tokenHash -> expiryTimestamp
 const TOKEN_BLOCKLIST_MAX = 10000
+
+// ─────────────────────── Skills Registry (Shadow Mode) ──────────────────────
+
+const SKILL_UPLOAD_DIR = process.env.SKILL_UPLOAD_DIR || path.join(__dirname, ".skill_uploads")
+const MAX_SKILL_ZIP_BYTES = Number(process.env.MAX_SKILL_ZIP_BYTES || 5 * 1024 * 1024)
+const SKILL_EXECUTION_LOG_LIMIT = 500
+const _skillRegistry = new Map() // skillId -> skill
+const _skillBindings = new Map() // moduleName -> { moduleName, skillId, enabled, mode, rolloutPercent, updatedAt, updatedBy }
+const _skillExecutionLogs = [] // in-memory ring buffer
+
+function ensureSkillUploadDir() {
+  if (!fs.existsSync(SKILL_UPLOAD_DIR)) {
+    fs.mkdirSync(SKILL_UPLOAD_DIR, { recursive: true })
+  }
+}
+
+function isSkillAdmin(user) {
+  return isRoutingAdmin(user)
+}
+
+function parseSimpleFrontmatter(text = "") {
+  const match = text.match(/^---\n([\s\S]*?)\n---\n?/) 
+  if (!match) return {}
+  const out = {}
+  for (const rawLine of match[1].split("\n")) {
+    const line = rawLine.trim()
+    if (!line || line.startsWith("#")) continue
+    const idx = line.indexOf(":")
+    if (idx <= 0) continue
+    const key = line.slice(0, idx).trim()
+    const value = line.slice(idx + 1).trim()
+    if (key) out[key] = value
+  }
+  return out
+}
+
+function readZipEntries(zipPath) {
+  const ls = spawnSync("unzip", ["-Z1", zipPath], { encoding: "utf8" })
+  if (ls.status !== 0) {
+    throw new Error("ZIP validation failed (unzip -Z1)")
+  }
+  const entries = ls.stdout.split("\n").map((x) => x.trim()).filter(Boolean)
+  for (const entry of entries) {
+    if (entry.includes("..") || entry.startsWith("/") || entry.startsWith("\\")) {
+      throw new Error("Unsafe ZIP path entry detected")
+    }
+  }
+  return entries
+}
+
+function readSkillManifestFromZip(zipPath, entries) {
+  const manifestPath = entries.find((e) => /(^|\/)SKILL\.md$/i.test(e))
+  if (!manifestPath) {
+    throw new Error("SKILL.md not found in ZIP")
+  }
+  const cat = spawnSync("unzip", ["-p", zipPath, manifestPath], { encoding: "utf8" })
+  if (cat.status !== 0 || !cat.stdout) {
+    throw new Error("Unable to read SKILL.md")
+  }
+  const frontmatter = parseSimpleFrontmatter(cat.stdout)
+  const skillName = String(frontmatter.name || "skill").trim()
+  const version = String(frontmatter.version || "0.0.0").trim()
+  const description = String(frontmatter.description || "").trim()
+  return { manifestPath, frontmatter, skillName, version, description }
+}
+
+function scoreAiSignals(text = "") {
+  const source = String(text || "")
+  const rules = [
+    { regex: /\b(let'?s dive in|here'?s what you need to know|in conclusion)\b/gi, weight: 14 },
+    { regex: /\b(pivotal|testament|landscape|showcasing|vibrant|crucial)\b/gi, weight: 10 },
+    { regex: /\b(in order to|due to the fact that|it could potentially)\b/gi, weight: 10 },
+    { regex: /^\s*[-*]\s*\*\*[^*]+\*\*\s*:/gim, weight: 8 },
+  ]
+  let score = 0
+  for (const rule of rules) {
+    const hits = (source.match(rule.regex) || []).length
+    if (hits > 0) score += Math.min(100, hits * rule.weight)
+  }
+  return Math.min(100, Math.round(score))
+}
+
+function createHumanizedPreview(text = "") {
+  return String(text || "")
+    .replace(/\bIn order to\b/g, "To")
+    .replace(/\bDue to the fact that\b/g, "Because")
+    .replace(/\bAdditionally\b/g, "Also")
+    .replace(/\bLet'?s dive in\b:?\s*/gi, "")
+    .replace(/\bHere'?s what you need to know\b:?\s*/gi, "")
+    .replace(/\*\*([^*]+)\*\*\s*:/g, "$1:")
+}
+
+function pushSkillExecutionLog(log) {
+  _skillExecutionLogs.push(log)
+  if (_skillExecutionLogs.length > SKILL_EXECUTION_LOG_LIMIT) {
+    _skillExecutionLogs.splice(0, _skillExecutionLogs.length - SKILL_EXECUTION_LOG_LIMIT)
+  }
+}
 
 function revokeToken(tokenHash, expiresAt) {
   // Evict expired entries if list is getting large
@@ -1972,6 +2071,267 @@ async function handleGetProviderUsage(req, res, user, url) {
   }
 }
 
+// ──────────────── Skills Admin (Shadow Mode) ───────────────────
+
+async function handleSkillsUpload(req, res, user) {
+  if (!isSkillAdmin(user)) {
+    return sendJson(res, 403, { ok: false, error: "Insufficient permissions" }, req)
+  }
+
+  const parsed = await parseJsonBody(req, MAX_SKILL_ZIP_BYTES * 2)
+  if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+
+  const fileName = typeof parsed.data?.fileName === "string" ? parsed.data.fileName.trim() : "skill.zip"
+  const zipBase64 = typeof parsed.data?.zipBase64 === "string" ? parsed.data.zipBase64.trim() : ""
+  if (!zipBase64) {
+    return sendJson(res, 400, { ok: false, error: "zipBase64 is required" }, req)
+  }
+
+  try {
+    const bin = Buffer.from(zipBase64, "base64")
+    if (bin.length === 0) {
+      return sendJson(res, 400, { ok: false, error: "Invalid base64 ZIP payload" }, req)
+    }
+    if (bin.length > MAX_SKILL_ZIP_BYTES) {
+      return sendJson(res, 413, { ok: false, error: `ZIP exceeds ${MAX_SKILL_ZIP_BYTES} bytes` }, req)
+    }
+
+    ensureSkillUploadDir()
+    const skillId = crypto.randomUUID()
+    const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_")
+    const storedZipPath = path.join(SKILL_UPLOAD_DIR, `${Date.now()}-${safeName}`)
+    fs.writeFileSync(storedZipPath, bin)
+
+    const entries = readZipEntries(storedZipPath)
+    const manifest = readSkillManifestFromZip(storedZipPath, entries)
+
+    const record = {
+      id: skillId,
+      name: manifest.skillName,
+      version: manifest.version,
+      description: manifest.description,
+      uploadedBy: user.userId,
+      uploadedAt: Date.now(),
+      fileName,
+      storedZipPath,
+      entriesCount: entries.length,
+      manifestPath: manifest.manifestPath,
+      frontmatter: manifest.frontmatter,
+      status: "validated",
+    }
+    _skillRegistry.set(skillId, record)
+
+    await writeAuditLog({
+      userId: user.userId,
+      action: "CREATE",
+      resource: "skill-registry",
+      resourceId: skillId,
+      metadata: { name: record.name, version: record.version, entries: entries.length },
+      ipAddress: getClientIp(req),
+      success: true,
+    }).catch(() => {})
+
+    return sendJson(res, 200, {
+      ok: true,
+      skill: {
+        id: record.id,
+        name: record.name,
+        version: record.version,
+        description: record.description,
+        uploadedBy: record.uploadedBy,
+        uploadedAt: record.uploadedAt,
+        status: record.status,
+      },
+    }, req)
+  } catch (err) {
+    console.error("[skills/upload] error:", err)
+    return sendJson(res, 400, { ok: false, error: err instanceof Error ? err.message : "Skill upload failed" }, req)
+  }
+}
+
+async function handleSkillsList(req, res, user, url) {
+  if (!isSkillAdmin(user)) {
+    return sendJson(res, 403, { ok: false, error: "Insufficient permissions" }, req)
+  }
+
+  const moduleFilter = url.searchParams.get("module") || ""
+  const skills = Array.from(_skillRegistry.values()).map((s) => ({
+    id: s.id,
+    name: s.name,
+    version: s.version,
+    description: s.description,
+    uploadedBy: s.uploadedBy,
+    uploadedAt: s.uploadedAt,
+    status: s.status,
+  }))
+
+  const bindings = Array.from(_skillBindings.values())
+  const filteredBindings = moduleFilter
+    ? bindings.filter((b) => b.moduleName === moduleFilter)
+    : bindings
+
+  return sendJson(res, 200, { ok: true, skills, bindings: filteredBindings }, req)
+}
+
+async function handleSkillsBind(req, res, user) {
+  if (!isSkillAdmin(user)) {
+    return sendJson(res, 403, { ok: false, error: "Insufficient permissions" }, req)
+  }
+
+  const parsed = await parseJsonBody(req)
+  if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+
+  const moduleName = typeof parsed.data?.moduleName === "string" ? parsed.data.moduleName.trim() : ""
+  const skillId = typeof parsed.data?.skillId === "string" ? parsed.data.skillId.trim() : ""
+  const enabled = parsed.data?.enabled !== false
+  const requestedMode = typeof parsed.data?.mode === "string" ? parsed.data.mode.trim().toLowerCase() : "shadow"
+  const mode = requestedMode === "active" ? "shadow" : "shadow" // force shadow-first
+  const rolloutPercent = Math.max(0, Math.min(100, Number(parsed.data?.rolloutPercent ?? 0)))
+
+  if (!moduleName) return sendJson(res, 400, { ok: false, error: "moduleName required" }, req)
+  if (!skillId || !_skillRegistry.has(skillId)) {
+    return sendJson(res, 404, { ok: false, error: "skillId not found" }, req)
+  }
+
+  const binding = {
+    moduleName,
+    skillId,
+    enabled,
+    mode,
+    rolloutPercent,
+    updatedAt: Date.now(),
+    updatedBy: user.userId,
+  }
+  _skillBindings.set(moduleName, binding)
+
+  await writeAuditLog({
+    userId: user.userId,
+    action: "UPDATE",
+    resource: "skill-binding",
+    resourceId: moduleName,
+    metadata: binding,
+    ipAddress: getClientIp(req),
+    success: true,
+  }).catch(() => {})
+
+  return sendJson(res, 200, { ok: true, binding }, req)
+}
+
+async function handleSkillsShadowEvaluate(req, res, user) {
+  if (!isSkillAdmin(user)) {
+    return sendJson(res, 403, { ok: false, error: "Insufficient permissions" }, req)
+  }
+
+  const parsed = await parseJsonBody(req)
+  if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+
+  const moduleName = typeof parsed.data?.moduleName === "string" ? parsed.data.moduleName.trim() : "global"
+  const originalOutput = typeof parsed.data?.output === "string" ? parsed.data.output : ""
+  const sourceInput = typeof parsed.data?.input === "string" ? parsed.data.input : ""
+
+  if (!originalOutput.trim()) {
+    return sendJson(res, 400, { ok: false, error: "output is required" }, req)
+  }
+
+  const binding = _skillBindings.get(moduleName)
+  const skill = binding ? _skillRegistry.get(binding.skillId) : null
+  const before = scoreAiSignals(originalOutput)
+  const preview = createHumanizedPreview(originalOutput)
+  const after = scoreAiSignals(preview)
+  const changed = preview !== originalOutput
+
+  const log = {
+    id: crypto.randomUUID(),
+    at: Date.now(),
+    moduleName,
+    skillId: skill?.id || null,
+    skillName: skill?.name || null,
+    mode: binding?.mode || "shadow",
+    changed,
+    aiSignalBefore: before,
+    aiSignalAfter: after,
+    actor: user.userId,
+    inputPreview: sourceInput.slice(0, 220),
+  }
+  pushSkillExecutionLog(log)
+
+  return sendJson(res, 200, {
+    ok: true,
+    shadowMode: true,
+    binding: binding || null,
+    skill: skill ? { id: skill.id, name: skill.name, version: skill.version } : null,
+    diff: {
+      changed,
+      aiSignalBefore: before,
+      aiSignalAfter: after,
+      delta: after - before,
+    },
+    preview,
+    executionLogId: log.id,
+  }, req)
+}
+
+async function handleSkillsLogs(req, res, user, url) {
+  if (!isSkillAdmin(user)) {
+    return sendJson(res, 403, { ok: false, error: "Insufficient permissions" }, req)
+  }
+  const moduleFilter = url.searchParams.get("module") || ""
+  const limit = Math.max(1, Math.min(200, Number(url.searchParams.get("limit") || 50)))
+  const logs = moduleFilter
+    ? _skillExecutionLogs.filter((x) => x.moduleName === moduleFilter).slice(-limit).reverse()
+    : _skillExecutionLogs.slice(-limit).reverse()
+  return sendJson(res, 200, { ok: true, logs }, req)
+}
+
+function renderSkillsAdminHtml() {
+  return `<!doctype html>
+<html><head><meta charset="utf-8" /><title>Skills Admin</title>
+<style>body{font-family:system-ui,sans-serif;max-width:900px;margin:30px auto;padding:0 16px} textarea,input,button{font:inherit} textarea{width:100%;min-height:120px} .card{border:1px solid #ddd;border-radius:10px;padding:14px;margin:12px 0} .muted{color:#666;font-size:12px}</style>
+</head><body>
+<h1>Skills Admin (Shadow Mode)</h1>
+<p class="muted">Uploads skill ZIPs, binds skills per module, and runs shadow evaluations without mutating outputs.</p>
+
+<div class="card">
+  <h3>1) Upload Skill ZIP (base64)</h3>
+  <input id="fileName" placeholder="skill.zip" value="skill.zip" />
+  <textarea id="zipBase64" placeholder="Paste base64 ZIP payload"></textarea>
+  <button onclick="uploadSkill()">Upload</button>
+</div>
+
+<div class="card">
+  <h3>2) Bind Skill to Module</h3>
+  <input id="moduleName" placeholder="module name (e.g. strategy)" value="strategy" />
+  <input id="skillId" placeholder="skill id" />
+  <button onclick="bindSkill()">Bind (Shadow)</button>
+</div>
+
+<div class="card">
+  <h3>3) Shadow Evaluate Output</h3>
+  <input id="evalModule" placeholder="module" value="strategy" />
+  <textarea id="evalOutput" placeholder="Paste generated output"></textarea>
+  <button onclick="evalShadow()">Evaluate</button>
+</div>
+
+<div class="card"><h3>Result</h3><pre id="out"></pre></div>
+
+<script>
+async function callApi(path, body){
+  const r = await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify(body)});
+  const j = await r.json(); document.getElementById('out').textContent = JSON.stringify(j,null,2);
+}
+function uploadSkill(){
+  callApi('/api/sentinel/admin/skills/upload',{fileName:document.getElementById('fileName').value,zipBase64:document.getElementById('zipBase64').value});
+}
+function bindSkill(){
+  callApi('/api/sentinel/admin/skills/bind',{moduleName:document.getElementById('moduleName').value,skillId:document.getElementById('skillId').value,enabled:true,mode:'shadow',rolloutPercent:0});
+}
+function evalShadow(){
+  callApi('/api/sentinel/admin/skills/evaluate',{moduleName:document.getElementById('evalModule').value,output:document.getElementById('evalOutput').value,input:''});
+}
+</script>
+</body></html>`
+}
+
 // ──────────────── Org Module Subscription Handlers (Phase 3) ─────
 
 /**
@@ -3157,6 +3517,46 @@ const server = http.createServer(async (req, res) => {
       // GET /api/sentinel/admin/provider-usage
       if (method === "GET" && reqPathname === "/api/sentinel/admin/provider-usage") {
         return handleGetProviderUsage(req, res, user, url)
+      }
+
+      // ── Skills Admin Routes (Shadow Mode First) ──
+
+      // GET /api/sentinel/admin/skills
+      if (method === "GET" && reqPathname === "/api/sentinel/admin/skills") {
+        return handleSkillsList(req, res, user, url)
+      }
+
+      // POST /api/sentinel/admin/skills/upload
+      if (method === "POST" && reqPathname === "/api/sentinel/admin/skills/upload") {
+        return handleSkillsUpload(req, res, user)
+      }
+
+      // POST /api/sentinel/admin/skills/bind
+      if (method === "POST" && reqPathname === "/api/sentinel/admin/skills/bind") {
+        return handleSkillsBind(req, res, user)
+      }
+
+      // POST /api/sentinel/admin/skills/evaluate
+      if (method === "POST" && reqPathname === "/api/sentinel/admin/skills/evaluate") {
+        return handleSkillsShadowEvaluate(req, res, user)
+      }
+
+      // GET /api/sentinel/admin/skills/logs
+      if (method === "GET" && reqPathname === "/api/sentinel/admin/skills/logs") {
+        return handleSkillsLogs(req, res, user, url)
+      }
+
+      // GET /api/sentinel/admin/skills/ui
+      if (method === "GET" && reqPathname === "/api/sentinel/admin/skills/ui") {
+        if (!isSkillAdmin(user)) {
+          return sendJson(res, 403, { ok: false, error: "Insufficient permissions" }, req)
+        }
+        res.writeHead(200, {
+          "Content-Type": "text/html; charset=utf-8",
+          ...SECURITY_HEADERS,
+        })
+        res.end(renderSkillsAdminHtml())
+        return
       }
 
       // ── Org Module Subscription Routes (Phase 3) ──
