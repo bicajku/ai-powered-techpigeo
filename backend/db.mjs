@@ -13,7 +13,7 @@ import crypto from "node:crypto"
 
 let _sql = null
 
-function getSql() {
+export export function getSql() {
   if (_sql) return _sql
   const url = process.env.NEON_DATABASE_URL
   if (!url) {
