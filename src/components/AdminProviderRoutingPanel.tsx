@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { ArrowsClockwise, FloppyDisk } from "@phosphor-icons/react"
 import { toast } from "sonner"
+import { errorLogger } from "@/lib/error-logger"
 import {
   fetchProviderRouting,
   fetchProviderUsage,
@@ -35,7 +36,11 @@ function parseOrder(value: string, allowed: string[]) {
   return cleaned
 }
 
-export function AdminProviderRoutingPanel() {
+interface AdminProviderRoutingPanelProps {
+  canManageProviderRouting?: boolean
+}
+
+export function AdminProviderRoutingPanel({ canManageProviderRouting = false }: AdminProviderRoutingPanelProps) {
   const [moduleName, setModuleName] = useState("global")
   const [config, setConfig] = useState<ProviderRoutingConfig | null>(null)
   const [loading, setLoading] = useState(false)
@@ -77,14 +82,26 @@ export function AdminProviderRoutingPanel() {
       })
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to load provider routing")
+      await errorLogger.logError(
+        "Provider routing load failed",
+        err,
+        "network",
+        "medium",
+        undefined,
+        { moduleName }
+      )
     } finally {
       setLoading(false)
     }
   }, [moduleName])
 
   useEffect(() => {
+    if (!canManageProviderRouting) {
+      setLoading(false)
+      return
+    }
     void reload()
-  }, [reload])
+  }, [reload, canManageProviderRouting])
 
   const toggleProvider = (name: string, web = false) => {
     if (!config) return
@@ -108,7 +125,7 @@ export function AdminProviderRoutingPanel() {
   }
 
   const save = async () => {
-    if (!config) return
+    if (!config || !canManageProviderRouting) return
     setSaving(true)
     try {
       const payload: ProviderRoutingConfig = {
@@ -125,9 +142,32 @@ export function AdminProviderRoutingPanel() {
       await reload()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save routing")
+      await errorLogger.logError(
+        "Provider routing save failed",
+        err,
+        "network",
+        "high",
+        undefined,
+        { moduleName }
+      )
     } finally {
       setSaving(false)
     }
+  }
+
+  if (!canManageProviderRouting) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Provider Routing & Budgets</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            You do not have permission to manage provider routing. This section requires Sentinel Commander or system admin privileges.
+          </p>
+        </CardContent>
+      </Card>
+    )
   }
 
   return (

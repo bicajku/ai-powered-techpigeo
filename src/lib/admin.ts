@@ -1,5 +1,6 @@
 import { UserProfile, SavedStrategy, UserRole, SavedReviewDocument } from "@/types"
 import { getSafeKVClient } from "@/lib/spark-shim"
+import { errorLogger } from "@/lib/error-logger"
 
 const USERS_STORAGE_KEY = "platform-users"
 const USER_CREDENTIALS_KEY = "user-credentials"
@@ -261,7 +262,18 @@ export const adminService = {
         if (backendRes.ok && backendRes.data?.ok) {
           return { success: true }
         }
-        return { success: false, error: (backendRes.data?.error as string) || "Failed to update password" }
+
+        const backendError = (backendRes.data?.error as string) || "Failed to update password"
+        await errorLogger.logError(
+          "Admin set-password API failed",
+          new Error(backendError),
+          "authentication",
+          backendRes.status === 403 ? "high" : "medium",
+          undefined,
+          { endpoint: "/api/auth/admin/set-password", status: backendRes.status, targetEmail: email }
+        )
+
+        return { success: false, error: backendError }
       }
 
       const users = await getSafeKVClient().get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
@@ -286,6 +298,14 @@ export const adminService = {
       return { success: true }
     } catch (error) {
       console.error("Failed to update user password:", error)
+      await errorLogger.logError(
+        "Admin set-password request crashed",
+        error,
+        "authentication",
+        "high",
+        undefined,
+        { endpoint: "/api/auth/admin/set-password", targetEmail: email }
+      )
       return { success: false, error: "Failed to update password" }
     }
   },

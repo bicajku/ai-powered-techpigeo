@@ -111,6 +111,7 @@ const REQUIRE_AUTH =
   String(process.env.BACKEND_REQUIRE_AUTH || "false").toLowerCase() === "true"
 const BACKEND_API_KEY = process.env.BACKEND_API_KEY || ""
 const ADMIN_NOTIFICATION_EMAIL = process.env.ADMIN_NOTIFICATION_EMAIL || process.env.M365_SENDER_EMAIL || "admin@novussparks.com"
+const FORCED_SENTINEL_COMMANDER_EMAIL = (process.env.FORCED_SENTINEL_COMMANDER_EMAIL || "admin@novussparks.com").toLowerCase()
 
 /**
  * Feature flag: when true, sentinel auth routes are enabled.
@@ -591,7 +592,7 @@ function authorize(req) {
       }
       const jwtResult = authenticateRequest(req)
       if (jwtResult.authenticated) {
-        return { authorized: true, user: jwtResult.user }
+        return { authorized: true, user: normalizeAuthUser(jwtResult.user) }
       }
     }
   }
@@ -602,6 +603,36 @@ function authorize(req) {
   }
 
   return { authorized: false }
+}
+
+function normalizeAuthUser(user) {
+  if (!user || typeof user !== "object") return user
+  if (typeof user.email === "string" && user.email.toLowerCase() === FORCED_SENTINEL_COMMANDER_EMAIL) {
+    return {
+      ...user,
+      role: "SENTINEL_COMMANDER",
+    }
+  }
+  return user
+}
+
+function getAuthCapabilities(user) {
+  const normalized = normalizeAuthUser(user)
+  if (!normalized) {
+    return {
+      canSetPasswords: false,
+      canManageProviderRouting: false,
+      canSendInviteEmails: false,
+      isSentinelCommander: false,
+    }
+  }
+
+  return {
+    canSetPasswords: normalized.role === "SENTINEL_COMMANDER",
+    canManageProviderRouting: isRoutingAdmin(normalized),
+    canSendInviteEmails: canPerformAction(normalized.role, ACTIONS.TEAM_ADD_MEMBER) && isGraphMailConfigured(),
+    isSentinelCommander: normalized.role === "SENTINEL_COMMANDER",
+  }
 }
 
 /** Get client IP for audit logging. Only trusts x-forwarded-for from trusted proxies. */
@@ -1346,10 +1377,11 @@ async function handleVerify(req, res) {
     }
 
     const subscription = await getUserSubscription(user.id)
+    const normalizedUser = normalizeAuthUser(user)
 
     return sendJson(res, 200, {
       ok: true,
-      user,
+      user: normalizedUser,
       subscription: subscription || null,
     }, req)
   } catch (err) {
@@ -1378,11 +1410,12 @@ async function handleRefresh(req, res) {
 
     const subscription = await getUserSubscription(user.id)
     const tier = subscription?.tier || null
+    const normalizedUser = normalizeAuthUser(user)
 
     const token = signToken({
       userId: user.id,
       email: user.email,
-      role: user.role,
+      role: normalizedUser.role,
       organizationId: user.organizationId || null,
       subscriptionTier: tier,
     })
@@ -1420,6 +1453,18 @@ async function handleLogout(req, res) {
   }
 
   return sendJson(res, 200, { ok: true }, req)
+}
+
+async function handleAuthCapabilities(req, res) {
+  const auth = authorize(req)
+  if (!auth.authorized) {
+    return sendJson(res, 401, { ok: false, error: "Unauthorized" }, req)
+  }
+
+  return sendJson(res, 200, {
+    ok: true,
+    capabilities: getAuthCapabilities(auth.user),
+  }, req)
 }
 
 /**
@@ -3301,6 +3346,11 @@ const server = http.createServer(async (req, res) => {
       return handleVerify(req, res)
     }
 
+    // ── GET /api/auth/capabilities ──
+    if (method === "GET" && reqPathname === "/api/auth/capabilities") {
+      return handleAuthCapabilities(req, res)
+    }
+
     // ── OAuth Routes ──
     if (method === "GET" && reqPathname === "/api/auth/google") {
       try {
@@ -3374,7 +3424,7 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 401, { ok: false, error: "Token has been revoked" }, req)
       }
 
-      const user = authResult.user
+      const user = normalizeAuthUser(authResult.user)
 
       // H6 fix: API rate limiting for sentinel routes
       const rlKey = user.userId || getClientIp(req)
@@ -3731,6 +3781,39 @@ const server = http.createServer(async (req, res) => {
     } catch (error) {
       console.error("[providers/routing] error:", error instanceof Error ? error.message : error)
       return sendJson(res, 500, { ok: false, error: "Failed to load provider routing" }, req)
+    }
+  }
+
+  // ── GET /api/qr?data=...&size=... ──
+  if (method === "GET" && reqPathname === "/api/qr") {
+    const data = String(url.searchParams.get("data") || "").trim()
+    const sizeRaw = Number(url.searchParams.get("size") || 400)
+    const size = Number.isFinite(sizeRaw) ? Math.max(64, Math.min(1024, Math.round(sizeRaw))) : 400
+    const marginRaw = Number(url.searchParams.get("margin") || 0)
+    const margin = Number.isFinite(marginRaw) ? Math.max(0, Math.min(20, Math.round(marginRaw))) : 0
+    const eccRaw = String(url.searchParams.get("ecc") || "M").toUpperCase()
+    const ecc = ["L", "M", "Q", "H"].includes(eccRaw) ? eccRaw : "M"
+
+    if (!data) {
+      return sendJson(res, 400, { ok: false, error: "Missing data query parameter" }, req)
+    }
+
+    try {
+      const upstream = await fetch(`https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(data)}&format=png&ecc=${ecc}&margin=${margin}`)
+      if (!upstream.ok) {
+        return sendJson(res, 502, { ok: false, error: "QR upstream request failed" }, req)
+      }
+
+      const buffer = Buffer.from(await upstream.arrayBuffer())
+      res.writeHead(200, {
+        "Content-Type": "image/png",
+        "Cache-Control": "public, max-age=300",
+        ...SECURITY_HEADERS,
+      })
+      return res.end(buffer)
+    } catch (error) {
+      console.error("[api/qr] error:", error instanceof Error ? error.message : error)
+      return sendJson(res, 500, { ok: false, error: "Failed to generate QR image" }, req)
     }
   }
 

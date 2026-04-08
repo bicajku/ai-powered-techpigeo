@@ -64,6 +64,8 @@ import { AdminSubscriptionPanel } from "@/components/AdminSubscriptionPanel"
 import { AdminProviderRoutingPanel } from "@/components/AdminProviderRoutingPanel"
 import { getSafeKVClient } from "@/lib/spark-shim"
 import { fetchBackendProviderStatus, type BackendProviderStatus } from "@/lib/platform-client"
+import { fetchAuthCapabilities, type AuthCapabilities } from "@/lib/auth-capabilities"
+import { errorLogger } from "@/lib/error-logger"
 import { getEnvConfig } from "@/lib/env-config"
 
 export function AdminDashboard() {
@@ -88,17 +90,17 @@ export function AdminDashboard() {
   const [providerStatus, setProviderStatus] = useState<BackendProviderStatus | null>(null)
   const [providerStatusError, setProviderStatusError] = useState<string | null>(null)
   const [providerStatusLoading, setProviderStatusLoading] = useState(false)
+  const [authCapabilities, setAuthCapabilities] = useState<AuthCapabilities>({
+    canSetPasswords: false,
+    canManageProviderRouting: false,
+    canSendInviteEmails: false,
+    isSentinelCommander: false,
+  })
   const hasLoadedOnceRef = useRef(false)
   const loadInFlightRef = useRef(false)
   const envConfig = getEnvConfig()
 
   const loadProviderStatus = useCallback(async () => {
-    if (!envConfig.backendApiBaseUrl) {
-      setProviderStatus(null)
-      setProviderStatusError("Backend API URL is not configured")
-      return
-    }
-
     setProviderStatusLoading(true)
     setProviderStatusError(null)
     try {
@@ -107,10 +109,36 @@ export function AdminDashboard() {
     } catch (error) {
       setProviderStatus(null)
       setProviderStatusError(error instanceof Error ? error.message : "Failed to load backend provider status")
+      await errorLogger.logError(
+        "Failed to load backend provider status",
+        error,
+        "network",
+        "medium"
+      )
     } finally {
       setProviderStatusLoading(false)
     }
-  }, [envConfig.backendApiBaseUrl])
+  }, [])
+
+  const loadCapabilities = useCallback(async () => {
+    try {
+      const capabilities = await fetchAuthCapabilities()
+      setAuthCapabilities(capabilities)
+    } catch (error) {
+      setAuthCapabilities({
+        canSetPasswords: false,
+        canManageProviderRouting: false,
+        canSendInviteEmails: false,
+        isSentinelCommander: false,
+      })
+      await errorLogger.logError(
+        "Failed to load auth capabilities",
+        error,
+        "authentication",
+        "medium"
+      )
+    }
+  }, [])
 
   const buildStats = (
     allUsers: UserProfile[],
@@ -181,6 +209,12 @@ export function AdminDashboard() {
     } catch (error) {
       console.error("Failed to load admin data:", error)
       toast.error("Failed to load admin data")
+      await errorLogger.logError(
+        "Failed to load admin dashboard data",
+        error,
+        "network",
+        "medium"
+      )
     } finally {
       hasLoadedOnceRef.current = true
       loadInFlightRef.current = false
@@ -195,7 +229,8 @@ export function AdminDashboard() {
 
   useEffect(() => {
     void loadProviderStatus()
-  }, [loadProviderStatus])
+    void loadCapabilities()
+  }, [loadProviderStatus, loadCapabilities])
 
   const handleRoleChange = async (email: string, newRole: UserRole) => {
     if (email === "admin") {
@@ -262,8 +297,16 @@ export function AdminDashboard() {
       } else {
         toast.error(result.error || "Failed to update password")
       }
-    } catch {
+    } catch (error) {
       toast.error("Failed to update password")
+      await errorLogger.logError(
+        "Admin password reset request failed",
+        error,
+        "authentication",
+        "high",
+        undefined,
+        { targetEmail: email }
+      )
     }
   }
 
@@ -411,6 +454,7 @@ export function AdminDashboard() {
               onClick={() => {
                 void loadData(true)
                 void loadProviderStatus()
+                void loadCapabilities()
               }}
               disabled={isRefreshing}
               variant="outline"
@@ -548,7 +592,7 @@ export function AdminDashboard() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
               <div className="rounded-lg border border-border/60 p-3 min-w-0">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Backend API</p>
-                <p className="font-medium break-all">{envConfig.backendApiBaseUrl || "Not set"}</p>
+                <p className="font-medium break-all">{envConfig.backendApiBaseUrl || "Same-origin (/api)"}</p>
               </div>
               <div className="rounded-lg border border-border/60 p-3 min-w-0">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Runtime</p>
@@ -580,6 +624,9 @@ export function AdminDashboard() {
             <p className="text-xs text-muted-foreground">
               Fallback order: {(providerStatus?.fallbackOrder || []).join(" -> ") || "Not available"}
             </p>
+            {!envConfig.backendApiBaseUrl && (
+              <p className="text-xs text-muted-foreground">Using same-origin backend discovery because VITE_BACKEND_API_BASE_URL is not set.</p>
+            )}
             {providerStatusLoading && <p className="text-xs text-muted-foreground">Loading provider status...</p>}
             {providerStatusError && <p className="text-xs text-red-600 break-all">{providerStatusError}</p>}
           </CardContent>
@@ -621,7 +668,7 @@ export function AdminDashboard() {
                   <Bug size={18} weight="bold" />
                   Error Logs
                 </TabsTrigger>
-                <TabsTrigger value="routing" className="gap-2">
+                <TabsTrigger value="routing" className="gap-2" disabled={!authCapabilities.canManageProviderRouting}>
                   <Key size={18} weight="bold" />
                   Provider Routing
                 </TabsTrigger>
@@ -724,7 +771,8 @@ export function AdminDashboard() {
                                       variant="ghost"
                                       size="sm"
                                       onClick={() => handleResetPassword(user.email)}
-                                      title="Set Password"
+                                      title={authCapabilities.canSetPasswords ? "Set Password" : "Requires Sentinel Commander permissions"}
+                                      disabled={!authCapabilities.canSetPasswords}
                                     >
                                       <Key size={16} weight="bold" />
                                     </Button>
@@ -999,7 +1047,10 @@ export function AdminDashboard() {
             <TabsContent value="invites">
               <Card>
                 <CardContent className="pt-6">
-                  <InviteManager user={users.find(u => u.email === "admin") || { id: "admin", email: "admin", fullName: "Admin", role: "admin", createdAt: Date.now(), lastLoginAt: Date.now() } as UserProfile} />
+                  <InviteManager
+                    user={users.find(u => u.email === "admin") || { id: "admin", email: "admin", fullName: "Admin", role: "admin", createdAt: Date.now(), lastLoginAt: Date.now() } as UserProfile}
+                    canSendInviteEmails={authCapabilities.canSendInviteEmails}
+                  />
                 </CardContent>
               </Card>
             </TabsContent>
@@ -1009,7 +1060,7 @@ export function AdminDashboard() {
             </TabsContent>
 
             <TabsContent value="routing">
-              <AdminProviderRoutingPanel />
+              <AdminProviderRoutingPanel canManageProviderRouting={authCapabilities.canManageProviderRouting} />
             </TabsContent>
           </Tabs>
         </motion.div>

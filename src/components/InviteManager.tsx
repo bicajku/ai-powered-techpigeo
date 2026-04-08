@@ -19,9 +19,10 @@ import {
 
 interface InviteManagerProps {
   user: UserProfile
+  canSendInviteEmails?: boolean
 }
 
-export function InviteManager({ user }: InviteManagerProps) {
+export function InviteManager({ user, canSendInviteEmails = false }: InviteManagerProps) {
   const [invites, setInvites] = useState<InviteLink[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [inviteEmail, setInviteEmail] = useState("")
@@ -41,7 +42,7 @@ export function InviteManager({ user }: InviteManagerProps) {
 
     if (result.success && result.link) {
       const recipient = inviteEmail.trim().toLowerCase()
-      if (recipient) {
+      if (recipient && canSendInviteEmails) {
         const sendRes = await inviteService.sendInviteEmail({
           email: recipient,
           inviteLink: result.link,
@@ -55,6 +56,8 @@ export function InviteManager({ user }: InviteManagerProps) {
         } else {
           toast.warning("Invite link generated, but email failed. You can copy the link manually.")
         }
+      } else if (recipient && !canSendInviteEmails) {
+        toast.info("Invite link generated. Auto-email is unavailable for your role or current backend mail settings.")
       } else {
         toast.success("Invite link generated!")
       }
@@ -111,16 +114,16 @@ export function InviteManager({ user }: InviteManagerProps) {
         <div className="mt-3 flex flex-col sm:flex-row gap-2 max-w-xl">
           <Input
             type="email"
-            placeholder="Optional: recipient email (send automatically)"
+            placeholder={canSendInviteEmails ? "Optional: recipient email (send automatically)" : "Auto-email unavailable (permissions or mail config)"}
             value={inviteEmail}
             onChange={(e) => setInviteEmail(e.target.value)}
-            disabled={isLoading}
+            disabled={isLoading || !canSendInviteEmails}
           />
           <Button
             variant="outline"
             disabled
             className="gap-2 sm:w-auto"
-            title="Email is sent automatically when you generate invite"
+            title={canSendInviteEmails ? "Email is sent automatically when you generate invite" : "Auto-email unavailable for your role or current backend mail settings"}
           >
             <EnvelopeSimple size={16} />
             Auto-send

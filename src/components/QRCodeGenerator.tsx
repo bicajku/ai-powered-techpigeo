@@ -35,9 +35,9 @@ export function QRCodeGenerator({ value, size = 256, level = "M", includeMargin 
       ctx.drawImage(img, 0, 0, qrSize, qrSize)
     }
 
-    // Using QR server API for reliable QR generation
+    // Use same-origin QR proxy endpoint so CSP remains strict while rendering QR images.
     const margin = includeMargin ? 10 : 0
-    img.src = `https://api.qrserver.com/v1/create-qr-code/?size=${qrSize}x${qrSize}&data=${encodedValue}&format=png&ecc=${level}&margin=${margin}`
+    img.src = `/api/qr?size=${qrSize}&data=${encodedValue}&ecc=${level}&margin=${margin}`
   }, [value, size, level, includeMargin])
 
   return (
