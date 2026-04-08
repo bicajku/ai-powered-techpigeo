@@ -23,6 +23,7 @@ import { toast } from "sonner"
 import { getFeatureEntitlements } from "@/lib/subscription"
 import { sentinelQuery } from "@/lib/sentinel-query-pipeline"
 import { isNeonConfigured } from "@/lib/neon-client"
+import { trackGenerationInsight } from "@/lib/user-style-client"
 import { isGeminiConfigured } from "@/lib/gemini-client"
 
 interface IdeaGenerationProps {
@@ -328,6 +329,17 @@ CRITICAL: Return ONLY valid JSON with no markdown, no code blocks, no explanator
         createdAt: Date.now(),
       }
       setUserMemory(current => [memoryEntry, ...(current ?? [])].slice(0, 20))
+
+      // Track generation for user style profiling (non-blocking)
+      if (user?.id) {
+        trackGenerationInsight({
+          conceptMode: user.industry || "general",
+          tonePreference: "professional",
+          audienceLevel: "intermediate",
+          sectionsEdited: [],
+          wasSaved: false,
+        }).catch(err => console.warn("Failed to track generation:", err))
+      }
 
       toast.success("Idea cooked successfully!")
       

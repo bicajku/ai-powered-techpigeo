@@ -2744,6 +2744,112 @@ async function handleVerifySignature(req, res, user, reportId) {
   }
 }
 
+// ─────────────────────────── User Style Profile Handlers ────────────
+
+/**
+ * POST /api/sentinel/user-style/track-generation
+ * Log generation metadata for building user style profile
+ */
+async function handleTrackGeneration(req, res, user) {
+  try {
+    const { ok: bodyOk, data } = await parseJsonBody(req)
+    if (!bodyOk) {
+      return sendJson(res, 400, { ok: false, error: "Invalid request body" }, req)
+    }
+
+    const {
+      conceptMode,
+      tonePreference,
+      audienceLevel,
+      sectionsEdited,
+      qualityScore,
+      costCents,
+      wasSaved,
+    } = data
+
+    if (!conceptMode || !tonePreference || !audienceLevel) {
+      return sendJson(res, 400, { ok: false, error: "Missing required fields" }, req)
+    }
+
+    const { logGenerationInsight } = await import("./user-style-service.mjs")
+
+    await logGenerationInsight({
+      userId: user.userId,
+      conceptMode,
+      tonePreference,
+      audienceLevel,
+      estimatedSatisfaction: 0.5,
+      sectionsEdited: Array.isArray(sectionsEdited) ? sectionsEdited : [],
+      qualityScore: typeof qualityScore === "number" ? qualityScore : undefined,
+      costCents: typeof costCents === "number" ? costCents : undefined,
+      wasSaved: Boolean(wasSaved),
+    })
+
+    return sendJson(res, 200, { ok: true }, req)
+  } catch (err) {
+    console.error("[user-style] track-generation error:", err)
+    return sendJson(res, 500, { ok: false, error: "Internal server error" }, req)
+  }
+}
+
+/**
+ * GET /api/sentinel/user-style/profile
+ * Fetch or build user's style profile
+ */
+async function handleGetUserStyleProfile(req, res, user) {
+  try {
+    const { getOrBuildUserProfile } = await import("./user-style-service.mjs")
+
+    const profile = await getOrBuildUserProfile(user.userId)
+
+    return sendJson(res, 200, { ok: true, profile }, req)
+  } catch (err) {
+    console.error("[user-style] get-profile error:", err)
+    return sendJson(res, 500, { ok: false, error: "Internal server error" }, req)
+  }
+}
+
+/**
+ * POST /api/sentinel/user-style/feedback
+ * Record user feedback on a generated strategy
+ */
+async function handleRecordStyleFeedback(req, res, user) {
+  try {
+    const { ok: bodyOk, data } = await parseJsonBody(req)
+    if (!bodyOk) {
+      return sendJson(res, 400, { ok: false, error: "Invalid request body" }, req)
+    }
+
+    const {
+      qualityRating,
+      toneFit,
+      audienceMatch,
+      originality,
+      comment,
+    } = data
+
+    if (typeof qualityRating !== "number" || qualityRating < 1 || qualityRating > 5) {
+      return sendJson(res, 400, { ok: false, error: "qualityRating must be 1-5" }, req)
+    }
+
+    const { recordStyleFeedback } = await import("./user-style-service.mjs")
+
+    await recordStyleFeedback({
+      userId: user.userId,
+      qualityRating,
+      toneFit: typeof toneFit === "number" ? toneFit : undefined,
+      audienceMatch: typeof audienceMatch === "number" ? audienceMatch : undefined,
+      originality: typeof originality === "number" ? originality : undefined,
+      comment: typeof comment === "string" ? comment : undefined,
+    })
+
+    return sendJson(res, 200, { ok: true }, req)
+  } catch (err) {
+    console.error("[user-style] feedback error:", err)
+    return sendJson(res, 500, { ok: false, error: "Internal server error" }, req)
+  }
+}
+
 // ─────────────────────────── Request Router ──────────────────────
 
 const extToMime = {
@@ -3163,6 +3269,23 @@ const server = http.createServer(async (req, res) => {
       if (method === "POST" && reqPathname.match(/^\/api\/sentinel\/reports\/[^/]+\/verify-signature$/)) {
         const reportId = reqPathname.split("/")[4]
         return handleVerifySignature(req, res, user, reportId)
+      }
+
+      // ── User Style Profile Routes ──
+
+      // POST /api/sentinel/user-style/track-generation
+      if (method === "POST" && reqPathname === "/api/sentinel/user-style/track-generation") {
+        return handleTrackGeneration(req, res, user)
+      }
+
+      // GET /api/sentinel/user-style/profile
+      if (method === "GET" && reqPathname === "/api/sentinel/user-style/profile") {
+        return handleGetUserStyleProfile(req, res, user)
+      }
+
+      // POST /api/sentinel/user-style/feedback
+      if (method === "POST" && reqPathname === "/api/sentinel/user-style/feedback") {
+        return handleRecordStyleFeedback(req, res, user)
       }
 
       return sendJson(res, 404, { error: "Sentinel route not found" }, req)

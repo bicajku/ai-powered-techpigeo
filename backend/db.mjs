@@ -140,6 +140,95 @@ export async function ensureSentinelTables() {
       ON retrieval_traces (thread_id, created_at DESC)
     `
 
+    // User Style Profile tables (Phase 1 - Personalization)
+    await sql`
+      CREATE TABLE IF NOT EXISTS user_style_profiles (
+        id SERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL UNIQUE,
+        preferred_industries JSONB NOT NULL DEFAULT '[]'::jsonb,
+        dominant_tone TEXT NOT NULL DEFAULT 'professional',
+        audience_level TEXT NOT NULL DEFAULT 'intermediate',
+        frequent_edits JSONB NOT NULL DEFAULT '[]'::jsonb,
+        avg_quality_score NUMERIC(5,2) NOT NULL DEFAULT 75,
+        total_generations INTEGER NOT NULL DEFAULT 0,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `
+
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_user_style_profiles_user_id
+        ON user_style_profiles (user_id)
+    `
+
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_user_style_profiles_updated_at
+        ON user_style_profiles (updated_at DESC)
+    `
+
+    await sql`
+      CREATE TABLE IF NOT EXISTS generation_insights (
+        id BIGSERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        concept_mode TEXT NOT NULL,
+        tone_preference TEXT NOT NULL,
+        audience_level TEXT NOT NULL,
+        estimated_satisfaction NUMERIC(3,2) NOT NULL DEFAULT 0.5,
+        sections_edited JSONB NOT NULL DEFAULT '[]'::jsonb,
+        quality_score NUMERIC(5,2),
+        cost_cents INTEGER,
+        provider_used TEXT,
+        model_used TEXT,
+        query_preview TEXT,
+        was_saved BOOLEAN NOT NULL DEFAULT false,
+        metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+        generated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        tracked_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `
+
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_generation_insights_user_id
+        ON generation_insights (user_id)
+    `
+
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_generation_insights_user_tracked
+        ON generation_insights (user_id, tracked_at DESC)
+    `
+
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_generation_insights_concept_mode
+        ON generation_insights (user_id, concept_mode)
+    `
+
+    await sql`
+      CREATE TABLE IF NOT EXISTS user_style_feedback (
+        id BIGSERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        generation_id BIGINT REFERENCES generation_insights(id) ON DELETE SET NULL,
+        quality_rating INTEGER NOT NULL CHECK (quality_rating >= 1 AND quality_rating <= 5),
+        tone_fit INTEGER CHECK (tone_fit IS NULL OR (tone_fit >= 1 AND tone_fit <= 5)),
+        audience_match INTEGER CHECK (audience_match IS NULL OR (audience_match >= 1 AND audience_match <= 5)),
+        originality INTEGER CHECK (originality IS NULL OR (originality >= 1 AND originality <= 5)),
+        comment TEXT,
+        used_in_production BOOLEAN DEFAULT false,
+        outcome_metric TEXT,
+        outcome_value NUMERIC(10,2),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `
+
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_user_style_feedback_user_id
+        ON user_style_feedback (user_id)
+    `
+
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_user_style_feedback_generation_id
+        ON user_style_feedback (generation_id)
+    `
+
     await sql`
       CREATE TABLE IF NOT EXISTS sentinel_provider_routing (
         module_name TEXT PRIMARY KEY,
