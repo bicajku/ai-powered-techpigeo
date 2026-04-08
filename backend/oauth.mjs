@@ -1,5 +1,6 @@
 import { getSql } from './db.mjs';
 import { signToken } from './auth.mjs';
+import crypto from 'node:crypto';
 
 // Get base URL for redirects
 const getBaseUrl = () => {
@@ -179,6 +180,7 @@ async function processOAuthUser(profile) {
     // 2. Create new user
     const newUser = await sql`
       INSERT INTO sentinel_users (
+        id,
         email, 
         full_name, 
         role, 
@@ -187,6 +189,7 @@ async function processOAuthUser(profile) {
         google_id,
         github_id
       ) VALUES (
+        ${crypto.randomUUID()},
         ${profile.email}, 
         ${profile.fullName}, 
         'USER', 
@@ -198,11 +201,38 @@ async function processOAuthUser(profile) {
       RETURNING *
     `;
     user = newUser[0];
+
+    // 3. Bootstrap a personal org for this user
+    const orgId = crypto.randomUUID();
+    await sql`
+      INSERT INTO sentinel_organizations (id, name, tier, admin_user_id)
+      VALUES (${orgId}, ${profile.fullName + "'s Workspace"}, 'BASIC', ${user.id})
+    `;
+
+    // Link user to org
+    await sql`
+      UPDATE sentinel_users
+      SET organization_id = ${orgId}, updated_at = NOW()
+      WHERE id = ${user.id}
+    `;
+    user.organization_id = orgId;
+
+    // 4. Create a 7-day BASIC trial subscription
+    const trialExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    const subId = crypto.randomUUID();
+    await sql`
+      INSERT INTO sentinel_user_subscriptions
+        (id, user_id, organization_id, tier, status, assigned_by, expires_at, auto_renew)
+      VALUES
+        (${subId}, ${user.id}, ${orgId}, 'BASIC', 'ACTIVE', ${user.id}, ${trialExpiresAt}::TIMESTAMPTZ, false)
+    `;
+
+    console.log(`[oauth] New user provisioned: ${profile.email} | org: ${orgId} | trial expires: ${trialExpiresAt}`);
   }
 
   // Get subscription for token
   const subRows = await sql`SELECT sentinel_subscriptions.tier FROM sentinel_subscriptions JOIN sentinel_organizations ON sentinel_organizations.subscription_id = sentinel_subscriptions.id WHERE sentinel_organizations.id = ${user.organization_id} LIMIT 1`;
-  const tier = subRows.length > 0 ? subRows[0].tier : null;
+  const tier = subRows.length > 0 ? subRows[0].tier : 'BASIC';
 
   // 3. Generate token using the existing signToken function
   const token = signToken({
