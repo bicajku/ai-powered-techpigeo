@@ -113,9 +113,13 @@ export async function sentinelQuery(
   const copilotReadyRaw = isCopilotConfigured()
   const envConfig = getEnvConfig()
   const moduleName = options?.module || "global"
+  const sparkRuntimeAvailable =
+    typeof window !== "undefined" &&
+    (window as unknown as { __SPARK_RUNTIME__?: boolean }).__SPARK_RUNTIME__ === true
   const backendMode =
     envConfig.useBackendLlm ||
     Boolean(envConfig.backendApiBaseUrl) ||
+    !sparkRuntimeAvailable ||
     moduleName === "rag_chat" ||
     moduleName === "ngo_module" ||
     moduleName === "humanizer"
@@ -390,6 +394,15 @@ export async function sentinelQuery(
     } catch (err) {
       console.warn("Backend LLM generation failed:", err)
       providerErrors.push(`backend: ${err instanceof Error ? err.message : String(err)}`)
+
+      // In non-Spark runtime environments, client-side provider calls are blocked/unavailable.
+      // Do not continue to browser-direct fallbacks after backend failure.
+      if (!sparkRuntimeAvailable) {
+        const detail = providerErrors.length > 0
+          ? ` Failures: ${providerErrors.join(" | ")}`
+          : ""
+        throw new Error(`Backend LLM generation failed and client fallbacks are disabled.${detail}`)
+      }
     }
   }
   
