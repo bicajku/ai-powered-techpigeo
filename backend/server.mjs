@@ -69,6 +69,14 @@ import {
   upsertProviderRoutingConfig,
   getProviderUsageSummary,
   getProviderBudgetSnapshot,
+  createSkillRegistryEntry,
+  listSkillRegistryEntries,
+  getSkillRegistryEntryById,
+  upsertSkillBinding,
+  listSkillBindings,
+  getSkillBinding,
+  createSkillExecutionLog,
+  listSkillExecutionLogs,
 } from "./db.mjs"
 import {
   canPerformAction,
@@ -143,10 +151,6 @@ const TOKEN_BLOCKLIST_MAX = 10000
 
 const SKILL_UPLOAD_DIR = process.env.SKILL_UPLOAD_DIR || path.join(__dirname, ".skill_uploads")
 const MAX_SKILL_ZIP_BYTES = Number(process.env.MAX_SKILL_ZIP_BYTES || 5 * 1024 * 1024)
-const SKILL_EXECUTION_LOG_LIMIT = 500
-const _skillRegistry = new Map() // skillId -> skill
-const _skillBindings = new Map() // moduleName -> { moduleName, skillId, enabled, mode, rolloutPercent, updatedAt, updatedBy }
-const _skillExecutionLogs = [] // in-memory ring buffer
 
 function ensureSkillUploadDir() {
   if (!fs.existsSync(SKILL_UPLOAD_DIR)) {
@@ -228,13 +232,6 @@ function createHumanizedPreview(text = "") {
     .replace(/\bLet'?s dive in\b:?\s*/gi, "")
     .replace(/\bHere'?s what you need to know\b:?\s*/gi, "")
     .replace(/\*\*([^*]+)\*\*\s*:/g, "$1:")
-}
-
-function pushSkillExecutionLog(log) {
-  _skillExecutionLogs.push(log)
-  if (_skillExecutionLogs.length > SKILL_EXECUTION_LOG_LIMIT) {
-    _skillExecutionLogs.splice(0, _skillExecutionLogs.length - SKILL_EXECUTION_LOG_LIMIT)
-  }
 }
 
 function revokeToken(tokenHash, expiresAt) {
@@ -2105,21 +2102,19 @@ async function handleSkillsUpload(req, res, user) {
     const entries = readZipEntries(storedZipPath)
     const manifest = readSkillManifestFromZip(storedZipPath, entries)
 
-    const record = {
+    const record = await createSkillRegistryEntry({
       id: skillId,
       name: manifest.skillName,
       version: manifest.version,
       description: manifest.description,
       uploadedBy: user.userId,
-      uploadedAt: Date.now(),
       fileName,
       storedZipPath,
       entriesCount: entries.length,
       manifestPath: manifest.manifestPath,
       frontmatter: manifest.frontmatter,
       status: "validated",
-    }
-    _skillRegistry.set(skillId, record)
+    })
 
     await writeAuditLog({
       userId: user.userId,
@@ -2139,7 +2134,7 @@ async function handleSkillsUpload(req, res, user) {
         version: record.version,
         description: record.description,
         uploadedBy: record.uploadedBy,
-        uploadedAt: record.uploadedAt,
+        uploadedAt: record.createdAt,
         status: record.status,
       },
     }, req)
@@ -2155,20 +2150,18 @@ async function handleSkillsList(req, res, user, url) {
   }
 
   const moduleFilter = url.searchParams.get("module") || ""
-  const skills = Array.from(_skillRegistry.values()).map((s) => ({
+  const skillRows = await listSkillRegistryEntries({ limit: 200 })
+  const skills = skillRows.map((s) => ({
     id: s.id,
     name: s.name,
     version: s.version,
     description: s.description,
     uploadedBy: s.uploadedBy,
-    uploadedAt: s.uploadedAt,
+    uploadedAt: s.createdAt,
     status: s.status,
   }))
 
-  const bindings = Array.from(_skillBindings.values())
-  const filteredBindings = moduleFilter
-    ? bindings.filter((b) => b.moduleName === moduleFilter)
-    : bindings
+  const filteredBindings = await listSkillBindings({ moduleName: moduleFilter || undefined })
 
   return sendJson(res, 200, { ok: true, skills, bindings: filteredBindings }, req)
 }
@@ -2189,20 +2182,23 @@ async function handleSkillsBind(req, res, user) {
   const rolloutPercent = Math.max(0, Math.min(100, Number(parsed.data?.rolloutPercent ?? 0)))
 
   if (!moduleName) return sendJson(res, 400, { ok: false, error: "moduleName required" }, req)
-  if (!skillId || !_skillRegistry.has(skillId)) {
+  if (!skillId) {
     return sendJson(res, 404, { ok: false, error: "skillId not found" }, req)
   }
 
-  const binding = {
+  const skill = await getSkillRegistryEntryById(skillId)
+  if (!skill) {
+    return sendJson(res, 404, { ok: false, error: "skillId not found" }, req)
+  }
+
+  const binding = await upsertSkillBinding({
     moduleName,
-    skillId,
+    skillId: skill.id,
     enabled,
     mode,
     rolloutPercent,
-    updatedAt: Date.now(),
     updatedBy: user.userId,
-  }
-  _skillBindings.set(moduleName, binding)
+  })
 
   await writeAuditLog({
     userId: user.userId,
@@ -2233,16 +2229,15 @@ async function handleSkillsShadowEvaluate(req, res, user) {
     return sendJson(res, 400, { ok: false, error: "output is required" }, req)
   }
 
-  const binding = _skillBindings.get(moduleName)
-  const skill = binding ? _skillRegistry.get(binding.skillId) : null
+  const binding = await getSkillBinding(moduleName)
+  const skill = binding?.skillId ? await getSkillRegistryEntryById(binding.skillId) : null
   const before = scoreAiSignals(originalOutput)
   const preview = createHumanizedPreview(originalOutput)
   const after = scoreAiSignals(preview)
   const changed = preview !== originalOutput
 
-  const log = {
+  const log = await createSkillExecutionLog({
     id: crypto.randomUUID(),
-    at: Date.now(),
     moduleName,
     skillId: skill?.id || null,
     skillName: skill?.name || null,
@@ -2252,8 +2247,11 @@ async function handleSkillsShadowEvaluate(req, res, user) {
     aiSignalAfter: after,
     actor: user.userId,
     inputPreview: sourceInput.slice(0, 220),
-  }
-  pushSkillExecutionLog(log)
+    metadata: {
+      shadowMode: true,
+      rolloutPercent: binding?.rolloutPercent ?? 0,
+    },
+  })
 
   return sendJson(res, 200, {
     ok: true,
@@ -2277,9 +2275,7 @@ async function handleSkillsLogs(req, res, user, url) {
   }
   const moduleFilter = url.searchParams.get("module") || ""
   const limit = Math.max(1, Math.min(200, Number(url.searchParams.get("limit") || 50)))
-  const logs = moduleFilter
-    ? _skillExecutionLogs.filter((x) => x.moduleName === moduleFilter).slice(-limit).reverse()
-    : _skillExecutionLogs.slice(-limit).reverse()
+  const logs = await listSkillExecutionLogs({ moduleName: moduleFilter || undefined, limit })
   return sendJson(res, 200, { ok: true, logs }, req)
 }
 
