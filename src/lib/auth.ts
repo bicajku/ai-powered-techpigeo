@@ -423,6 +423,30 @@ export const authService = {
 
   async getCurrentUser(): Promise<UserProfile | null> {
     try {
+      // If a sentinel OAuth token is present in localStorage, it means the user just logged
+      // in via Google/GitHub OAuth (or has an active sentinel session). Always verify and
+      // return that user FIRST — before consulting the Spark KV store — so that the OAuth
+      // user is never shadowed by a stale KV-stored admin/previous session.
+      try {
+        const localToken = localStorage.getItem("sentinel-auth-token")
+        if (localToken) {
+          const sentinelSession = await sentinelAuth.getSession()
+          if (sentinelSession?.user) {
+            const kv = getSafeKVClient()
+            const users = await kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
+            const existingUser = findStoredUserBySentinelUser(users, sentinelSession.user)
+            const normalized = mergeUserProfileWithStoredState(sentinelSession.user, existingUser)
+            users[normalized.id] = normalized
+            await kv.set(USERS_STORAGE_KEY, users)
+            await kv.set(CURRENT_USER_KEY, normalized.id)
+            saveCurrentUserIdLocal(normalized.id)
+            return normalized
+          }
+        }
+      } catch {
+        // Sentinel token check failed — fall through to KV lookup
+      }
+
       const kv = getSafeKVClient()
       const kvCurrentUserId = await kv.get<string>(CURRENT_USER_KEY)
       const currentUserId = kvCurrentUserId || getCurrentUserIdLocal()
