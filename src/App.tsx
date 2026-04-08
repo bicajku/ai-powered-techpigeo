@@ -538,6 +538,28 @@ function App() {
     memoryContext: string,
     qaFeedback?: string
   ): Promise<{ result: MarketingResult; modelUsed: string }> => {
+    const parseEmbeddedJsonString = (raw: string): MarketingResult | null => {
+      try {
+        let candidate = String(raw || "").trim()
+        if (candidate.startsWith("```json")) {
+          candidate = candidate.replace(/^```json\s*/, "").replace(/```\s*$/, "")
+        } else if (candidate.startsWith("```")) {
+          candidate = candidate.replace(/^```\s*/, "").replace(/```\s*$/, "")
+        }
+
+        const firstBrace = candidate.indexOf("{")
+        const lastBrace = candidate.lastIndexOf("}")
+        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+          candidate = candidate.substring(firstBrace, lastBrace + 1)
+        }
+
+        const parsed = JSON.parse(candidate) as MarketingResult
+        return parsed && typeof parsed === "object" ? parsed : null
+      } catch {
+        return null
+      }
+    }
+
     if (typeof spark === "undefined") {
       const error = new Error("Spark API is not available. Please refresh the page.")
       await logError("Spark API unavailable", error, "system", "critical", user?.id)
@@ -601,7 +623,7 @@ Keep each value concise. Do NOT use newlines inside string values. Return ONLY v
 
     // Handle already-parsed object responses defensively.
     if (typeof response === "object" && response !== null) {
-      const parsedResult = response as unknown as MarketingResult
+      let parsedResult = response as unknown as MarketingResult
       
       // Validate that it has the expected shape
       if (!parsedResult.marketingCopy && !parsedResult.visualStrategy && !parsedResult.targetAudience) {
@@ -613,6 +635,13 @@ Keep each value concise. Do NOT use newlines inside string values. Return ONLY v
           const nested = responseObj[keys[0]] as MarketingResult
           if (nested.marketingCopy || nested.visualStrategy) {
             return { result: nested, modelUsed }
+          }
+        }
+
+        if (typeof responseObj.text === "string") {
+          const nestedFromText = parseEmbeddedJsonString(responseObj.text)
+          if (nestedFromText?.marketingCopy || nestedFromText?.visualStrategy) {
+            parsedResult = nestedFromText
           }
         }
       }
@@ -722,6 +751,21 @@ Keep each value concise. Do NOT use newlines inside string values. Return ONLY v
         )
         
         throw parseError
+      }
+    }
+
+    if (
+      parsedResult &&
+      typeof parsedResult === "object" &&
+      !parsedResult.marketingCopy &&
+      !parsedResult.visualStrategy
+    ) {
+      const payloadText = (parsedResult as unknown as Record<string, unknown>).text
+      if (typeof payloadText === "string") {
+        const nestedFromText = parseEmbeddedJsonString(payloadText)
+        if (nestedFromText) {
+          parsedResult = nestedFromText
+        }
       }
     }
     

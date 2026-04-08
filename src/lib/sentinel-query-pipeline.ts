@@ -113,7 +113,12 @@ export async function sentinelQuery(
   const copilotReadyRaw = isCopilotConfigured()
   const envConfig = getEnvConfig()
   const moduleName = options?.module || "global"
-  const backendMode = envConfig.useBackendLlm || moduleName === "rag_chat" || moduleName === "ngo_module" || moduleName === "humanizer"
+  const backendMode =
+    envConfig.useBackendLlm ||
+    Boolean(envConfig.backendApiBaseUrl) ||
+    moduleName === "rag_chat" ||
+    moduleName === "ngo_module" ||
+    moduleName === "humanizer"
   const geminiReady = geminiReadyRaw
   const copilotReady = copilotReadyRaw
   const threadId = options?.threadId

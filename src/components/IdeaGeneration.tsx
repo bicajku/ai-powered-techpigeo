@@ -111,6 +111,23 @@ export function IdeaGeneration({ userId, user }: IdeaGenerationProps) {
   }
 
   const cleanJsonResponse = (raw: unknown): unknown => {
+    // Unwrap common provider shape: { text: "{...json...}" }
+    if (
+      typeof raw === "object" &&
+      raw !== null &&
+      "text" in (raw as Record<string, unknown>) &&
+      typeof (raw as Record<string, unknown>).text === "string"
+    ) {
+      try {
+        const parsedNested = JSON.parse((raw as Record<string, unknown>).text as string)
+        if (typeof parsedNested === "object" && parsedNested !== null) {
+          return parsedNested
+        }
+      } catch {
+        // Fall through to generic cleanup path below.
+      }
+    }
+
     // If spark.llm already parsed the response (parseJson: true), return as-is
     if (typeof raw === "object" && raw !== null) {
       return raw
