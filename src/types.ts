@@ -285,6 +285,7 @@ export interface HumanizerCandidateReview {
     preservationScore: number
     variationScore: number
     readabilityScore: number
+    aiPatternScore?: number
     overallScore: number
     notes: string[]
   }

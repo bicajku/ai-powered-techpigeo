@@ -67,6 +67,7 @@ type HumanizerBehaviorSettings = {
   readabilityGrade: number
   humanVariance: "low" | "medium" | "high"
   riskMode: "safe" | "balanced" | "aggressive"
+  skillProfile: "balanced-v1" | "wikipedia-v2.5.1"
 }
 
 type HumanizerDraft = {
@@ -139,6 +140,28 @@ const DEFAULT_HUMANIZER_SETTINGS: HumanizerBehaviorSettings = {
   readabilityGrade: 8,
   humanVariance: "medium",
   riskMode: "balanced",
+  skillProfile: "wikipedia-v2.5.1",
+}
+
+function getHumanizerSkillLabel(profile: HumanizerBehaviorSettings["skillProfile"]): string {
+  if (profile === "wikipedia-v2.5.1") return "Wikipedia signals v2.5.1"
+  return "Balanced default"
+}
+
+function buildHumanizerSkillDirective(profile: HumanizerBehaviorSettings["skillProfile"]): string {
+  if (profile !== "wikipedia-v2.5.1") {
+    return "Use a balanced rewrite strategy that prioritizes clarity, natural rhythm, and meaning preservation."
+  }
+
+  return `Use the Wikipedia-signals humanizer strategy:
+- Remove inflated significance language, generic hype, and vague authority claims
+- Reduce AI-isms such as formulaic transitions (furthermore/moreover/in conclusion)
+- Avoid signposting phrases (let's dive in, here's what you need to know)
+- Avoid forced rhetorical structures (not only... but also, it's not just...)
+- Reduce em-dash overuse, emoji bullets, and bold-heading list artifacts
+- Prefer direct constructions (is/are/has) over ornate substitutes
+- Preserve concrete facts, numbers, named entities, qualifiers, and citations
+- After drafting each candidate, run a brief anti-AI self-audit and tighten the rewrite once more`
 }
 
 interface PlagiarismCheckerProps {
@@ -1608,6 +1631,10 @@ Behavior controls:
 - Readability target grade: ${humanizerSettings.readabilityGrade}
 - Human variance level: ${humanizerSettings.humanVariance}
 - Risk mode: ${humanizerSettings.riskMode}
+- Skill profile: ${getHumanizerSkillLabel(humanizerSettings.skillProfile)}
+
+Skill directives:
+${buildHumanizerSkillDirective(humanizerSettings.skillProfile)}
 
 Instructions:
 - Remove robotic or overly formal language
@@ -1658,6 +1685,7 @@ Return ONLY a valid JSON object:
       const parsed = parseHumanizerResponse(response)
       const candidateInputs = parsed.candidates.map((candidate, index) => ({
         ...candidate,
+        strategy: candidate.strategy || getHumanizerSkillLabel(humanizerSettings.skillProfile),
         id: `candidate-${index + 1}`,
       }))
       const serverRanking = await rankHumanizerCandidatesOnServer(text, candidateInputs)
@@ -2211,7 +2239,16 @@ Return ONLY a valid JSON object:
                   <Badge variant="outline">Two-stage flow: Analyze -&gt; Optimize</Badge>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-2">
+                  <select
+                    value={humanizerSettings.skillProfile}
+                    onChange={(e) => setHumanizerSettings((current) => ({ ...current, skillProfile: e.target.value as HumanizerBehaviorSettings["skillProfile"] }))}
+                    className="h-9 rounded border border-input bg-background px-2 text-xs"
+                  >
+                    <option value="wikipedia-v2.5.1">Skill: Wikipedia signals</option>
+                    <option value="balanced-v1">Skill: Balanced default</option>
+                  </select>
+
                   <select
                     value={humanizerSettings.tone}
                     onChange={(e) => setHumanizerSettings((current) => ({ ...current, tone: e.target.value as HumanizerBehaviorSettings["tone"] }))}
@@ -3078,6 +3115,10 @@ Return ONLY a valid JSON object:
                               <div className="rounded border border-border p-2">
                                 <p className="text-muted-foreground">Similarity</p>
                                 <p className={`font-semibold ${getRiskColorClass(candidate.scores.similarityRisk)}`}>{candidate.scores.similarityRisk}%</p>
+                              </div>
+                              <div className="rounded border border-border p-2 col-span-2">
+                                <p className="text-muted-foreground">AI pattern score</p>
+                                <p className="font-semibold text-foreground">{candidate.scores.aiPatternScore ?? "--"}%</p>
                               </div>
                             </div>
                             <p className="text-xs text-muted-foreground line-clamp-5">{candidate.humanizedText}</p>

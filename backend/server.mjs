@@ -745,6 +745,30 @@ function calculateReadabilityBalance(text) {
   return 60
 }
 
+function calculateAiPatternScore(text) {
+  const normalized = String(text || "").trim()
+  if (!normalized) return 0
+
+  const checks = [
+    /\b(in conclusion|furthermore|moreover|in addition|therefore)\b/gi,
+    /\b(let'?s dive in|here'?s what you need to know|without further ado)\b/gi,
+    /\b(testament|pivotal|landscape|intricate|showcasing|underscores?)\b/gi,
+    /\bit'?s not just\b/gi,
+    /\b(not only .* but also)\b/gi,
+    /\b(could potentially|possibly be argued|based on available information)\b/gi,
+    /\b(cross-functional|data-driven|client-facing|end-to-end|high-quality)\b/gi,
+    /—/g,
+    /\*\*[^*]+\*\*/g,
+    /[\u{1F300}-\u{1FAFF}]/gu,
+  ]
+
+  const totalHits = checks.reduce((sum, regex) => sum + (normalized.match(regex)?.length || 0), 0)
+  const words = normalized.split(/\s+/).filter(Boolean).length
+  const density = words > 0 ? (totalHits / words) * 100 : 0
+  const risk = Math.min(100, Math.round(totalHits * 7 + density * 6))
+  return Math.max(1, 100 - risk)
+}
+
 function scoreHumanizerCandidate(originalText, candidateText) {
   const candidateMeters = estimateHumanizerMeters(candidateText)
   const overlap = calculateTokenOverlap(originalText, candidateText)
@@ -763,15 +787,17 @@ function scoreHumanizerCandidate(originalText, candidateText) {
     Math.min(100, Math.round((100 - candidateMeters.aiLikelihood) * 0.6 + (100 - candidateMeters.similarityRisk) * 0.4))
   )
   const readabilityScore = calculateReadabilityBalance(candidateText)
+  const aiPatternScore = calculateAiPatternScore(candidateText)
   const overallScore = Math.max(
     1,
-    Math.min(99, Math.round(preservationScore * 0.42 + variationScore * 0.4 + readabilityScore * 0.18))
+    Math.min(99, Math.round(preservationScore * 0.36 + variationScore * 0.3 + readabilityScore * 0.14 + aiPatternScore * 0.2))
   )
 
   const notes = []
   if (candidateMeters.aiLikelihood <= 35) notes.push("Lower detector-pattern estimate")
   if (candidateMeters.similarityRisk <= 35) notes.push("Lower surface-similarity estimate")
   if (preservationScore >= 75) notes.push("Meaning preservation stayed strong")
+  if (aiPatternScore >= 75) notes.push("Lower AI-writing signal density")
   if (readabilityScore >= 85) notes.push("Sentence flow stayed balanced")
 
   return {
@@ -779,6 +805,7 @@ function scoreHumanizerCandidate(originalText, candidateText) {
     preservationScore: clampScore(preservationScore),
     variationScore: clampScore(variationScore),
     readabilityScore: clampScore(readabilityScore),
+    aiPatternScore: clampScore(aiPatternScore),
     overallScore,
     notes: notes.slice(0, 3),
   }

@@ -9,6 +9,7 @@ export interface HumanizerCandidateScore extends HumanizerMeterScores {
   preservationScore: number
   variationScore: number
   readabilityScore: number
+  aiPatternScore: number
   overallScore: number
   notes: string[]
 }
@@ -60,6 +61,32 @@ function calculateReadabilityBalance(text: string): number {
   return 60
 }
 
+function calculateAiPatternScore(text: string): number {
+  const normalized = text.trim()
+  if (!normalized) {
+    return 0
+  }
+
+  const checks = [
+    /\b(in conclusion|furthermore|moreover|in addition|therefore)\b/gi,
+    /\b(let'?s dive in|here'?s what you need to know|without further ado)\b/gi,
+    /\b(testament|pivotal|landscape|intricate|showcasing|underscores?)\b/gi,
+    /\bit'?s not just\b/gi,
+    /\b(not only .* but also)\b/gi,
+    /\b(could potentially|possibly be argued|based on available information)\b/gi,
+    /\b(cross-functional|data-driven|client-facing|end-to-end|high-quality)\b/gi,
+    /—/g,
+    /\*\*[^*]+\*\*/g,
+    /[\u{1F300}-\u{1FAFF}]/gu,
+  ]
+
+  const totalHits = checks.reduce((sum, regex) => sum + (normalized.match(regex)?.length || 0), 0)
+  const words = normalized.split(/\s+/).filter(Boolean).length
+  const density = words > 0 ? (totalHits / words) * 100 : 0
+  const risk = Math.min(100, Math.round(totalHits * 7 + density * 6))
+  return Math.max(1, 100 - risk)
+}
+
 export function scoreHumanizerCandidate(originalText: string, candidateText: string): HumanizerCandidateScore {
   const candidateMeters = estimateHumanizerMeters(candidateText)
   const overlap = calculateTokenOverlap(originalText, candidateText)
@@ -82,14 +109,16 @@ export function scoreHumanizerCandidate(originalText: string, candidateText: str
   )
 
   const readabilityScore = calculateReadabilityBalance(candidateText)
+  const aiPatternScore = calculateAiPatternScore(candidateText)
   const overallScore = Math.max(
     1,
     Math.min(
       99,
       Math.round(
-        preservationScore * 0.42 +
-        variationScore * 0.4 +
-        readabilityScore * 0.18
+        preservationScore * 0.36 +
+        variationScore * 0.3 +
+        readabilityScore * 0.14 +
+        aiPatternScore * 0.2
       )
     )
   )
@@ -98,6 +127,7 @@ export function scoreHumanizerCandidate(originalText: string, candidateText: str
   if (candidateMeters.aiLikelihood <= 35) notes.push("Lower detector-pattern estimate")
   if (candidateMeters.similarityRisk <= 35) notes.push("Lower surface-similarity estimate")
   if (preservationScore >= 75) notes.push("Meaning preservation stayed strong")
+  if (aiPatternScore >= 75) notes.push("Lower AI-writing signal density")
   if (readabilityScore >= 85) notes.push("Sentence flow stayed balanced")
 
   return {
@@ -105,6 +135,7 @@ export function scoreHumanizerCandidate(originalText: string, candidateText: str
     preservationScore: clampScore(preservationScore),
     variationScore: clampScore(variationScore),
     readabilityScore: clampScore(readabilityScore),
+    aiPatternScore: clampScore(aiPatternScore),
     overallScore,
     notes: notes.slice(0, 3),
   }
@@ -338,6 +369,11 @@ export async function rankHumanizerCandidatesOnServer<T extends { id?: string; h
           preservationScore: clampScore(entry.scores.preservationScore),
           variationScore: clampScore(entry.scores.variationScore),
           readabilityScore: clampScore(entry.scores.readabilityScore),
+          aiPatternScore: clampScore(
+            typeof entry.scores.aiPatternScore === "number"
+              ? entry.scores.aiPatternScore
+              : 100 - Math.round((entry.scores.aiLikelihood + entry.scores.similarityRisk) / 2)
+          ),
           overallScore: clampScore(entry.scores.overallScore),
           notes: Array.isArray(entry.scores.notes) ? entry.scores.notes : [],
         },
