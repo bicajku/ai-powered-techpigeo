@@ -310,7 +310,7 @@ CRITICAL: Return ONLY valid JSON with no markdown, no code blocks, no explanator
             matchMyVoice: postProcessSettings.matchMyVoice,
             voiceSample: postProcessSettings.voiceSample,
             postProcessProfile: postProcessSettings.postProcessProfile,
-            userId: user?.id ? parseInt(user.id) || undefined : undefined,
+            userId: user?.id || undefined,
             enableQualityGate: true,
             userInputForQualityGate: ideaInput,
             qualityGateProfile: "balanced",
@@ -415,7 +415,7 @@ CRITICAL: Return ONLY valid JSON with no markdown formatting.`
         try {
           const res = await sentinelQuery(strPrompt, {
             module: "idea-generation-canvas",
-            userId: user?.id ? parseInt(user.id) || undefined : undefined,
+            userId: user?.id || undefined,
             enableQualityGate: true,
             userInputForQualityGate: cookedIdea.refinedIdea,
             qualityGateProfile: "balanced",
@@ -522,7 +522,7 @@ CRITICAL: Return ONLY valid JSON with no markdown.`
         try {
           const res = await sentinelQuery(strPrompt, {
             module: "idea-generation-pitchdeck",
-            userId: user?.id ? parseInt(user.id) || undefined : undefined,
+            userId: user?.id || undefined,
             enableQualityGate: true,
             userInputForQualityGate: cookedIdea.refinedIdea,
             qualityGateProfile: "balanced",

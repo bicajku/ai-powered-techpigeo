@@ -1694,23 +1694,57 @@ Return ONLY a valid JSON object:
   ]
 }`
 
+      const waitForAuthToken = async (timeoutMs = 1500) => {
+        const startedAt = Date.now()
+        while (Date.now() - startedAt < timeoutMs) {
+          const token = localStorage.getItem("sentinel-auth-token") || localStorage.getItem("sentinel_token")
+          if (token) return true
+          await new Promise((resolve) => setTimeout(resolve, 100))
+        }
+        return false
+      }
+
+      const runHumanizerQuery = async () => sentinelQuery(strPrompt, {
+        module: "humanizer",
+        userId: user?.id || undefined,
+        enableQualityGate: true,
+        userInputForQualityGate: text,
+        qualityGateProfile: "lenient",
+      })
+
       let response: unknown
       try {
-        const res = await sentinelQuery(strPrompt, {
-          module: "humanizer",
-          userId: user?.id ? parseInt(user.id) || undefined : undefined,
-          enableQualityGate: true,
-          userInputForQualityGate: text,
-          qualityGateProfile: "lenient",
-        })
+        const res = await runHumanizerQuery()
         if (res.status === "needs_clarification") {
           toast.error(res.response || "Please provide clearer text for humanization.")
           return
         }
-        response = typeof res.response === 'string' ? res.response : JSON.stringify(res.response)
+        response = typeof res.response === "string" ? res.response : JSON.stringify(res.response)
       } catch (err) {
-        console.error("Humanizer sentinelQuery failed:", err)
-        throw new Error("AI service unavailable. Please try again.")
+        const message = err instanceof Error ? err.message : String(err)
+        const authError = message.toLowerCase().includes("authentication required") || message.toLowerCase().includes("unauthorized")
+
+        if (authError) {
+          const tokenReady = await waitForAuthToken()
+          if (tokenReady) {
+            try {
+              const retryRes = await runHumanizerQuery()
+              if (retryRes.status === "needs_clarification") {
+                toast.error(retryRes.response || "Please provide clearer text for humanization.")
+                return
+              }
+              response = typeof retryRes.response === "string" ? retryRes.response : JSON.stringify(retryRes.response)
+            } catch (retryErr) {
+              console.error("Humanizer retry failed:", retryErr)
+              throw new Error("Authentication/session issue while contacting Humanizer. Please refresh and try again.")
+            }
+          } else {
+            throw new Error("Authentication/session is not ready yet. Please try again in a moment.")
+          }
+        } else {
+          console.error("Humanizer sentinelQuery failed:", err)
+          throw new Error("AI service unavailable. Please try again.")
+        }
       }
 
       const parsed = parseHumanizerResponse(response)
@@ -1796,7 +1830,8 @@ Return ONLY a valid JSON object:
       toast.success(`Best rewrite candidate selected from ${rankedCandidates.length} options.${selectionNote} ${remainingCredits} Pro credits left.`)
     } catch (error) {
       console.error("Humanization error:", error)
-      toast.error("Failed to humanize text. Please try again.")
+      const message = error instanceof Error ? error.message : "Failed to humanize text. Please try again."
+      toast.error(message)
     } finally {
       setIsHumanizing(false)
     }

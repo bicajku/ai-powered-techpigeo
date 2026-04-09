@@ -54,6 +54,32 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
   const chatScrollRef = useRef<HTMLDivElement | null>(null)
 
+  const waitForAuthToken = async (timeoutMs = 1500) => {
+    const startedAt = Date.now()
+    while (Date.now() - startedAt < timeoutMs) {
+      const token = localStorage.getItem("sentinel-auth-token") || localStorage.getItem("sentinel_token")
+      if (token) return true
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+    return false
+  }
+
+  const isAuthError = (error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error)
+    const lower = message.toLowerCase()
+    return lower.includes("authentication required") || lower.includes("unauthorized") || lower.includes("forbidden")
+  }
+
+  const getReadableError = (error: unknown, fallback: string) => {
+    const message = error instanceof Error ? error.message : String(error)
+    if (!message || message === "[object Object]") return fallback
+    if (isAuthError(error)) return "Session expired. Please refresh and sign in again."
+    if (message.toLowerCase().includes("no ai provider configured")) {
+      return "AI provider is not configured. Please contact admin."
+    }
+    return message
+  }
+
   const scrollToTop = () => {
     chatScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" })
   }
@@ -119,16 +145,6 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
   const loadThreads = async () => {
     if (!dbUserId?.trim()) return
 
-    const waitForToken = async (timeoutMs = 1500) => {
-      const startedAt = Date.now()
-      while (Date.now() - startedAt < timeoutMs) {
-        const token = localStorage.getItem("sentinel-auth-token") || localStorage.getItem("sentinel_token")
-        if (token) return true
-        await new Promise((resolve) => setTimeout(resolve, 100))
-      }
-      return false
-    }
-
     setIsLoadingThreads(true)
     try {
       const rows = await listChatThreads({ user_id: dbUserId, limit: 50 })
@@ -142,7 +158,7 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
       const authError = message.toLowerCase().includes("authentication required") || message.toLowerCase().includes("unauthorized")
 
       if (authError) {
-        const tokenReady = await waitForToken()
+        const tokenReady = await waitForAuthToken()
         if (tokenReady) {
           try {
             const retryRows = await listChatThreads({ user_id: dbUserId, limit: 50 })
@@ -193,8 +209,14 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
   }
 
   const handleCreateThread = async () => {
+    if (!dbUserId?.trim()) {
+      toast.error("Session is still loading. Please try again in a moment.")
+      return
+    }
+
     setIsCreatingThread(true)
-    try {
+
+    const createOnce = async () => {
       const thread = await createChatThread({
         user_id: dbUserId,
         module: "rag_chat",
@@ -208,9 +230,26 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
       setSelectedAssistantMessageId(null)
       setMobileTraceOpen(false)
       toast.success("New chat created")
+    }
+
+    try {
+      await createOnce()
     } catch (err) {
       console.error("Failed to create thread:", err)
-      toast.error("Failed to create chat")
+      if (isAuthError(err)) {
+        const tokenReady = await waitForAuthToken()
+        if (tokenReady) {
+          try {
+            await createOnce()
+            return
+          } catch (retryErr) {
+            console.error("Retry failed to create thread:", retryErr)
+            toast.error(getReadableError(retryErr, "Failed to create chat"))
+            return
+          }
+        }
+      }
+      toast.error(getReadableError(err, "Failed to create chat"))
     } finally {
       setIsCreatingThread(false)
     }
@@ -238,10 +277,15 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
   const handleSend = async () => {
     const text = input.trim()
     if (!text || isSending) return
+    if (!dbUserId?.trim()) {
+      toast.error("Session is still loading. Please try again in a moment.")
+      return
+    }
 
     setIsSending(true)
     setInput("")
-    try {
+
+    const sendOnce = async () => {
       const threadId = await ensureActiveThread()
       if (!threadId) {
         throw new Error("Unable to resolve chat thread")
@@ -275,11 +319,28 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
       await loadThreadData(threadId)
       await loadThreads()
       setEditingMessageId(null)
-      // Auto-scroll to bottom after new message
       setTimeout(scrollToBottom, 100)
+    }
+
+    try {
+      await sendOnce()
     } catch (err) {
       console.error("Failed to send message:", err)
-      toast.error("Failed to send message")
+      const authError = isAuthError(err)
+
+      if (authError) {
+        const tokenReady = await waitForAuthToken()
+        if (tokenReady) {
+          try {
+            await sendOnce()
+            return
+          } catch (retryErr) {
+            console.error("Retry failed to send message:", retryErr)
+          }
+        }
+      }
+
+      toast.error(getReadableError(err, "Failed to send message"))
       setInput(text)
     } finally {
       setIsSending(false)

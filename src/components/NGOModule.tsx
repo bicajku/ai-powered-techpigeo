@@ -1096,7 +1096,7 @@ Respond ONLY with valid JSON:
         matchMyVoice: postProcessSettings.matchMyVoice,
         voiceSample: postProcessSettings.voiceSample,
         postProcessProfile: postProcessSettings.postProcessProfile,
-        userId: typeof user?.id === "number" ? user.id : undefined,
+        userId: user?.id || undefined,
         skipCache: true,
         useConsensus: false,
         sparkFallback: async () => {
@@ -1164,7 +1164,7 @@ Respond ONLY with valid JSON:
         matchMyVoice: postProcessSettings.matchMyVoice,
         voiceSample: postProcessSettings.voiceSample,
         postProcessProfile: postProcessSettings.postProcessProfile,
-        userId: typeof user.id === "number" ? user.id : undefined,
+        userId: user.id || undefined,
         userInputForQualityGate: input,
         qualityGateProfile: currentQualityGateProfile,
         skipCache: true,
@@ -1225,7 +1225,7 @@ Respond ONLY with valid JSON:
       if (neonReady) {
         await logQuery({
           module: "ngo_module",
-          user_id: typeof user.id === "number" ? user.id : undefined,
+          user_id: user.id || undefined,
           query_text: `[${activeAction.toUpperCase()}] ${input.substring(0, 200)}`,
           response_json: parsed as unknown as Record<string, unknown>,
           providers_used: res.providers,
@@ -1337,7 +1337,7 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
         matchMyVoice: postProcessSettings.matchMyVoice,
         voiceSample: postProcessSettings.voiceSample,
         postProcessProfile: postProcessSettings.postProcessProfile,
-        userId: typeof user.id === "number" ? user.id : undefined,
+        userId: user.id || undefined,
         userInputForQualityGate: `${reportTitle} ${input}`,
         qualityGateProfile: currentQualityGateProfile,
         skipCache: false,
