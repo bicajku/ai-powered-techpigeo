@@ -99,7 +99,7 @@
         "@playwright/test": "^1.54.2",
         "@tailwindcss/postcss": "^4.1.8",
         "@types/bcrypt": "^6.0.0",
-        "@types/react": "^19.0.10",
+        "@types/react": "^19.2.14",
         "@types/react-dom": "^19.0.4",
         "@vitejs/plugin-react-swc": "^4.2.2",
         "eslint": "^9.39.1",
