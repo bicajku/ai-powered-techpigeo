@@ -1,0 +1,2 @@
+run_id,timestamp,review_profile,review_version,humanizer_version,sample_count,risk_band_accuracy,false_positive_rate,false_negative_rate,stability_variance,evidence_completeness_rate,meaning_preservation_failure_rate
+example-run-001,2026-04-10T00:00:00Z,institutional,review-v2,humanizer-v2,100,0.00,0.00,0.00,0.00,0.00,0.00

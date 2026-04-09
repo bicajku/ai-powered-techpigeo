@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NovusSparks Review and Humanizer Benchmark Record",
+  "type": "object",
+  "required": [
+    "id",
+    "domain",
+    "textLengthBucket",
+    "sourceType",
+    "hasReferences",
+    "knownSimilarityLabel",
+    "knownAiPatternLabel",
+    "expectedRiskBand"
+  ],
+  "properties": {
+    "id": { "type": "string" },
+    "domain": {
+      "type": "string",
+      "enum": ["academic", "marketing", "technical", "policy", "mixed"]
+    },
+    "textLengthBucket": {
+      "type": "string",
+      "enum": ["short", "medium", "long"]
+    },
+    "sourceType": {
+      "type": "string",
+      "enum": ["human", "ai", "mixed", "paraphrased"]
+    },
+    "hasReferences": { "type": "boolean" },
+    "knownSimilarityLabel": {
+      "type": "string",
+      "enum": ["low", "medium", "high"]
+    },
+    "knownAiPatternLabel": {
+      "type": "string",
+      "enum": ["low", "medium", "high"]
+    },
+    "expectedRiskBand": {
+      "type": "string",
+      "enum": ["green", "yellow", "red"]
+    }
+  },
+  "additionalProperties": false
+}

@@ -79,8 +79,8 @@ const PRICING_PLANS = [
       { text: "Dashboard & Timeline", included: true },
       { text: "Save Strategies & Ideas", included: true },
       { text: "3 exports/month", included: true },
-      { text: "Document Review", included: false },
-      { text: "AI Humanizer", included: false },
+      { text: "Guided review preview (limited credits)", included: false },
+      { text: "Single rewrite optimization (limited)", included: false },
       { text: "Team Collaboration", included: false },
     ],
   },
@@ -96,10 +96,10 @@ const PRICING_PLANS = [
     highlighted: true,
     features: [
       { text: "Everything in Basic", included: true },
-      { text: "Document Review & Plagiarism Checker", included: true },
-      { text: "AI Humanize Module", included: true },
+      { text: "Evidence-backed review workspace", included: true },
+      { text: "Multi-candidate rewrite optimization", included: true },
       { text: "50 review credits/month", included: true },
-      { text: "Advanced review filters", included: true },
+      { text: "Profile-based scoring presets (Institutional/Balanced/Strict)", included: true },
       { text: "30 exports/month", included: true },
       { text: "PDF/PPTX exports for all features", included: true },
       { text: "Team Collaboration", included: false },
@@ -126,6 +126,9 @@ const PRICING_PLANS = [
       { text: "Enterprise Project Workspace", included: true },
       { text: "Custom branding & reporting", included: true },
       { text: "Dedicated support", included: true },
+      { text: "Workspace-level auditability and reporting controls", included: true },
+      { text: "Source verification visibility across providers", included: true },
+      { text: "Priority support for scoring/profile calibration", included: true },
     ],
   },
 ]
@@ -232,7 +235,7 @@ export function LandingPage({ user, onBackToDashboard, onNavigate }: LandingPage
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#38bdf8] opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-[#38bdf8]"></span>
             </span>
-            Consensus Mode — Proprietary Multi-Engine Intelligence
+            Evidence-Backed AI Workflow
           </motion.div>
           <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tight mb-4 md:mb-6 leading-[1.1]">
             <span className="bg-clip-text text-transparent bg-gradient-to-r from-white via-gray-100 to-gray-400">The Ultimate AI</span>
@@ -240,7 +243,7 @@ export function LandingPage({ user, onBackToDashboard, onNavigate }: LandingPage
             <span className="bg-clip-text text-transparent bg-gradient-to-r from-[#38bdf8] via-[#6ee7a0] to-[#e5a932]">Business Intelligence Suite</span>
           </h1>
           <p className="text-sm sm:text-base md:text-lg text-gray-400 leading-relaxed max-w-2xl mx-auto">
-            Stop guessing, start knowing. NovusSparks' proprietary <strong className="text-gray-200">RGS Engine, MCP Protocol, and Neural Cortex</strong> work in parallel — cross-validating every insight so you get answers you can actually trust.
+            NovusSparks combines strategy generation, integrity review, AI-pattern detection, and rewrite optimization in one governed workflow. Every review includes evidence signals, provenance notes, and exportable reports so teams can justify decisions, not just generate output.
           </p>
         </motion.div>
 
@@ -478,6 +481,16 @@ export function LandingPage({ user, onBackToDashboard, onNavigate }: LandingPage
           <div className="flex items-center gap-2 mt-4 text-gray-500 text-xs sm:text-sm font-medium">
             <Shield weight="fill" className="text-[#6ee7a0] w-4 h-4" />
             <span>Trusted by forward-thinking enterprises globally.</span>
+          </div>
+
+          <div className="mt-4 w-full max-w-3xl rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-left">
+            <p className="text-[11px] sm:text-xs font-semibold uppercase tracking-wide text-[#6ee7a0] mb-2">Trusted workflow controls</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[11px] sm:text-xs text-gray-400">
+              <p>- Evidence Ledger + Provenance Notes</p>
+              <p>- Profile-versioned review scoring</p>
+              <p>- Source-verification visibility (live/retention-aware paths)</p>
+              <p>- Exportable PDF audit summaries</p>
+            </div>
           </div>
         </motion.div>
       </section>
@@ -725,7 +738,52 @@ export function LandingPage({ user, onBackToDashboard, onNavigate }: LandingPage
               All plans are billed monthly. Need a custom solution?{" "}
               <a href="mailto:admin@novussparks.com" className="text-[#38bdf8] hover:underline">Contact us</a> for tailored enterprise packages.
             </p>
+            <div className="mt-4 space-y-1.5 text-xs sm:text-sm text-gray-400 max-w-3xl mx-auto text-left sm:text-center">
+              <p>- Evidence &gt; guesswork: each score is paired with evidence and provenance context.</p>
+              <p>- Workflow-native integrity: review, optimize, and export inside one session.</p>
+              <p>- Built for teams: profile-based scoring and plan-aware governance controls.</p>
+            </div>
           </motion.div>
+        </div>
+      </section>
+
+      <section id="trust" className="relative z-10 border-t border-white/[0.06] bg-white/[0.02]">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-16 md:py-20">
+          <motion.div className="text-center mb-10" initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}>
+            <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-3">
+              <span className="bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-300">Trust</span>{" "}
+              <span className="bg-clip-text text-transparent bg-gradient-to-r from-[#38bdf8] to-[#6ee7a0]">Center</span>
+            </h2>
+            <p className="text-sm sm:text-base text-gray-400 max-w-3xl mx-auto">
+              Transparent scoring context and exportable review evidence for teams that need accountable AI workflows.
+            </p>
+          </motion.div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {[
+              ["How scoring works", "Review outputs include profile version, confidence context, evidence items, and provenance notes."],
+              ["What is estimated", "Similarity and AI-pattern values are risk estimates designed for triage and quality control."],
+              ["Source verification visibility", "External checks report provider status, live-check capability, retention-awareness, and match evidence."],
+              ["Data handling posture", "Review artifacts are scoped to account/workspace context; processing can use configured backend/AI services."],
+              ["Export auditability", "PDF exports include evidence ledger, scoring context, and provenance summaries."],
+              ["Version transparency", "Scoring behavior is tied to profile/version identifiers to support reproducibility."],
+            ].map(([title, desc]) => (
+              <div key={title} className="rounded-xl border border-white/[0.1] bg-black/20 p-4">
+                <p className="text-sm font-semibold text-white mb-1">{title}</p>
+                <p className="text-xs sm:text-sm text-gray-400">{desc}</p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-6 flex flex-col sm:flex-row gap-3">
+            <Button asChild variant="outline" className="border-white/20 text-gray-200 hover:bg-white/5 bg-transparent">
+              <a href="/privacy">Read Data & Privacy Policy</a>
+            </Button>
+            <Button asChild variant="outline" className="border-white/20 text-gray-200 hover:bg-white/5 bg-transparent">
+              <a href="mailto:admin@novussparks.com?subject=Scoring%20Method%20Notes">View Scoring Method Notes</a>
+            </Button>
+            <Button asChild className="bg-gradient-to-r from-[#38bdf8] to-[#6ee7a0] hover:opacity-90 text-white">
+              <a href="mailto:admin@novussparks.com?subject=Enterprise%20Technical%20Review">Request Enterprise Technical Review</a>
+            </Button>
+          </div>
         </div>
       </section>
 
