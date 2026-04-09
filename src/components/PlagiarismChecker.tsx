@@ -130,6 +130,7 @@ type SemanticGuardrailReport = {
   score: number
   missingAnchors: string[]
   numericDrift: string[]
+  namedEntityDrift: string[]
   negationDrift: boolean
   notes: string[]
 }
@@ -487,16 +488,42 @@ function PlagiarismCheckerInner({ user, mode }: { user: UserProfile; mode: "revi
     return { anchors, numericAnchors, negationCount }
   }
 
+  function extractNamedEntities(input: string) {
+    const tokens = input.match(/\b[A-Z][a-zA-Z0-9'-]{2,}\b/g) || []
+    const skip = new Set([
+      "The", "This", "That", "These", "Those", "And", "But", "For", "With", "From", "Into", "About", "After", "Before", "When", "Where", "While",
+      "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
+      "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December",
+    ])
+
+    const frequency = new Map<string, number>()
+    tokens.forEach((token) => {
+      if (skip.has(token)) return
+      frequency.set(token, (frequency.get(token) || 0) + 1)
+    })
+
+    return Array.from(frequency.entries())
+      .sort((left, right) => right[1] - left[1])
+      .map(([token]) => token)
+      .slice(0, 10)
+  }
+
   function evaluateSemanticGuardrails(original: string, candidate: string): SemanticGuardrailReport {
     const { anchors, numericAnchors, negationCount } = extractSemanticAnchors(original)
+    const namedEntities = extractNamedEntities(original)
     const candidateLower = candidate.toLowerCase()
     const candidateNegations = (candidateLower.match(/\b(no|not|never|without|cannot|can't|won't|n't)\b/g) || []).length
 
     const missingAnchors = anchors.filter((anchor) => !candidateLower.includes(anchor)).slice(0, 6)
     const numericDrift = numericAnchors.filter((token) => !candidate.includes(token))
+    const namedEntityDrift = namedEntities.filter((entity) => !candidate.includes(entity)).slice(0, 4)
     const negationDrift = negationCount > 0 && candidateNegations === 0
 
-    const penalty = missingAnchors.length * 7 + numericDrift.length * 14 + (negationDrift ? 12 : 0)
+    const penalty =
+      missingAnchors.length * 7 +
+      numericDrift.length * 14 +
+      namedEntityDrift.length * 10 +
+      (negationDrift ? 12 : 0)
     const score = clampPercent(100 - penalty)
 
     const notes: string[] = []
@@ -506,6 +533,9 @@ function PlagiarismCheckerInner({ user, mode }: { user: UserProfile; mode: "revi
     if (numericDrift.length > 0) {
       notes.push(`Potential numeric drift: ${numericDrift.join(", ")}`)
     }
+    if (namedEntityDrift.length > 0) {
+      notes.push(`Potential named-entity drift: ${namedEntityDrift.join(", ")}`)
+    }
     if (negationDrift) {
       notes.push("Negation cues changed; review meaning preservation")
     }
@@ -514,9 +544,9 @@ function PlagiarismCheckerInner({ user, mode }: { user: UserProfile; mode: "revi
     }
 
     const status: SemanticGuardrailReport["status"] =
-      score < 60 || numericDrift.length >= 2
+      score < 60 || numericDrift.length >= 2 || namedEntityDrift.length >= 2
         ? "fail"
-        : score < 80 || missingAnchors.length >= 3 || negationDrift
+        : score < 80 || missingAnchors.length >= 3 || namedEntityDrift.length >= 1 || negationDrift
           ? "warn"
           : "pass"
 
@@ -525,6 +555,7 @@ function PlagiarismCheckerInner({ user, mode }: { user: UserProfile; mode: "revi
       score,
       missingAnchors,
       numericDrift,
+      namedEntityDrift,
       negationDrift,
       notes,
     }
@@ -1701,8 +1732,10 @@ Return ONLY a valid JSON object:
         .map(({ candidate, score }) => {
           const guardrail = evaluateSemanticGuardrails(text, candidate.humanizedText)
           const guardrailPenalty =
-            (guardrail.status === "fail" ? 18 : guardrail.status === "warn" ? 8 : 0) +
-            guardrail.numericDrift.length * 4
+            (guardrail.status === "fail" ? 20 : guardrail.status === "warn" ? 9 : 0) +
+            guardrail.numericDrift.length * 5 +
+            guardrail.namedEntityDrift.length * 4 +
+            (guardrail.negationDrift ? 4 : 0)
           const adjustedScore = clampPercent(score.overallScore - guardrailPenalty)
           return {
             candidate,
@@ -1893,6 +1926,19 @@ Return ONLY a valid JSON object:
     if (score <= 60) return "text-yellow-600"
     return "text-red-600"
   }
+
+  const aiPatternReduction = humanizerScores?.aiScoreAfter !== null && humanizerScores
+    ? clampPercent(Math.max(0, humanizerScores.aiScoreBefore - (humanizerScores.aiScoreAfter ?? 0)))
+    : null
+  const aiRiskAfterValue = humanizerScores?.aiScoreAfter
+  const similarityAfterValue = humanizerScores?.similarityAfter
+  const qualityTargets = {
+    aiPatternReduction: aiPatternReduction !== null ? aiPatternReduction >= 40 : null,
+    aiRiskAfter: aiRiskAfterValue !== null && aiRiskAfterValue !== undefined ? aiRiskAfterValue <= 35 : null,
+    similarityAfter: similarityAfterValue !== null && similarityAfterValue !== undefined ? similarityAfterValue <= 45 : null,
+    semanticGuardrail: semanticGuardrailReport ? semanticGuardrailReport.status !== "fail" && semanticGuardrailReport.score >= 80 : null,
+  }
+  const qualityPassed = Object.values(qualityTargets).every((value) => value !== false)
 
   const runHumanizerAnalyze = async () => {
     const value = text.trim()
@@ -2327,6 +2373,49 @@ Return ONLY a valid JSON object:
                         <Progress value={humanizerScores.similarityAfter ?? 0} className="h-2" />
                       </div>
                     </div>
+                  </div>
+                )}
+
+                {(humanizerScores || semanticGuardrailReport) && (
+                  <div className={`rounded-lg border p-3 space-y-2 ${qualityPassed ? "border-emerald-300 bg-emerald-50/50" : "border-amber-300 bg-amber-50/40"}`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Quality Target Panel</p>
+                      <Badge variant={qualityPassed ? "default" : "secondary"}>{qualityPassed ? "READY" : "REVIEW"}</Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Goal: keep meaning intact while reducing AI-pattern and similarity signals.
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                      <div className="rounded border border-border bg-background/70 p-2 flex items-center justify-between">
+                        <span>AI-pattern reduction {">="} 40%</span>
+                        <Badge variant={qualityTargets.aiPatternReduction === null ? "outline" : qualityTargets.aiPatternReduction ? "default" : "destructive"}>
+                          {qualityTargets.aiPatternReduction === null ? "Pending" : qualityTargets.aiPatternReduction ? "Pass" : "Miss"}
+                        </Badge>
+                      </div>
+                      <div className="rounded border border-border bg-background/70 p-2 flex items-center justify-between">
+                        <span>AI-risk after {"<="} 35%</span>
+                        <Badge variant={qualityTargets.aiRiskAfter === null ? "outline" : qualityTargets.aiRiskAfter ? "default" : "destructive"}>
+                          {qualityTargets.aiRiskAfter === null ? "Pending" : qualityTargets.aiRiskAfter ? "Pass" : "Miss"}
+                        </Badge>
+                      </div>
+                      <div className="rounded border border-border bg-background/70 p-2 flex items-center justify-between">
+                        <span>Similarity after {"<="} 45%</span>
+                        <Badge variant={qualityTargets.similarityAfter === null ? "outline" : qualityTargets.similarityAfter ? "default" : "destructive"}>
+                          {qualityTargets.similarityAfter === null ? "Pending" : qualityTargets.similarityAfter ? "Pass" : "Miss"}
+                        </Badge>
+                      </div>
+                      <div className="rounded border border-border bg-background/70 p-2 flex items-center justify-between">
+                        <span>Semantic guardrail {">="} 80%</span>
+                        <Badge variant={qualityTargets.semanticGuardrail === null ? "outline" : qualityTargets.semanticGuardrail ? "default" : "destructive"}>
+                          {qualityTargets.semanticGuardrail === null ? "Pending" : qualityTargets.semanticGuardrail ? "Pass" : "Miss"}
+                        </Badge>
+                      </div>
+                    </div>
+                    {aiPatternReduction !== null && (
+                      <p className="text-xs text-muted-foreground">
+                        Current AI-pattern reduction: <span className="font-semibold text-foreground">{aiPatternReduction}%</span>
+                      </p>
+                    )}
                   </div>
                 )}
               </div>
