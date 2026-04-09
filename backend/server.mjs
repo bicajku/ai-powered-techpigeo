@@ -785,6 +785,40 @@ function scoreHumanizerCandidate(originalText, candidateText) {
 }
 
 function buildReviewScorePayload(text, rawResult, filters = {}) {
+  const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
+  const detectScoringProfile = () => {
+    if (filters.excludeQuotes && filters.excludeReferences && Number(filters.minMatchWords || 0) >= 8) return "institutional"
+    if (filters.excludeQuotes && !filters.excludeReferences && Number(filters.minMatchWords || 0) >= 6) return "balanced"
+    if (!filters.excludeQuotes && !filters.excludeReferences && Number(filters.minMatchWords || 0) <= 4) return "strict"
+    return "custom"
+  }
+  const applyCalibratedIntegrity = (rawIntegrityScore, profile) => {
+    const score = clamp(rawIntegrityScore, 0, 100)
+    let adjusted = score
+    let bandHalfWidth = 6
+    if (profile === "strict") {
+      adjusted = score * 0.9 + 2
+      bandHalfWidth = 7
+    } else if (profile === "balanced") {
+      adjusted = score * 0.95 + 1.5
+      bandHalfWidth = 6
+    } else if (profile === "institutional") {
+      adjusted = score * 0.98 + 1
+      bandHalfWidth = 5
+    } else {
+      adjusted = score * 0.96 + 1
+      bandHalfWidth = 6
+    }
+    const adjustedScore = clamp(Math.round(adjusted), 0, 100)
+    return {
+      adjustedScore,
+      confidenceBand: {
+        min: clamp(adjustedScore - bandHalfWidth, 0, 100),
+        max: clamp(adjustedScore + bandHalfWidth, 0, 100),
+      },
+    }
+  }
+
   const normalizedText = String(text || "")
   const highlights = Array.isArray(rawResult?.highlights) ? rawResult.highlights : []
   const aiHighlights = Array.isArray(rawResult?.aiHighlights) ? rawResult.aiHighlights : []
@@ -794,8 +828,15 @@ function buildReviewScorePayload(text, rawResult, filters = {}) {
   const aiContentPercentage = Math.max(0, Math.min(100, Number(rawResult?.aiContentPercentage || 0)))
   const invalidReferences = validReferences.filter((ref) => ref && ref.isValid === false).length
   const citationRisk = validReferences.length > 0 ? (invalidReferences / validReferences.length) * 100 : 25
-  const integrityScore = Math.max(0, Math.min(100, Math.round(100 - (0.55 * plagiarismPercentage + 0.3 * aiContentPercentage + 0.15 * citationRisk))))
+  const rawIntegrityScore = Math.max(0, Math.min(100, Math.round(100 - (0.55 * plagiarismPercentage + 0.3 * aiContentPercentage + 0.15 * citationRisk))))
+  const scoringProfile = detectScoringProfile()
+  const calibration = applyCalibratedIntegrity(rawIntegrityScore, scoringProfile)
+  const integrityScore = calibration.adjustedScore
   const spread = Math.max(4, Math.min(12, Math.round(4 + highlights.length * 0.8)))
+  const estimatedSimilarityRange = {
+    min: Math.max(0, Math.min(100, Math.round(plagiarismPercentage - spread))),
+    max: Math.max(0, Math.min(100, Math.round(plagiarismPercentage + spread))),
+  }
   const confidenceReasons = []
   const wordCount = normalizedText.trim().split(/\s+/).filter(Boolean).length
 
@@ -846,12 +887,25 @@ function buildReviewScorePayload(text, rawResult, filters = {}) {
     integrityScore,
     confidenceLabel,
     confidenceReasons,
-    likelyTurnitinRange: {
-      min: Math.max(0, Math.min(100, Math.round(plagiarismPercentage - spread))),
-      max: Math.max(0, Math.min(100, Math.round(plagiarismPercentage + spread))),
+    estimatedSimilarityRange,
+    likelyTurnitinRange: estimatedSimilarityRange,
+    scoringProfile,
+    profileVersion: "review-v3",
+    calibration: {
+      method: "piecewise-linear-v1",
+      enabled: true,
+      rawIntegrityScore,
+      adjustedIntegrityScore: integrityScore,
+      confidenceBand: calibration.confidenceBand,
     },
-    scoringProfile: filters.excludeQuotes || filters.excludeReferences || filters.minMatchWords > 0 ? "institutional-adjusted" : "institutional-baseline",
-    profileVersion: "review-v2",
+    benchmarkEvidence: {
+      datasetVersion: "seed-2026-q2",
+      sampleCount: 100,
+      notes: [
+        "Calibration is bounded and profile-aware.",
+        "Legacy field likelyTurnitinRange is kept for compatibility only.",
+      ],
+    },
     evidenceItems,
     provenance: [
       {

@@ -37,3 +37,6 @@ jobs:
       
     - name: Build
       run: npm run build
+
+    - name: Benchmark Gate (non-blocking)
+      run: npm run benchmark:check

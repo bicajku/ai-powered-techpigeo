@@ -14,6 +14,7 @@
         "heroku-postbuild": "npm run build",
         "kill": "fuser -k 5000/tcp",
         "build": "tsc -b --noCheck && vite build",
+        "benchmark:check": "node scripts/benchmark-check.mjs",
         "guard:lockfile": "node scripts/guard-lockfile.mjs",
         "lint": "eslint .",
         "test:e2e": "playwright test",

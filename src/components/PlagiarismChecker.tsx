@@ -55,6 +55,7 @@ type HumanizerWorkspaceEntry = {
   humanizedText: string
   candidates?: HumanizerCandidateReview[]
   selectedCandidateId?: string | null
+  semanticGuardrailReport?: SemanticGuardrailReport | null
   wordCount: number
   creditsUsed: number
   timestamp: number
@@ -76,6 +77,7 @@ type HumanizerDraft = {
   lastOutput: string
   candidates?: HumanizerCandidateReview[]
   selectedCandidateId?: string | null
+  semanticGuardrailReport?: SemanticGuardrailReport | null
   aiScoreBefore: number
   aiScoreAfter: number
   similarityBefore: number
@@ -544,6 +546,7 @@ function PlagiarismCheckerInner({ user, mode }: { user: UserProfile; mode: "revi
     if (humanizerDraft.lastOutput) {
       setHumanizerCandidates(humanizerDraft.candidates || [])
       setSelectedHumanizerCandidateId(humanizerDraft.selectedCandidateId || null)
+      setSemanticGuardrailReport(humanizerDraft.semanticGuardrailReport || null)
       setHumanizedResult({
         originalText: humanizerDraft.sourceText,
         humanizedText: humanizerDraft.lastOutput,
@@ -581,6 +584,7 @@ function PlagiarismCheckerInner({ user, mode }: { user: UserProfile; mode: "revi
       lastOutput: humanizedResult?.humanizedText || current?.lastOutput || "",
       candidates: humanizerCandidates.length > 0 ? humanizerCandidates : current?.candidates || [],
       selectedCandidateId: selectedHumanizerCandidateId || current?.selectedCandidateId || null,
+      semanticGuardrailReport: semanticGuardrailReport || current?.semanticGuardrailReport || null,
       aiScoreBefore: beforeMeters.aiLikelihood,
       aiScoreAfter: afterMeters?.aiLikelihood || current?.aiScoreAfter || 0,
       similarityBefore: beforeMeters.similarityRisk,
@@ -595,6 +599,7 @@ function PlagiarismCheckerInner({ user, mode }: { user: UserProfile; mode: "revi
     humanizerCandidates,
     humanizerSettings,
     selectedHumanizerCandidateId,
+    semanticGuardrailReport,
     setHumanizerDraft,
     userId,
   ])
@@ -1793,6 +1798,7 @@ Return ONLY a valid JSON object:
       humanizedText: humanizedResult.humanizedText,
       candidates: humanizerCandidates,
       selectedCandidateId: selectedHumanizerCandidateId,
+      semanticGuardrailReport,
       wordCount: countWords(humanizedResult.originalText),
       creditsUsed: estimateHumanizerCredits(countWords(humanizedResult.originalText)),
       timestamp: Date.now(),
@@ -1806,6 +1812,7 @@ Return ONLY a valid JSON object:
     setText(entry.originalText)
     setHumanizerCandidates(entry.candidates || [])
     setSelectedHumanizerCandidateId(entry.selectedCandidateId || null)
+    setSemanticGuardrailReport(entry.semanticGuardrailReport || null)
     setHumanizedResult({
       originalText: entry.originalText,
       humanizedText: entry.humanizedText,
@@ -1889,6 +1896,7 @@ Return ONLY a valid JSON object:
     setHumanizerSettings(humanizerDraft.settings || DEFAULT_HUMANIZER_SETTINGS)
     setHumanizerCandidates(humanizerDraft.candidates || [])
     setSelectedHumanizerCandidateId(humanizerDraft.selectedCandidateId || null)
+    setSemanticGuardrailReport(humanizerDraft.semanticGuardrailReport || null)
     setHumanizerScores({
       aiScoreBefore: humanizerDraft.aiScoreBefore,
       aiScoreAfter: humanizerDraft.aiScoreAfter || null,
@@ -1917,6 +1925,7 @@ Return ONLY a valid JSON object:
     setHumanizedResult(null)
     setHumanizerCandidates([])
     setSelectedHumanizerCandidateId(null)
+    setSemanticGuardrailReport(null)
     setSemanticGuardrailReport(null)
     setHumanizerAnalyzed(false)
     toast.success("Draft reset")
@@ -2459,7 +2468,7 @@ Return ONLY a valid JSON object:
                     </div>
                     <p className="text-2xl font-bold text-foreground">
                       {reviewMeta
-                        ? `${reviewMeta.likelyTurnitinRange.min}% - ${reviewMeta.likelyTurnitinRange.max}%`
+                        ? `${(reviewMeta.estimatedSimilarityRange || reviewMeta.likelyTurnitinRange).min}% - ${(reviewMeta.estimatedSimilarityRange || reviewMeta.likelyTurnitinRange).max}%`
                         : "--"}
                     </p>
                     <p className="text-xs text-muted-foreground mt-2">
@@ -2725,6 +2734,9 @@ Return ONLY a valid JSON object:
                             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Scoring Profile</p>
                             <p className="text-sm text-foreground">{reviewMeta.scoringProfile}</p>
                             <p className="text-xs text-muted-foreground">Version: {reviewMeta.profileVersion}</p>
+                            <p className="text-xs text-muted-foreground">Calibration: {reviewMeta.calibration?.method || "heuristic-baseline"}</p>
+                            <p className="text-xs text-muted-foreground">Score band: {reviewMeta.calibration?.confidenceBand?.min ?? reviewMeta.integrityScore}% - {reviewMeta.calibration?.confidenceBand?.max ?? reviewMeta.integrityScore}%</p>
+                            <p className="text-xs text-muted-foreground">Benchmark set: {reviewMeta.benchmarkEvidence?.datasetVersion || "not-disclosed"} ({reviewMeta.benchmarkEvidence?.sampleCount ?? 0} samples)</p>
                           </div>
                           <div className="p-3 border border-border rounded-lg bg-muted/30 space-y-2">
                             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Evidence Provenance</p>

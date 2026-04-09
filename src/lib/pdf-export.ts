@@ -507,7 +507,7 @@ export async function exportReviewToPDF(
     <div class="score-card">
       <div class="score-label">Estimated Similarity Range</div>
       <div class="score-value warning">
-        ${meta.likelyTurnitinRange.min}% - ${meta.likelyTurnitinRange.max}%
+        ${(meta.estimatedSimilarityRange || meta.likelyTurnitinRange).min}% - ${(meta.estimatedSimilarityRange || meta.likelyTurnitinRange).max}%
       </div>
       <div style="font-size: 12px; color: #666;">Confidence: ${escapeHtml(meta.confidenceLabel.toUpperCase())}</div>
     </div>
@@ -518,6 +518,8 @@ export async function exportReviewToPDF(
     <div class="section-content">
       ${meta.confidenceReasons.map((reason) => `<div>- ${escapeHtml(reason)}</div>`).join("")}
       <div style="margin-top: 10px;"><strong>Scoring profile:</strong> ${escapeHtml(meta.scoringProfile)} (${escapeHtml(meta.profileVersion)})</div>
+      <div style="margin-top: 6px;"><strong>Calibration:</strong> ${escapeHtml(meta.calibration?.method || "heuristic-baseline")} | raw ${meta.calibration?.rawIntegrityScore ?? meta.integrityScore}% - adjusted ${meta.calibration?.adjustedIntegrityScore ?? meta.integrityScore}% | confidence band ${meta.calibration?.confidenceBand?.min ?? meta.integrityScore}% - ${meta.calibration?.confidenceBand?.max ?? meta.integrityScore}%</div>
+      <div style="margin-top: 6px;"><strong>Benchmark evidence:</strong> ${escapeHtml(meta.benchmarkEvidence?.datasetVersion || "not-disclosed")} (${meta.benchmarkEvidence?.sampleCount ?? 0} samples)</div>
       ${filters ? `<div style="margin-top: 10px;"><strong>Active filters:</strong> quotes=${filters.excludeQuotes ? "excluded" : "included"}, references=${filters.excludeReferences ? "excluded" : "included"}, minMatchWords=${filters.minMatchWords}</div>` : ""}
     </div>
   </div>

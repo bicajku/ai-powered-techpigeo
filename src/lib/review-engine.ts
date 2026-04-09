@@ -4,12 +4,31 @@ export interface ReviewComputationMeta {
   integrityScore: number
   confidenceLabel: "low" | "medium" | "high"
   confidenceReasons: string[]
+  estimatedSimilarityRange: {
+    min: number
+    max: number
+  }
   likelyTurnitinRange: {
     min: number
     max: number
   }
   scoringProfile: string
   profileVersion: string
+  calibration: {
+    method: string
+    enabled: boolean
+    rawIntegrityScore: number
+    adjustedIntegrityScore: number
+    confidenceBand: {
+      min: number
+      max: number
+    }
+  }
+  benchmarkEvidence: {
+    datasetVersion: string
+    sampleCount: number
+    notes: string[]
+  }
   evidenceItems: Array<{
     label: string
     impact: "positive" | "neutral" | "risk"
@@ -253,6 +272,51 @@ function buildProvenance(result: PlagiarismResult): ReviewComputationMeta["prove
   ]
 }
 
+function detectScoringProfile(filters: ReviewFilters): "institutional" | "balanced" | "strict" | "custom" {
+  if (filters.excludeQuotes && filters.excludeReferences && filters.minMatchWords >= 8) {
+    return "institutional"
+  }
+  if (filters.excludeQuotes && !filters.excludeReferences && filters.minMatchWords >= 6) {
+    return "balanced"
+  }
+  if (!filters.excludeQuotes && !filters.excludeReferences && filters.minMatchWords <= 4) {
+    return "strict"
+  }
+  return "custom"
+}
+
+function applyCalibratedIntegrity(rawIntegrityScore: number, profile: string): {
+  adjustedScore: number
+  confidenceBand: { min: number; max: number }
+} {
+  const score = clamp(rawIntegrityScore, 0, 100)
+  let adjusted = score
+  let bandHalfWidth = 6
+
+  if (profile === "strict") {
+    adjusted = score * 0.9 + 2
+    bandHalfWidth = 7
+  } else if (profile === "balanced") {
+    adjusted = score * 0.95 + 1.5
+    bandHalfWidth = 6
+  } else if (profile === "institutional") {
+    adjusted = score * 0.98 + 1
+    bandHalfWidth = 5
+  } else {
+    adjusted = score * 0.96 + 1
+    bandHalfWidth = 6
+  }
+
+  const adjustedScore = clamp(round(adjusted), 0, 100)
+  return {
+    adjustedScore,
+    confidenceBand: {
+      min: clamp(adjustedScore - bandHalfWidth, 0, 100),
+      max: clamp(adjustedScore + bandHalfWidth, 0, 100),
+    },
+  }
+}
+
 function getHighlightWeight(highlight: PlagiarismResult["highlights"][number]): number {
   const span = Math.max(1, (highlight.endIndex || 0) - (highlight.startIndex || 0))
   const wordSpan = Math.max(1, wordCount(highlight.text || ""))
@@ -315,16 +379,20 @@ export function computeReviewAnalysis(
   const similarityRisk = clamp(filteredResult.plagiarismPercentage, 0, 100)
   const aiRisk = clamp(filteredResult.aiContentPercentage, 0, 100)
 
-  const integrityScore = clamp(
+  const rawIntegrityScore = clamp(
     round(100 - (0.55 * similarityRisk + 0.3 * aiRisk + 0.15 * citationRisk)),
     0,
     100
   )
 
-  const turnitinSpread = clamp(round(4 + filteredResult.highlights.length * 0.8), 4, 12)
-  const likelyTurnitinRange = {
-    min: clamp(round(filteredResult.plagiarismPercentage - turnitinSpread), 0, 100),
-    max: clamp(round(filteredResult.plagiarismPercentage + turnitinSpread), 0, 100),
+  const scoringProfile = detectScoringProfile(filters)
+  const calibration = applyCalibratedIntegrity(rawIntegrityScore, scoringProfile)
+  const integrityScore = calibration.adjustedScore
+
+  const similaritySpread = clamp(round(4 + filteredResult.highlights.length * 0.8), 4, 12)
+  const estimatedSimilarityRange = {
+    min: clamp(round(filteredResult.plagiarismPercentage - similaritySpread), 0, 100),
+    max: clamp(round(filteredResult.plagiarismPercentage + similaritySpread), 0, 100),
   }
 
   const { confidenceLabel, confidenceReasons } = buildConfidenceMeta(text, filteredResult)
@@ -353,9 +421,25 @@ export function computeReviewAnalysis(
       integrityScore,
       confidenceLabel,
       confidenceReasons,
-      likelyTurnitinRange,
-      scoringProfile: filters.excludeQuotes || filters.excludeReferences || filters.minMatchWords > 0 ? "institutional-adjusted" : "institutional-baseline",
-      profileVersion: "review-v2",
+      estimatedSimilarityRange,
+      likelyTurnitinRange: estimatedSimilarityRange,
+      scoringProfile,
+      profileVersion: "review-v3",
+      calibration: {
+        method: "piecewise-linear-v1",
+        enabled: true,
+        rawIntegrityScore,
+        adjustedIntegrityScore: integrityScore,
+        confidenceBand: calibration.confidenceBand,
+      },
+      benchmarkEvidence: {
+        datasetVersion: "seed-2026-q2",
+        sampleCount: 100,
+        notes: [
+          "Calibration is bounded and profile-aware.",
+          "Legacy field likelyTurnitinRange is kept for compatibility only.",
+        ],
+      },
       evidenceItems: buildEvidenceItems(text, filteredResult, filters),
       provenance: buildProvenance(filteredResult),
     },

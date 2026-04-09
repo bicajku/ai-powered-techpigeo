@@ -1,0 +1,7 @@
+{
+  "minRiskBandAccuracy": 0.7,
+  "maxFalsePositiveRate": 0.2,
+  "maxFalseNegativeRate": 0.2,
+  "minEvidenceCompletenessRate": 0.6,
+  "maxMeaningPreservationFailureRate": 0.2
+}

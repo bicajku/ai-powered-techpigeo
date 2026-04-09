@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NovusSparks Benchmark Run Record",
+  "type": "object",
+  "required": [
+    "run_id",
+    "timestamp",
+    "review_profile",
+    "review_version",
+    "humanizer_version",
+    "sample_count",
+    "risk_band_accuracy",
+    "false_positive_rate",
+    "false_negative_rate",
+    "stability_variance",
+    "evidence_completeness_rate",
+    "meaning_preservation_failure_rate",
+    "calibration_drift",
+    "guardrail_fail_rate"
+  ],
+  "properties": {
+    "run_id": { "type": "string" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "review_profile": { "type": "string" },
+    "review_version": { "type": "string" },
+    "humanizer_version": { "type": "string" },
+    "sample_count": { "type": "integer", "minimum": 1 },
+    "risk_band_accuracy": { "type": "number", "minimum": 0, "maximum": 1 },
+    "false_positive_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+    "false_negative_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+    "stability_variance": { "type": "number", "minimum": 0 },
+    "evidence_completeness_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+    "meaning_preservation_failure_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+    "calibration_drift": { "type": "number", "minimum": 0, "maximum": 1 },
+    "guardrail_fail_rate": { "type": "number", "minimum": 0, "maximum": 1 }
+  },
+  "additionalProperties": false
+}
