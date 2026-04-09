@@ -300,7 +300,10 @@ export async function sentinelQuery(
     geminiReady &&
     useGeminiByPolicy &&
     orderedProviders.includes("gemini") &&
-    orderedProviders.indexOf("gemini") <= 1
+    orderedProviders.indexOf("gemini") <= 1 &&
+    // Prefer Copilot-first chat reliability: avoid retrieval embedding dependency
+    // for RAG chat when Copilot is configured.
+    !(options?.module === "rag_chat" && orderedProviders.includes("copilot"))
 
   if (neonReady && shouldUseGeminiRetrieval) {
     const retrievalStart = Date.now()

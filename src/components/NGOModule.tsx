@@ -1098,6 +1098,7 @@ Respond ONLY with valid JSON:
         postProcessProfile: postProcessSettings.postProcessProfile,
         userId: user?.id || undefined,
         skipCache: true,
+        preferCopilot: true,
         useConsensus: false,
         sparkFallback: async () => {
           if (typeof spark !== "undefined" && typeof spark.llm === "function") {
@@ -1168,6 +1169,7 @@ Respond ONLY with valid JSON:
         userInputForQualityGate: input,
         qualityGateProfile: currentQualityGateProfile,
         skipCache: true,
+        preferCopilot: true,
         useConsensus: false,
         sparkFallback: async () => {
           if (typeof spark !== "undefined" && typeof spark.llm === "function") {
@@ -1341,6 +1343,7 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
         userInputForQualityGate: `${reportTitle} ${input}`,
         qualityGateProfile: currentQualityGateProfile,
         skipCache: false,
+        preferCopilot: true,
         sparkFallback: async () => {
           if (typeof spark !== "undefined" && typeof spark.llm === "function") {
             return await spark.llm(prompt, "gpt-4o", false) as string

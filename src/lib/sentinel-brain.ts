@@ -23,7 +23,7 @@ export interface BrainEntry {
 
 export interface QueryLogEntry {
   id: number
-  user_id: number | null
+  user_id: string | null
   query_text: string
   module: string | null
   response_json: Record<string, unknown> | null
@@ -43,6 +43,8 @@ export interface CachedGeneration {
   created_at: string
   expires_at: string
 }
+
+let queryLogWritesDisabled = false
 
 export interface ChatThread {
   id: number
@@ -120,7 +122,7 @@ export async function ensureBrainTables(): Promise<void> {
   await sql`
     CREATE TABLE IF NOT EXISTS query_log (
       id SERIAL PRIMARY KEY,
-      user_id INTEGER,
+      user_id TEXT,
       query_text TEXT NOT NULL,
       query_embedding vector(768),
       module TEXT,
@@ -143,6 +145,19 @@ export async function ensureBrainTables(): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + interval '30 days')
     )
+  `
+
+  /* Migrate existing INTEGER query_log.user_id column to TEXT for UUID support */
+  await sql`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'query_log' AND column_name = 'user_id' AND data_type = 'integer'
+      ) THEN
+        ALTER TABLE query_log ALTER COLUMN user_id TYPE TEXT USING user_id::TEXT;
+      END IF;
+    END $$
   `
 
   await sql`
@@ -352,21 +367,55 @@ export async function logQuery(entry: {
   providers_used?: string[]
   brain_hits?: number
 }): Promise<void> {
+  if (queryLogWritesDisabled) return
+
   const sql = await getNeonClient()
   const embeddingStr = entry.query_embedding ? `[${entry.query_embedding.join(",")}]` : null
 
-  await sql`
-    INSERT INTO query_log (user_id, query_text, query_embedding, module, response_json, providers_used, brain_hits)
-    VALUES (
-      ${entry.user_id ?? null},
-      ${entry.query_text},
-      ${embeddingStr ? sql`${embeddingStr}::vector` : null},
-      ${entry.module ?? null},
-      ${entry.response_json ? JSON.stringify(entry.response_json) : null}::jsonb,
-      ${entry.providers_used ?? null},
-      ${entry.brain_hits ?? 0}
-    )
-  `
+  try {
+    await sql`
+      INSERT INTO query_log (user_id, query_text, query_embedding, module, response_json, providers_used, brain_hits)
+      VALUES (
+        ${entry.user_id != null ? String(entry.user_id) : null},
+        ${entry.query_text},
+        ${embeddingStr ? sql`${embeddingStr}::vector` : null},
+        ${entry.module ?? null},
+        ${entry.response_json ? JSON.stringify(entry.response_json) : null}::jsonb,
+        ${entry.providers_used ?? null},
+        ${entry.brain_hits ?? 0}
+      )
+    `
+  } catch (err) {
+    // Backward compatibility fallback if an old deployment still has INTEGER user_id.
+    const message = err instanceof Error ? err.message.toLowerCase() : ""
+    const userIdTypeError =
+      message.includes("query_log") &&
+      (message.includes("invalid input syntax") || message.includes("type integer"))
+
+    if (!userIdTypeError) {
+      queryLogWritesDisabled = true
+      console.warn("Query log writes disabled for this session due to DB error:", err)
+      return
+    }
+
+    try {
+      await sql`
+        INSERT INTO query_log (user_id, query_text, query_embedding, module, response_json, providers_used, brain_hits)
+        VALUES (
+          ${null},
+          ${entry.query_text},
+          ${embeddingStr ? sql`${embeddingStr}::vector` : null},
+          ${entry.module ?? null},
+          ${entry.response_json ? JSON.stringify(entry.response_json) : null}::jsonb,
+          ${entry.providers_used ?? null},
+          ${entry.brain_hits ?? 0}
+        )
+      `
+    } catch (fallbackErr) {
+      queryLogWritesDisabled = true
+      console.warn("Query log writes disabled for this session (fallback failed):", fallbackErr)
+    }
+  }
 }
 
 export async function getRecentQueries(userId?: number, limit = 20): Promise<QueryLogEntry[]> {

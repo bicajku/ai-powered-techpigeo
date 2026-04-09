@@ -304,6 +304,7 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
         persistConversation: true,
         qualityGateProfile: "lenient",
         enableQualityGate: false,
+        preferCopilot: true,
         userMessageMetadata: editingMessageId
           ? {
               edited_from_message_id: editingMessageId,

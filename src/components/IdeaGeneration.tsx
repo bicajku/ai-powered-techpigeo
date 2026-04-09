@@ -314,6 +314,7 @@ CRITICAL: Return ONLY valid JSON with no markdown, no code blocks, no explanator
             enableQualityGate: true,
             userInputForQualityGate: ideaInput,
             qualityGateProfile: "balanced",
+            preferCopilot: true,
             useConsensus: true,
             sparkFallback: async () => {
               if (typeof spark !== "undefined" && typeof spark.llm === "function") {
@@ -419,6 +420,7 @@ CRITICAL: Return ONLY valid JSON with no markdown formatting.`
             enableQualityGate: true,
             userInputForQualityGate: cookedIdea.refinedIdea,
             qualityGateProfile: "balanced",
+            preferCopilot: true,
             useConsensus: true,
             sparkFallback: async () => {
               if (typeof spark !== "undefined" && typeof spark.llm === "function") {
@@ -526,6 +528,7 @@ CRITICAL: Return ONLY valid JSON with no markdown.`
             enableQualityGate: true,
             userInputForQualityGate: cookedIdea.refinedIdea,
             qualityGateProfile: "balanced",
+            preferCopilot: true,
             useConsensus: true,
             sparkFallback: async () => {
               if (typeof spark !== "undefined" && typeof spark.llm === "function") {

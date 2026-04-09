@@ -5,6 +5,33 @@
 
 const STYLE_API_BASE = "/api/sentinel/user-style"
 
+function getStyleHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" }
+
+  try {
+    const token = typeof localStorage !== "undefined"
+      ? (localStorage.getItem("sentinel-auth-token") || localStorage.getItem("sentinel_token"))
+      : null
+    if (token) {
+      headers.Authorization = `Bearer ${token}`
+    }
+  } catch {
+    // ignore localStorage access errors
+  }
+
+  if (typeof document !== "undefined") {
+    const csrfMatch = document.cookie
+      .split(";")
+      .map((c) => c.trim())
+      .find((c) => c.startsWith("__csrf="))
+    if (csrfMatch) {
+      headers["X-CSRF-Token"] = csrfMatch.slice("__csrf=".length)
+    }
+  }
+
+  return headers
+}
+
 export interface GenerationInsightRequest {
   conceptMode: string
   tonePreference: string
@@ -41,7 +68,7 @@ export async function trackGenerationInsight(
   try {
     const response = await fetch(`${STYLE_API_BASE}/track-generation`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getStyleHeaders(),
       credentials: "include", // Include JWT from cookies
       body: JSON.stringify(request),
     })
@@ -92,7 +119,7 @@ export async function recordStyleFeedback(
   try {
     const response = await fetch(`${STYLE_API_BASE}/feedback`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getStyleHeaders(),
       credentials: "include",
       body: JSON.stringify(request),
     })

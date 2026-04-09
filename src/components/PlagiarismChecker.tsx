@@ -1710,6 +1710,7 @@ Return ONLY a valid JSON object:
         enableQualityGate: true,
         userInputForQualityGate: text,
         qualityGateProfile: "lenient",
+        preferCopilot: true,
       })
 
       let response: unknown

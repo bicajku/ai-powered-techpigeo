@@ -627,6 +627,7 @@ function App() {
           matchMyVoice: resolvedPostProcessSettings.matchMyVoice,
           voiceSample: resolvedPostProcessSettings.voiceSample,
           postProcessProfile: resolvedPostProcessSettings.postProcessProfile,
+          preferCopilot: true,
           useConsensus: true,
           sparkFallback: async () => {
             if (typeof spark !== "undefined" && typeof spark.llm === "function") {
