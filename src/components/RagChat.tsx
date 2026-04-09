@@ -99,9 +99,9 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
   )
 
   useEffect(() => {
+    if (!dbUserId?.trim()) return
     void loadThreads()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [dbUserId])
 
   useEffect(() => {
     if (!activeThreadId) {
@@ -111,10 +111,24 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
       setMobileTraceOpen(false)
       return
     }
+    setSelectedAssistantMessageId(null)
+    setMobileTraceOpen(false)
     void loadThreadData(activeThreadId)
   }, [activeThreadId])
 
   const loadThreads = async () => {
+    if (!dbUserId?.trim()) return
+
+    const waitForToken = async (timeoutMs = 1500) => {
+      const startedAt = Date.now()
+      while (Date.now() - startedAt < timeoutMs) {
+        const token = localStorage.getItem("sentinel-auth-token") || localStorage.getItem("sentinel_token")
+        if (token) return true
+        await new Promise((resolve) => setTimeout(resolve, 100))
+      }
+      return false
+    }
+
     setIsLoadingThreads(true)
     try {
       const rows = await listChatThreads({ user_id: dbUserId, limit: 50 })
@@ -124,6 +138,25 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
       }
     } catch (err) {
       console.error("Failed to load chat threads:", err)
+      const message = err instanceof Error ? err.message : String(err)
+      const authError = message.toLowerCase().includes("authentication required") || message.toLowerCase().includes("unauthorized")
+
+      if (authError) {
+        const tokenReady = await waitForToken()
+        if (tokenReady) {
+          try {
+            const retryRows = await listChatThreads({ user_id: dbUserId, limit: 50 })
+            setThreads(retryRows)
+            if (!activeThreadId && retryRows.length > 0) {
+              setActiveThreadId(retryRows[0].id)
+            }
+            return
+          } catch (retryErr) {
+            console.error("Retry failed to load chat threads:", retryErr)
+          }
+        }
+      }
+
       toast.error("Failed to load chat threads")
     } finally {
       setIsLoadingThreads(false)
@@ -151,8 +184,8 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
       }
       setTracesByMessage(traceMap)
 
-      const firstAssistantWithTrace = assistantMessages.find((msg) => traceMap[msg.id])
-      setSelectedAssistantMessageId(firstAssistantWithTrace?.id ?? null)
+      // Keep trace drawer closed by default; user explicitly opens a trace.
+      setSelectedAssistantMessageId(null)
     } catch (err) {
       console.error("Failed to load thread data:", err)
       toast.error("Failed to load conversation history")
@@ -441,7 +474,7 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
     }
   }
 
-  const showThreadsSidebar = messages.length > 0 && threads.length > 0
+  const showThreadsSidebar = true
   const showDesktopTrace = isAdmin && Boolean(selectedAssistantMessageId)
   const composerSuggestions = starterPrompts.slice(0, 4)
 
@@ -494,30 +527,28 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
                         onClick={() => setActiveThreadId(thread.id)}
                         className="flex-1 text-left min-w-0"
                       >
-                        <p className="text-xs font-medium text-foreground truncate">{thread.title}</p>
+                        <p className="text-xs font-medium text-foreground whitespace-normal break-words leading-snug">{thread.title}</p>
                       </button>
-                      {activeThreadId === thread.id && (
-                        <div className="flex items-center gap-0.5 shrink-0 animate-in fade-in slide-in-from-right-2 duration-200">
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="h-6 w-6"
-                            onClick={() => void handleRenameThread(thread.id, thread.title)}
-                            title="Rename thread"
-                          >
-                            <PencilSimple size={12} />
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="h-6 w-6 text-destructive hover:text-destructive"
-                            onClick={() => void handleDeleteThread(thread.id)}
-                            title="Delete thread"
-                          >
-                            <Trash size={12} />
-                          </Button>
-                        </div>
-                      )}
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-6 w-6"
+                          onClick={() => void handleRenameThread(thread.id, thread.title)}
+                          title="Rename thread"
+                        >
+                          <PencilSimple size={12} />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-6 w-6 text-destructive hover:text-destructive"
+                          onClick={() => void handleDeleteThread(thread.id)}
+                          title="Delete thread"
+                        >
+                          <Trash size={12} />
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -842,8 +873,8 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
                       }}
                       className="flex-1 text-left min-w-0"
                     >
-                      <p className="text-sm font-medium text-foreground truncate">{thread.title}</p>
-                      <p className="text-[11px] text-muted-foreground truncate">{thread.module}</p>
+                      <p className="text-sm font-medium text-foreground whitespace-normal break-words leading-snug">{thread.title}</p>
+                      <p className="text-[11px] text-muted-foreground whitespace-normal break-words">{thread.module}</p>
                     </button>
                     <div className="flex items-center gap-1 shrink-0">
                       <Button
