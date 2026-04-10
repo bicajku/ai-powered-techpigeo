@@ -560,7 +560,8 @@ export function AdminDashboard() {
     }
   }
 
-  const formatDate = (timestamp: number) => {
+  const formatDate = (timestamp: number | null | undefined) => {
+    if (!timestamp || timestamp <= 0) return "-"
     return new Date(timestamp).toLocaleDateString("en-US", {
       year: "numeric",
       month: "short",

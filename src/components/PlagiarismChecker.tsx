@@ -22,6 +22,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion"
 import { toast } from "sonner"
 import { sentinelQuery } from "@/lib/sentinel-query-pipeline"
+import { getSafeKVClient } from "@/lib/spark-shim"
 import { DocumentFingerprintRecord, PlagiarismResult, DocumentReviewResult, ExternalSourceCheckResult, ExternalSourceMatch, HumanizedResult, HumanizerCandidateReview, SavedReviewDocument, UserProfile } from "@/types"
 import { useSafeKV } from "@/hooks/useSafeKV"
 import { SaveReviewDialog } from "@/components/SaveReviewDialog"
@@ -2041,6 +2042,31 @@ Return ONLY a valid JSON object:
     toast.success("Draft reset")
   }
 
+  const clearCurrentInput = () => {
+    setText("")
+    setFileName(null)
+    setResult(null)
+
+    if (mode === "humanizer") {
+      // Clear all unsaved generation artifacts. Only explicit workspace saves persist.
+      setHumanizedResult(null)
+      setHumanizerCandidates([])
+      setSelectedHumanizerCandidateId(null)
+      setSemanticGuardrailReport(null)
+      setHumanizerScores(null)
+      setHumanizerDraft(null)
+      setHumanizerAnalyzed(false)
+      // Explicitly delete KV entry to prevent draft restoration on page reload
+      getSafeKVClient().delete(`humanizer-draft-${userId}`).catch(() => {})
+    } else if (mode === "review") {
+      // Clear all unsaved review artifacts. Only explicitly saved reviews persist.
+      setReviewMeta(null)
+      setCurrentReviewResult(null)
+    }
+
+    toast.info("Text cleared")
+  }
+
   const requiresAccess = mode === "humanizer" ? !entitlements.canUseHumanizer : !entitlements.canAccessReview
 
   // Gate: show paywall for users without access (admin bypasses)
@@ -2221,14 +2247,7 @@ Return ONLY a valid JSON object:
                 </p>
                 {text.length > 0 && (
                   <Button
-                    onClick={() => {
-                      setText("")
-                      setFileName(null)
-                      setResult(null)
-                      setHumanizedResult(null)
-                      setSemanticGuardrailReport(null)
-                      toast.info("Text cleared")
-                    }}
+                    onClick={clearCurrentInput}
                     variant="ghost"
                     size="sm"
                     className="text-xs h-6"

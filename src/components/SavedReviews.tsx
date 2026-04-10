@@ -49,6 +49,15 @@ export function SavedReviews({ reviews, onDelete, onArchive, onUnarchive, onView
     return <Badge variant="destructive" className="gap-1">{score}%</Badge>
   }
 
+  const formatReviewDate = (timestamp: number | null | undefined) => {
+    if (!timestamp || timestamp <= 0) return "-"
+    try {
+      return format(timestamp, "MMM d, yyyy 'at' h:mm a")
+    } catch {
+      return "-"
+    }
+  }
+
   const renderReviewsList = (reviewsList: SavedReviewDocument[], emptyMessage: string, isArchivedView: boolean) => {
     if (reviewsList.length === 0) {
       return (
@@ -100,7 +109,7 @@ export function SavedReviews({ reviews, onDelete, onArchive, onUnarchive, onView
                         <CardDescription className="flex items-center gap-2 flex-wrap">
                           <span className="text-xs">{review.fileName}</span>
                           <span className="text-xs text-muted-foreground">•</span>
-                          <span className="text-xs">{format(review.timestamp, "MMM d, yyyy 'at' h:mm a")}</span>
+                          <span className="text-xs">{formatReviewDate(review.timestamp)}</span>
                         </CardDescription>
                       </div>
                       {review.plagiarismResult.turnitinReady && (
