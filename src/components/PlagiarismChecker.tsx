@@ -1315,7 +1315,7 @@ function PlagiarismCheckerInner({ user, mode }: { user: UserProfile; mode: "revi
       toast.info("Analyzing document with advanced detection algorithms...")
       
       const [analysisOutcome, externalOutcome] = await Promise.all([
-        performEnhancedPlagiarismCheck(text, spark, 3),
+        performEnhancedPlagiarismCheck(text, 3),
         performExternalSourceCheck({ text, fileName, fingerprintMatches }),
       ]).catch((err) => {
         console.error("Plagiarism analysis failed:", err)

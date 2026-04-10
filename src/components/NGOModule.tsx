@@ -1100,12 +1100,6 @@ Respond ONLY with valid JSON:
         skipCache: true,
         preferCopilot: true,
         useConsensus: false,
-        sparkFallback: async () => {
-          if (typeof spark !== "undefined" && typeof spark.llm === "function") {
-            return await spark.llm(improvePrompt, "gpt-4o", false) as string
-          }
-          throw new Error("Spark fallback unavailable")
-        },
       })
       const improvedParsed = parseNGOResult(improved.response)
       // Only use improved result if it actually has more content than original
@@ -1171,12 +1165,6 @@ Respond ONLY with valid JSON:
         skipCache: true,
         preferCopilot: true,
         useConsensus: false,
-        sparkFallback: async () => {
-          if (typeof spark !== "undefined" && typeof spark.llm === "function") {
-            return await spark.llm(prompt, "gpt-4o", false) as string
-          }
-          throw new Error("Spark fallback unavailable")
-        },
       })
 
       if (res.status === "needs_clarification") {
@@ -1344,12 +1332,6 @@ Structure: Executive Summary, Key Achievements, Challenges & Lessons, Recommenda
         qualityGateProfile: currentQualityGateProfile,
         skipCache: false,
         preferCopilot: true,
-        sparkFallback: async () => {
-          if (typeof spark !== "undefined" && typeof spark.llm === "function") {
-            return await spark.llm(prompt, "gpt-4o", false) as string
-          }
-          throw new Error("Spark fallback unavailable")
-        },
       })
       if (res.status === "needs_clarification") {
         toast.error(res.response || "Please clarify report intent and project details before generation.")

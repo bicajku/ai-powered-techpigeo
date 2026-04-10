@@ -4,15 +4,11 @@
  */
 
 import { sentinelQuery } from "./sentinel-query-pipeline"
-import { isNeonConfigured } from "./neon-client"
-import { isGeminiConfigured } from "./gemini-client"
 import { AdvancedDetectionResult, performAdvancedDetection } from "./advanced-detection"
 import { PlagiarismResult } from "@/types"
 
 export async function performEnhancedPlagiarismCheck(
   text: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  spark: any,
   maxRetries: number = 3
 ): Promise<{ result: PlagiarismResult; advancedMetrics: AdvancedDetectionResult }> {
   // First, run advanced detection algorithms locally
@@ -117,7 +113,7 @@ export async function performEnhancedPlagiarismCheck(
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       // Then enhance with LLM-based analysis
-      const prompt = spark.llmPrompt`You are an elite plagiarism detection and AI content detection system trained on the world's most sophisticated detection models.
+      const prompt = `You are an elite plagiarism detection and AI content detection system trained on the world's most sophisticated detection models.
 
 Text to analyze (${text.length} characters):
 ${text}
@@ -155,39 +151,19 @@ You may include up to 8 recommendations, up to 8 validReferences, and up to 8 de
   "detectedSources": [{"source": "<source>", "similarity": 0, "confidence": 0}]
 }`
 
-      let response: unknown
-      const strPrompt = prompt as string
-      if (isNeonConfigured() || isGeminiConfigured()) {
-        try {
-          const res = await sentinelQuery(strPrompt, {
-            module: "plagiarism-check",
-            enableQualityGate: true,
-            userInputForQualityGate: text,
-            qualityGateProfile: "strict",
-            sparkFallback: async () => {
-              if (typeof spark !== "undefined" && typeof spark.llm === "function") {
-                return (await spark.llm(strPrompt, "gpt-4o", false)) as string
-              }
-              throw new Error("Spark fallback unavailable")
-            }
-          })
-          if (res.status === "needs_clarification") {
-            throw new Error(res.response || "Input is unclear for reliable integrity analysis.")
-          }
-          response = typeof res.response === 'string' ? res.response : JSON.stringify(res.response)
-        } catch {
-          if (typeof spark !== "undefined" && typeof spark.llm === "function") {
-            response = await spark.llm(strPrompt, "gpt-4o", false)
-          } else {
-            throw new Error("AI service unavailable")
-          }
-        }
-      } else {
-        if (typeof spark === "undefined" || typeof spark.llm !== "function") {
-          throw new Error("AI service unavailable")
-        }
-        response = await spark.llm(strPrompt, "gpt-4o", false)
+      const res = await sentinelQuery(prompt, {
+        module: "plagiarism-check",
+        contentType: "general",
+        enableQualityGate: true,
+        userInputForQualityGate: text,
+        qualityGateProfile: "strict",
+        preferCopilot: true,
+        useConsensus: false,
+      })
+      if (res.status === "needs_clarification") {
+        throw new Error(res.response || "Input is unclear for reliable integrity analysis.")
       }
+      const response: unknown = typeof res.response === "string" ? res.response : JSON.stringify(res.response)
 
       let parsedResult: PlagiarismResult
 

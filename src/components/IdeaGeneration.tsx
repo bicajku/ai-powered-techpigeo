@@ -293,7 +293,6 @@ Provide a comprehensive analysis in valid JSON format with the following structu
 
 CRITICAL: Return ONLY valid JSON with no markdown, no code blocks, no explanatory text.`
 
-      let response: unknown
       const res = await sentinelQuery(prompt, {
         module: "idea-generation",
         contentType: "strategy",
@@ -313,9 +312,7 @@ CRITICAL: Return ONLY valid JSON with no markdown, no code blocks, no explanator
         toast.error(res.response || "Please clarify your idea before generation.")
         return
       }
-      response = cleanJsonResponse(res.response)
-
-      const parsedResult = cleanJsonResponse(response)
+      const parsedResult = cleanJsonResponse(res.response)
       const cookedIdeaWithOriginal = normalizeCookedIdea(parsedResult, ideaInput)
 
       setCookedIdea(cookedIdeaWithOriginal)
@@ -381,7 +378,6 @@ Return a valid JSON object with these keys: keyPartners, keyActivities, keyResou
 
 CRITICAL: Return ONLY valid JSON with no markdown formatting.`
 
-      let response: unknown
       const res = await sentinelQuery(prompt, {
         module: "idea-generation-canvas",
         contentType: "strategy",
@@ -396,16 +392,14 @@ CRITICAL: Return ONLY valid JSON with no markdown formatting.`
         toast.error(res.response || "Please provide clearer idea details for canvas generation.")
         return
       }
-      response = cleanJsonResponse(res.response)
-
-      const parsedResult = cleanJsonResponse(response)
+      const parsedResult = cleanJsonResponse(res.response)
       const normalizedCanvas = normalizeBusinessCanvas(parsedResult)
 
       // Verify we got real data (not all fallbacks)
       const hasRealData = normalizedCanvas.valueProposition !== "Value proposition was not generated."
         || normalizedCanvas.keyPartners !== "Key partners were not generated."
       if (!hasRealData) {
-        console.error("Canvas generation returned empty data. Raw response:", response)
+        console.error("Canvas generation returned empty data. Raw response:", res.response)
       }
 
       setBusinessCanvas(normalizedCanvas)
@@ -460,7 +454,6 @@ Generate a pitch deck with exactly 8 slides. Return valid JSON with keys: execut
 
 CRITICAL: Return ONLY valid JSON with no markdown.`
 
-      let response: unknown
       const res = await sentinelQuery(prompt, {
         module: "idea-generation-pitchdeck",
         contentType: "strategy",
@@ -475,13 +468,11 @@ CRITICAL: Return ONLY valid JSON with no markdown.`
         toast.error(res.response || "Please provide clearer idea details for pitch deck generation.")
         return
       }
-      response = cleanJsonResponse(res.response)
-
-      const parsedResult = cleanJsonResponse(response)
+      const parsedResult = cleanJsonResponse(res.response)
       const normalizedPitchDeck = normalizePitchDeck(parsedResult)
 
       if (normalizedPitchDeck.slides.length === 0) {
-        console.error("Pitch deck returned no slides. Raw response:", response)
+        console.error("Pitch deck returned no slides. Raw response:", res.response)
         toast.error("Pitch Deck generation returned incomplete data. Please try again.")
         return
       }

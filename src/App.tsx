@@ -35,8 +35,6 @@ import { cn } from "@/lib/utils"
 import { sentinelQuery } from "@/lib/sentinel-query-pipeline"
 import { safeDateFormatters } from "@/lib/date-utils"
 import { EXAMPLE_PROMPTS_BY_PLAN } from "@/lib/plan-definitions"
-import { isNeonConfigured } from "@/lib/neon-client"
-import { isGeminiConfigured } from "@/lib/gemini-client"
 import { getFeatureEntitlements, requestUpgrade } from "@/lib/subscription"
 import { estimateGenerationCostCents, estimatePromptTokens, getCurrentMonthKey, getExportPlanConfig, getStrategyPlanConfig, loadBudgetLimits } from "@/lib/strategy-governance"
 import { adminService } from "@/lib/admin"
@@ -641,60 +639,34 @@ function App() {
   }
 
   const runWithModelFallback = async (prompt: string, parseJson = false) => {
-    // Try Sentinel pipeline first (Gemini + Copilot + Brain)
-    const sentinelReady = isNeonConfigured() || isGeminiConfigured()
-    if (sentinelReady) {
-      try {
-        const pipelineResult = await sentinelQuery(prompt, {
-          module: "strategy",
-          contentType: "strategy",
-          humanizeOnOutput: resolvedPostProcessSettings.humanizeOnOutput,
-          preserveFactsStrictly: resolvedPostProcessSettings.preserveFactsStrictly,
-          matchMyVoice: resolvedPostProcessSettings.matchMyVoice,
-          voiceSample: resolvedPostProcessSettings.voiceSample,
-          postProcessProfile: resolvedPostProcessSettings.postProcessProfile,
-          preferCopilot: true,
-          useConsensus: true,
-          sparkFallback: async () => {
-            if (typeof spark !== "undefined" && typeof spark.llm === "function") {
-              const preferredModel = strategyPlan === "pro" ? "gpt-4.1" : "gpt-4.1-mini"
-              return await spark.llm(prompt, preferredModel, false) as string
-            }
-            throw new Error("Spark fallback unavailable")
-          },
-        })
-        // Reject plain-prose responses before they enter the parse/retry loop.
-        // If the pipeline returns a response with no JSON braces at all, it is
-        // unacceptable for strategy generation — fall through to the Spark path.
-        if (!(pipelineResult.response || "").includes("{")) {
-          throw new Error("Pipeline returned a non-JSON response — falling through to Spark")
-        }
-        return { response: pipelineResult.response, modelUsed: pipelineResult.model || "sentinel-pipeline" }
-      } catch {
-        // Fall through to Spark-only path
-         console.warn("Sentinel pipeline failed or returned non-JSON, delegating to Spark shim")
-      }
-    }
-
-    if (typeof spark === "undefined" || typeof spark.llm !== "function") {
-      throw new Error("Spark LLM is not available. Please refresh the page.")
-    }
-
     const preferredModel = strategyPlan === "pro" ? "gpt-4.1" : "gpt-4.1-mini"
+    const pipelineResult = await sentinelQuery(prompt, {
+      module: "strategy",
+      contentType: "strategy",
+      humanizeOnOutput: resolvedPostProcessSettings.humanizeOnOutput,
+      preserveFactsStrictly: resolvedPostProcessSettings.preserveFactsStrictly,
+      matchMyVoice: resolvedPostProcessSettings.matchMyVoice,
+      voiceSample: resolvedPostProcessSettings.voiceSample,
+      postProcessProfile: resolvedPostProcessSettings.postProcessProfile,
+      preferCopilot: true,
+      useConsensus: true,
+      model: preferredModel,
+    })
 
-    try {
-      const response = await spark.llm(prompt, preferredModel, parseJson)
-       if (!response || (typeof response === "string" && response.trim().length === 0)) {
-         throw new Error("Spark LLM returned empty response")
-       }
-      return { response, modelUsed: preferredModel }
-    } catch (error) {
-      if (preferredModel !== "gpt-4.1") {
-        const response = await spark.llm(prompt, "gpt-4.1", parseJson)
-        return { response, modelUsed: "gpt-4.1" }
-      }
-      throw error
+    if (!(pipelineResult.response || "").includes("{")) {
+      throw new Error("Pipeline returned a non-JSON response")
     }
+
+    if (parseJson) {
+      return {
+        response: typeof pipelineResult.response === "string"
+          ? pipelineResult.response
+          : JSON.stringify(pipelineResult.response),
+        modelUsed: pipelineResult.model || preferredModel,
+      }
+    }
+
+    return { response: pipelineResult.response, modelUsed: pipelineResult.model || preferredModel }
   }
 
   const isMockFallbackResult = (candidate: Partial<MarketingResult> | null | undefined): boolean => {
@@ -785,18 +757,6 @@ function App() {
 
     const defaultSchema = "```sql\nCREATE TABLE users (\n  id UUID PRIMARY KEY,\n  email TEXT UNIQUE NOT NULL,\n  role TEXT NOT NULL,\n  created_at TIMESTAMPTZ DEFAULT NOW()\n);\n\nCREATE TABLE projects (\n  id UUID PRIMARY KEY,\n  user_id UUID REFERENCES users(id),\n  name TEXT NOT NULL,\n  status TEXT NOT NULL,\n  created_at TIMESTAMPTZ DEFAULT NOW()\n);\n\nCREATE TABLE strategy_assets (\n  id UUID PRIMARY KEY,\n  project_id UUID REFERENCES projects(id),\n  asset_type TEXT NOT NULL,\n  payload JSONB NOT NULL,\n  updated_at TIMESTAMPTZ DEFAULT NOW()\n);\n```"
 
-    if (typeof spark === "undefined") {
-      const error = new Error("Spark API is not available. Please refresh the page.")
-      await logError("Spark API unavailable", error, "system", "critical", user?.id)
-      throw error
-    }
-
-    if (typeof spark.llmPrompt === "undefined") {
-      const error = new Error("Spark LLM prompt is not available.")
-      await logError("Spark LLM prompt unavailable", error, "system", "critical", user?.id)
-      throw error
-    }
-
     const contextSection = conceptMode !== "auto" 
       ? `Selected Concept Mode: ${conceptMode}
 Mode Instruction: ${CONCEPT_MODE_INSTRUCTION[conceptMode]}
@@ -805,7 +765,7 @@ Apply the above concept mode guidance to provide domain-specific insights.`
       : `Selected Concept Mode: Auto
 Automatically select the most relevant archetypes and implementation patterns based on the topic.`
 
-    const corePrompt = spark.llmPrompt`You are an elite marketing strategist and solutions architect. Based on the topic below, produce a comprehensive strategy.
+    const corePrompt = `You are an elite marketing strategist and solutions architect. Based on the topic below, produce a comprehensive strategy.
 
 Topic: ${description}
 
@@ -830,7 +790,7 @@ Return a JSON object with exactly these 8 string properties:
 
 Keep each value concise. Do NOT use newlines inside string values. Return ONLY valid JSON.`
 
-  const artifactsPrompt = spark.llmPrompt`Generate execution artifacts for this strategy topic.
+  const artifactsPrompt = `Generate execution artifacts for this strategy topic.
 
 Topic: ${description}
 
@@ -973,15 +933,9 @@ Rules:
       ].join("\n")
     }
 
-    if (typeof spark.llm !== "function") {
-      const error = new Error("Spark LLM function is not available.")
-      await logError("Spark LLM function unavailable", error, "system", "critical", user?.id)
-      throw error
-    }
-
     const [corePayload, artifactsPayload] = await Promise.all([
-      runWithModelFallback(corePrompt as string, false),
-      runWithModelFallback(artifactsPrompt as string, false),
+      runWithModelFallback(corePrompt, false),
+      runWithModelFallback(artifactsPrompt, false),
     ])
 
     const response = corePayload.response
@@ -1069,11 +1023,7 @@ Rules:
   }
 
   const runStrategyQA = async (candidate: MarketingResult): Promise<StrategyQAVerdict> => {
-    if (typeof spark === "undefined" || typeof spark.llmPrompt === "undefined") {
-      return { pass: true, score: 70, summary: "QA skipped — Spark not available.", issues: [] }
-    }
-
-    const qaPrompt = spark.llmPrompt`You are a strict quality gate for marketing strategy outputs.
+    const qaPrompt = `You are a strict quality gate for marketing strategy outputs.
 
 Review the candidate strategy below and score for clarity, specificity, actionability, and consistency.
 Return ONLY valid JSON with this schema:
@@ -1095,7 +1045,7 @@ Return ONLY valid JSON with this schema:
 Candidate JSON:
 ${JSON.stringify(candidate)}`
 
-    const { response } = await runWithModelFallback(qaPrompt as string, false)
+  const { response } = await runWithModelFallback(qaPrompt, false)
 
     // Handle already-parsed object responses
     if (typeof response === "object" && response !== null) {
