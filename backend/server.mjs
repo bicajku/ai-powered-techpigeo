@@ -638,13 +638,7 @@ function isProductionHost(req) {
 
 function enforceTesterEnvironment(req, authUser) {
   if (!authUser || authUser.role !== "TESTER") return { allowed: true }
-  if (isProductionHost(req)) {
-    return {
-      allowed: false,
-      status: 403,
-      error: "Tester accounts are restricted to staging environment",
-    }
-  }
+  // Tester accounts are allowed on both staging and production.
   return { allowed: true }
 }
 
@@ -686,7 +680,7 @@ async function handleCreateTester(req, res, actor) {
   }
 
   if (!isDbConfigured()) {
-    return sendJson(res, 503, { ok: false, error: "Tester management requires NEON_DATABASE_URL on staging backend" }, req)
+    return sendJson(res, 503, { ok: false, error: "Tester management requires NEON_DATABASE_URL on backend" }, req)
   }
 
   const parsed = await parseJsonBody(req)
@@ -735,7 +729,7 @@ async function handleCreateTester(req, res, actor) {
       ...newUser,
       role: "TESTER",
       testingPolicy: {
-        stagingOnly: true,
+        stagingOnly: false,
         maxCredits: 50,
         tier: "PRO",
       },
@@ -749,7 +743,7 @@ async function handleListTesters(req, res, actor) {
   }
 
   if (!isDbConfigured()) {
-    return sendJson(res, 503, { ok: false, error: "Tester management requires NEON_DATABASE_URL on staging backend" }, req)
+    return sendJson(res, 503, { ok: false, error: "Tester management requires NEON_DATABASE_URL on backend" }, req)
   }
 
   const testers = await listUsersByRole("TESTER", TESTER_MAX_USERS)
@@ -767,7 +761,7 @@ async function handleTesterAccountAction(req, res, actor) {
   }
 
   if (!isDbConfigured()) {
-    return sendJson(res, 503, { ok: false, error: "Tester management requires NEON_DATABASE_URL on staging backend" }, req)
+    return sendJson(res, 503, { ok: false, error: "Tester management requires NEON_DATABASE_URL on backend" }, req)
   }
 
   const parsed = await parseJsonBody(req)

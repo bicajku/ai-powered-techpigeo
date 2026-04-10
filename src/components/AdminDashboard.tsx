@@ -150,7 +150,7 @@ export function AdminDashboard() {
         toast.error(result.error || "Failed to create tester")
         return
       }
-      toast.success("Tester account created (staging-only, PRO tier, testing credits seeded)")
+      toast.success("Tester account created (PRO tier, testing credits seeded)")
       setTesterForm({ email: "", fullName: "", password: "" })
       const refreshedUsers = await loadData(false, true)
       if (refreshedUsers) {
@@ -176,16 +176,16 @@ export function AdminDashboard() {
       return
     }
 
-    const stagingUrl = window.location.origin
+    const accessUrl = window.location.origin
     const inviteText = [
-      "NovusSparks Testing Access (Staging)",
+      "NovusSparks Testing Access",
       "",
-      `URL: ${stagingUrl}`,
+      `URL: ${accessUrl}`,
       `Email: ${email}`,
       `Temporary Password: ${password}`,
       "",
       "Access policy:",
-      "- Staging environment only",
+      "- Available on configured NovusSparks environments",
       "- Tester role with PRO testing access",
       "- Please change your password after first login",
     ].join("\n")
@@ -650,8 +650,8 @@ export function AdminDashboard() {
             </AlertDialogTitle>
             <AlertDialogDescription>
               {testerActionTarget?.action === "promote"
-                ? `This removes staging-only tester restrictions for ${testerActionTarget?.email} and converts the account into a regular user while keeping the same login.`
-                : `This immediately disables sign-in for ${testerActionTarget?.email} and removes the tester account from the active staging list.`}
+                ? `This converts ${testerActionTarget?.email} into a regular user while keeping the same login.`
+                : `This immediately disables sign-in for ${testerActionTarget?.email} and removes the tester account from the active list.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1321,11 +1321,11 @@ export function AdminDashboard() {
             <TabsContent value="testers">
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-lg font-semibold">Tester Accounts (Staging-only)</CardTitle>
+                  <CardTitle className="text-lg font-semibold">Tester Accounts</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="rounded-lg border border-border/60 bg-muted/20 p-3 text-sm text-muted-foreground">
-                    Tester users are restricted to staging, default to PRO tier, and are seeded with testing credits. 
+                    Tester users are available on configured environments, default to PRO tier, and are seeded with testing credits. 
                     Limit: {testerMaxUsers || "-"}. Current: {testerUsers.length}. Use the key icon to reset passwords, the user icon to migrate a tester into a regular account, and the archive icon to revoke access.
                   </div>
 
