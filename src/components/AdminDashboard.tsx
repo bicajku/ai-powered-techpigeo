@@ -69,6 +69,7 @@ import { errorLogger } from "@/lib/error-logger"
 import { getEnvConfig } from "@/lib/env-config"
 
 export function AdminDashboard() {
+  const [activeTab, setActiveTab] = useState("users")
   const [users, setUsers] = useState<UserProfile[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -87,6 +88,7 @@ export function AdminDashboard() {
   const [selectedStrategy, setSelectedStrategy] = useState<{ user: UserProfile; strategy: SavedStrategy } | null>(null)
   const [selectedReview, setSelectedReview] = useState<{ user: UserProfile; review: SavedReviewDocument } | null>(null)
   const [reviewActionTarget, setReviewActionTarget] = useState<{ userId: string; reviewId: string; action: "archive" | "unarchive" | "delete" } | null>(null)
+  const [testerActionTarget, setTesterActionTarget] = useState<{ id: string; email: string; fullName: string; action: "promote" | "revoke" } | null>(null)
   const [providerStatus, setProviderStatus] = useState<BackendProviderStatus | null>(null)
   const [providerStatusError, setProviderStatusError] = useState<string | null>(null)
   const [providerStatusLoading, setProviderStatusLoading] = useState(false)
@@ -101,24 +103,32 @@ export function AdminDashboard() {
   const [testerUsers, setTesterUsers] = useState<Array<Pick<UserProfile, "id" | "email" | "fullName" | "role" | "lastLoginAt" | "createdAt">>>([])
   const [testerMaxUsers, setTesterMaxUsers] = useState(0)
   const [testerLoading, setTesterLoading] = useState(false)
+  const [hasLoadedTesters, setHasLoadedTesters] = useState(false)
+  const [strategiesLoading, setStrategiesLoading] = useState(false)
+  const [reviewsLoading, setReviewsLoading] = useState(false)
+  const [hasLoadedStrategies, setHasLoadedStrategies] = useState(false)
+  const [hasLoadedReviews, setHasLoadedReviews] = useState(false)
   const [creatingTester, setCreatingTester] = useState(false)
+  const [testerActionInFlight, setTesterActionInFlight] = useState(false)
   const [testerForm, setTesterForm] = useState({ email: "", fullName: "", password: "" })
   const envConfig = getEnvConfig()
 
-  const loadTesterUsers = useCallback(async () => {
+  const loadTesterUsers = useCallback(async (force = false) => {
     if (!authCapabilities.isSentinelCommander) return
+    if (testerLoading || (hasLoadedTesters && !force)) return
     setTesterLoading(true)
     try {
       const result = await adminService.listTesterUsers()
       setTesterUsers(result.testers)
       setTesterMaxUsers(result.maxTesters)
+      setHasLoadedTesters(true)
     } catch (error) {
       console.error("Failed to load tester users:", error)
       toast.error(error instanceof Error ? error.message : "Failed to load tester users")
     } finally {
       setTesterLoading(false)
     }
-  }, [authCapabilities.isSentinelCommander])
+  }, [authCapabilities.isSentinelCommander, hasLoadedTesters, testerLoading])
 
   const handleCreateTester = async () => {
     const email = testerForm.email.trim().toLowerCase()
@@ -142,8 +152,10 @@ export function AdminDashboard() {
       }
       toast.success("Tester account created (staging-only, PRO tier, testing credits seeded)")
       setTesterForm({ email: "", fullName: "", password: "" })
-      await loadTesterUsers()
-      await loadData(false, true)
+      const refreshedUsers = await loadData(false, true)
+      if (refreshedUsers) {
+        await refreshLoadedSections(refreshedUsers)
+      }
     } finally {
       setCreatingTester(false)
     }
@@ -227,44 +239,69 @@ export function AdminDashboard() {
     }
   }, [])
 
-  const buildStats = (
-    allUsers: UserProfile[],
-    strategies: { user: UserProfile; strategies: SavedStrategy[] }[],
-    reviews: { user: UserProfile; reviews: SavedReviewDocument[] }[]
-  ) => {
-    const totalStrategies = strategies.reduce((sum, item) => sum + (item.strategies?.length || 0), 0)
-    const totalReviews = reviews.reduce((sum, item) => sum + (item.reviews?.length || 0), 0)
+  const buildBaseStats = (allUsers: UserProfile[]) => {
     const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
     const recentUsers = allUsers.filter((user) => user.lastLoginAt && user.lastLoginAt >= sevenDaysAgo).length
-
-    console.log("Admin Dashboard Stats Calculation:", {
-      totalUsers: allUsers.length,
-      totalAdmins: allUsers.filter((user) => user.role === "admin").length,
-      totalClients: allUsers.filter((user) => user.role === "client").length,
-      totalStrategies,
-      totalReviews,
-      recentUsers,
-      strategiesBreakdown: strategies.map(s => ({ user: s.user.email, count: s.strategies?.length || 0 })),
-      reviewsBreakdown: reviews.map(r => ({ user: r.user.email, count: r.reviews?.length || 0 }))
-    })
 
     return {
       totalUsers: allUsers.length,
       totalAdmins: allUsers.filter((user) => user.role === "admin").length,
       totalClients: allUsers.filter((user) => user.role === "client").length,
-      totalStrategies,
-      totalReviews,
       recentUsers,
     }
   }
 
-  const loadData = useCallback(async (showRefreshToast = false, force = false) => {
-    if (loadInFlightRef.current) {
+  const loadStrategiesData = useCallback(async (targetUsers: UserProfile[], force = false) => {
+    if (strategiesLoading || (hasLoadedStrategies && !force)) {
       return
     }
 
-    if (!force && !showRefreshToast && hasLoadedOnceRef.current) {
+    setStrategiesLoading(true)
+    try {
+      const strategies = await adminService.getAllStrategies(targetUsers)
+      setAllStrategies(strategies)
+      setHasLoadedStrategies(true)
+      setStats((prev) => ({
+        ...prev,
+        totalStrategies: strategies.reduce((sum, item) => sum + item.strategies.length, 0),
+      }))
+    } catch (error) {
+      console.error("Failed to load strategies:", error)
+      toast.error("Failed to load strategies")
+    } finally {
+      setStrategiesLoading(false)
+    }
+  }, [hasLoadedStrategies, strategiesLoading])
+
+  const loadReviewsData = useCallback(async (targetUsers: UserProfile[], force = false) => {
+    if (reviewsLoading || (hasLoadedReviews && !force)) {
       return
+    }
+
+    setReviewsLoading(true)
+    try {
+      const reviews = await adminService.getAllReviews(targetUsers)
+      setAllReviews(reviews)
+      setHasLoadedReviews(true)
+      setStats((prev) => ({
+        ...prev,
+        totalReviews: reviews.reduce((sum, item) => sum + item.reviews.length, 0),
+      }))
+    } catch (error) {
+      console.error("Failed to load reviews:", error)
+      toast.error("Failed to load reviews")
+    } finally {
+      setReviewsLoading(false)
+    }
+  }, [hasLoadedReviews, reviewsLoading])
+
+  const loadData = useCallback(async (showRefreshToast = false, force = false): Promise<UserProfile[] | null> => {
+    if (loadInFlightRef.current) {
+      return users
+    }
+
+    if (!force && !showRefreshToast && hasLoadedOnceRef.current) {
+      return users
     }
 
     loadInFlightRef.current = true
@@ -277,22 +314,17 @@ export function AdminDashboard() {
     }
 
     try {
-      const [allUsers, strategies, reviews] = await Promise.all([
-        adminService.getAllUsers(),
-        adminService.getAllStrategies(),
-        adminService.getAllReviews(),
-      ])
-
-      const syncedStats = buildStats(allUsers, strategies, reviews)
-
+      const allUsers = await adminService.getAllUsers()
       setUsers(allUsers)
-      setAllStrategies(strategies)
-      setAllReviews(reviews)
-      setStats(syncedStats)
+      setStats((prev) => ({
+        ...prev,
+        ...buildBaseStats(allUsers),
+      }))
 
       if (showRefreshToast) {
         toast.success("Admin data refreshed successfully")
       }
+      return allUsers
     } catch (error) {
       console.error("Failed to load admin data:", error)
       toast.error("Failed to load admin data")
@@ -302,17 +334,18 @@ export function AdminDashboard() {
         "network",
         "medium"
       )
+      return null
     } finally {
       hasLoadedOnceRef.current = true
       loadInFlightRef.current = false
       setIsLoading(false)
       setIsRefreshing(false)
     }
-  }, [])
+  }, [users])
 
   useEffect(() => {
     void loadData(false, true)
-  }, [loadData])
+  }, [])
 
   useEffect(() => {
     void loadProviderStatus()
@@ -320,8 +353,39 @@ export function AdminDashboard() {
   }, [loadProviderStatus, loadCapabilities])
 
   useEffect(() => {
-    void loadTesterUsers()
-  }, [loadTesterUsers])
+    if (!hasLoadedOnceRef.current) return
+    if (activeTab === "strategies") {
+      void loadStrategiesData(users)
+    }
+    if (activeTab === "reviews") {
+      void loadReviewsData(users)
+    }
+    if (activeTab === "testers") {
+      void loadTesterUsers()
+    }
+  }, [activeTab, loadReviewsData, loadStrategiesData, loadTesterUsers, users])
+
+  const refreshLoadedSections = useCallback(async (refreshedUsers: UserProfile[]) => {
+    if (activeTab === "strategies" || hasLoadedStrategies) {
+      await loadStrategiesData(refreshedUsers, true)
+    }
+    if (activeTab === "reviews" || hasLoadedReviews) {
+      await loadReviewsData(refreshedUsers, true)
+    }
+    if ((activeTab === "testers" || hasLoadedTesters) && authCapabilities.isSentinelCommander) {
+      await loadTesterUsers(true)
+    }
+  }, [activeTab, authCapabilities.isSentinelCommander, hasLoadedReviews, hasLoadedStrategies, hasLoadedTesters, loadReviewsData, loadStrategiesData, loadTesterUsers])
+
+  const handleRefresh = async () => {
+    const refreshedUsers = await loadData(true, true)
+    await Promise.all([loadProviderStatus(), loadCapabilities()])
+
+    if (!refreshedUsers) {
+      return
+    }
+    await refreshLoadedSections(refreshedUsers)
+  }
 
   const handleRoleChange = async (email: string, newRole: UserRole) => {
     if (email === "admin") {
@@ -339,7 +403,10 @@ export function AdminDashboard() {
       const result = await adminService.updateUserRole(roleChangeTarget.email, roleChangeTarget.newRole)
       if (result.success) {
         toast.success("Role updated successfully")
-        await loadData(false, true)
+        const refreshedUsers = await loadData(false, true)
+        if (refreshedUsers) {
+          await refreshLoadedSections(refreshedUsers)
+        }
       } else {
         toast.error(result.error || "Failed to update role")
       }
@@ -366,7 +433,10 @@ export function AdminDashboard() {
       const result = await adminService.deleteUser(deleteTarget)
       if (result.success) {
         toast.success("User deleted successfully")
-        await loadData(false, true)
+        const refreshedUsers = await loadData(false, true)
+        if (refreshedUsers) {
+          await refreshLoadedSections(refreshedUsers)
+        }
       } else {
         toast.error(result.error || "Failed to delete user")
       }
@@ -378,7 +448,7 @@ export function AdminDashboard() {
   }
 
   const handleResetPassword = async (email: string) => {
-    const newPassword = prompt(`Set a new password for ${email} (min 6 chars):`)
+    const newPassword = prompt(`Set a new password for ${email} (min 8 chars):`)
     if (!newPassword) return
 
     try {
@@ -398,6 +468,45 @@ export function AdminDashboard() {
         undefined,
         { targetEmail: email }
       )
+    }
+  }
+
+  const handleTesterAction = (tester: { id: string; email: string; fullName: string }, action: "promote" | "revoke") => {
+    setTesterActionTarget({
+      id: tester.id,
+      email: tester.email,
+      fullName: tester.fullName,
+      action,
+    })
+  }
+
+  const confirmTesterAction = async () => {
+    if (!testerActionTarget) return
+
+    setTesterActionInFlight(true)
+    try {
+      const result = await adminService.manageTesterUser(testerActionTarget.id, testerActionTarget.action)
+      if (!result.success) {
+        toast.error(result.error || "Failed to update tester account")
+        return
+      }
+
+      toast.success(
+        testerActionTarget.action === "promote"
+          ? "Tester migrated to general user successfully"
+          : "Tester access revoked successfully"
+      )
+
+      await loadTesterUsers(true)
+    } catch {
+      toast.error(
+        testerActionTarget.action === "promote"
+          ? "Failed to migrate tester"
+          : "Failed to revoke tester access"
+      )
+    } finally {
+      setTesterActionInFlight(false)
+      setTesterActionTarget(null)
     }
   }
 
@@ -439,7 +548,10 @@ export function AdminDashboard() {
         toast.success("Review unarchived successfully")
       }
 
-      await loadData(false, true)
+      const refreshedUsers = await loadData(false, true)
+      if (refreshedUsers) {
+        await refreshLoadedSections(refreshedUsers)
+      }
     } catch (error) {
       console.error("Failed to perform review action:", error)
       toast.error(`Failed to ${reviewActionTarget.action} review`)
@@ -530,6 +642,33 @@ export function AdminDashboard() {
         </AlertDialogContent>
       </AlertDialog>
 
+      <AlertDialog open={!!testerActionTarget} onOpenChange={() => !testerActionInFlight && setTesterActionTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {testerActionTarget?.action === "promote" ? "Migrate Tester to General User" : "Revoke Tester Access"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {testerActionTarget?.action === "promote"
+                ? `This removes staging-only tester restrictions for ${testerActionTarget?.email} and converts the account into a regular user while keeping the same login.`
+                : `This immediately disables sign-in for ${testerActionTarget?.email} and removes the tester account from the active staging list.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={testerActionInFlight}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmTesterAction}
+              disabled={testerActionInFlight}
+              className={testerActionTarget?.action === "revoke" ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : undefined}
+            >
+              {testerActionInFlight
+                ? testerActionTarget?.action === "promote" ? "Migrating..." : "Revoking..."
+                : testerActionTarget?.action === "promote" ? "Migrate User" : "Revoke Access"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <div className="space-y-6">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -543,9 +682,7 @@ export function AdminDashboard() {
             </h2>
             <Button
               onClick={() => {
-                void loadData(true)
-                void loadProviderStatus()
-                void loadCapabilities()
+                void handleRefresh()
               }}
               disabled={isRefreshing}
               variant="outline"
@@ -630,7 +767,7 @@ export function AdminDashboard() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-bold text-foreground">{stats.totalStrategies}</div>
+                <div className="text-3xl font-bold text-foreground">{hasLoadedStrategies ? stats.totalStrategies : "-"}</div>
               </CardContent>
             </Card>
           </motion.div>
@@ -648,7 +785,7 @@ export function AdminDashboard() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-bold text-foreground">{stats.totalReviews}</div>
+                <div className="text-3xl font-bold text-foreground">{hasLoadedReviews ? stats.totalReviews : "-"}</div>
               </CardContent>
             </Card>
           </motion.div>
@@ -728,7 +865,7 @@ export function AdminDashboard() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.7 }}
         >
-          <Tabs defaultValue="users" className="w-full">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <div className="mb-4 overflow-x-auto pb-1">
               <TabsList className="grid min-w-[1320px] grid-cols-9">
                 <TabsTrigger value="users" className="gap-2">
@@ -745,11 +882,11 @@ export function AdminDashboard() {
                 </TabsTrigger>
                 <TabsTrigger value="strategies" className="gap-2">
                   <FolderOpen size={18} weight="bold" />
-                  All Strategies ({allStrategies.reduce((sum, item) => sum + item.strategies.length, 0)})
+                  All Strategies ({hasLoadedStrategies ? allStrategies.reduce((sum, item) => sum + item.strategies.length, 0) : "..."})
                 </TabsTrigger>
                 <TabsTrigger value="reviews" className="gap-2">
                   <MagnifyingGlass size={18} weight="bold" />
-                  All Reviews ({allReviews.reduce((sum, item) => sum + item.reviews.length, 0)})
+                  All Reviews ({hasLoadedReviews ? allReviews.reduce((sum, item) => sum + item.reviews.length, 0) : "..."})
                 </TabsTrigger>
                 <TabsTrigger value="invites" className="gap-2">
                   <LinkIcon size={18} weight="bold" />
@@ -774,7 +911,14 @@ export function AdminDashboard() {
               <AdminSubscriptionPanel
                 users={users}
                 adminEmail={users.find(u => u.email === "admin")?.email || "admin"}
-                onDataChanged={() => void loadData(false, true)}
+                onDataChanged={() => {
+                  void (async () => {
+                    const refreshedUsers = await loadData(false, true)
+                    if (refreshedUsers) {
+                      await refreshLoadedSections(refreshedUsers)
+                    }
+                  })()
+                }}
               />
             </TabsContent>
 
@@ -917,7 +1061,13 @@ export function AdminDashboard() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {allStrategies.reduce((sum, item) => sum + item.strategies.length, 0) === 0 ? (
+                        {!hasLoadedStrategies || strategiesLoading ? (
+                          <TableRow>
+                            <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                              Loading strategies...
+                            </TableCell>
+                          </TableRow>
+                        ) : allStrategies.reduce((sum, item) => sum + item.strategies.length, 0) === 0 ? (
                           <TableRow>
                             <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
                               No strategies found
@@ -970,11 +1120,11 @@ export function AdminDashboard() {
                     <TabsList className="grid w-full grid-cols-2 max-w-md mb-4">
                       <TabsTrigger value="active" className="gap-2">
                         <FileText size={16} weight="duotone" />
-                        Active ({allReviews.reduce((sum, item) => sum + item.reviews.filter(r => !r.archived).length, 0)})
+                        Active ({hasLoadedReviews ? allReviews.reduce((sum, item) => sum + item.reviews.filter(r => !r.archived).length, 0) : "..."})
                       </TabsTrigger>
                       <TabsTrigger value="archived" className="gap-2">
                         <FileText size={16} weight="duotone" />
-                        Archived ({allReviews.reduce((sum, item) => sum + item.reviews.filter(r => r.archived).length, 0)})
+                        Archived ({hasLoadedReviews ? allReviews.reduce((sum, item) => sum + item.reviews.filter(r => r.archived).length, 0) : "..."})
                       </TabsTrigger>
                     </TabsList>
 
@@ -992,7 +1142,13 @@ export function AdminDashboard() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {allReviews.reduce((sum, item) => sum + item.reviews.filter(r => !r.archived).length, 0) === 0 ? (
+                            {!hasLoadedReviews || reviewsLoading ? (
+                              <TableRow>
+                                <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                                  Loading reviews...
+                                </TableCell>
+                              </TableRow>
+                            ) : allReviews.reduce((sum, item) => sum + item.reviews.filter(r => !r.archived).length, 0) === 0 ? (
                               <TableRow>
                                 <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
                                   No active reviews found
@@ -1073,7 +1229,13 @@ export function AdminDashboard() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {allReviews.reduce((sum, item) => sum + item.reviews.filter(r => r.archived).length, 0) === 0 ? (
+                            {!hasLoadedReviews || reviewsLoading ? (
+                              <TableRow>
+                                <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                                  Loading reviews...
+                                </TableCell>
+                              </TableRow>
+                            ) : allReviews.reduce((sum, item) => sum + item.reviews.filter(r => r.archived).length, 0) === 0 ? (
                               <TableRow>
                                 <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
                                   No archived reviews found
@@ -1164,7 +1326,7 @@ export function AdminDashboard() {
                 <CardContent className="space-y-4">
                   <div className="rounded-lg border border-border/60 bg-muted/20 p-3 text-sm text-muted-foreground">
                     Tester users are restricted to staging, default to PRO tier, and are seeded with testing credits. 
-                    Limit: {testerMaxUsers || "-"}. Current: {testerUsers.length}.
+                    Limit: {testerMaxUsers || "-"}. Current: {testerUsers.length}. Use the key icon to reset passwords, the user icon to migrate a tester into a regular account, and the archive icon to revoke access.
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
@@ -1216,7 +1378,7 @@ export function AdminDashboard() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {testerLoading ? (
+                        {testerLoading || !hasLoadedTesters ? (
                           <TableRow>
                             <TableCell colSpan={6} className="text-center text-muted-foreground py-6">Loading tester accounts...</TableCell>
                           </TableRow>
@@ -1235,15 +1397,37 @@ export function AdminDashboard() {
                               <TableCell className="text-sm text-muted-foreground">{formatDate(tester.createdAt)}</TableCell>
                               <TableCell className="text-sm text-muted-foreground">{formatDate(tester.lastLoginAt)}</TableCell>
                               <TableCell className="text-right">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleResetPassword(tester.email)}
-                                  title={authCapabilities.canSetPasswords ? "Reset tester password" : "Requires Sentinel Commander permissions"}
-                                  disabled={!authCapabilities.canSetPasswords}
-                                >
-                                  <Key size={16} weight="bold" />
-                                </Button>
+                                <div className="flex items-center justify-end gap-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleResetPassword(tester.email)}
+                                    title={authCapabilities.canSetPasswords ? "Reset tester password" : "Requires Sentinel Commander permissions"}
+                                    disabled={!authCapabilities.canSetPasswords}
+                                  >
+                                    <Key size={16} weight="bold" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleTesterAction(tester, "promote")}
+                                    title={authCapabilities.isSentinelCommander ? "Migrate to general user" : "Requires Sentinel Commander permissions"}
+                                    disabled={!authCapabilities.isSentinelCommander}
+                                    className="text-primary hover:text-primary"
+                                  >
+                                    <User size={16} weight="bold" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleTesterAction(tester, "revoke")}
+                                    title={authCapabilities.isSentinelCommander ? "Revoke tester access" : "Requires Sentinel Commander permissions"}
+                                    disabled={!authCapabilities.isSentinelCommander}
+                                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                  >
+                                    <Archive size={16} weight="bold" />
+                                  </Button>
+                                </div>
                               </TableCell>
                             </TableRow>
                           ))

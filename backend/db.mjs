@@ -959,6 +959,36 @@ export async function updatePasswordHash(userId, newHash) {
   await sql`UPDATE sentinel_users SET password_hash = ${newHash} WHERE id = ${userId}`
 }
 
+export async function updateUserRoleById(userId, role) {
+  const sql = getSql()
+  const rows = await sql`
+    UPDATE sentinel_users
+    SET role = ${role}, updated_at = NOW()
+    WHERE id = ${userId}
+    RETURNING id, email, full_name AS "fullName",
+              role, organization_id AS "organizationId", avatar_url AS "avatarUrl",
+              is_active AS "isActive",
+              EXTRACT(EPOCH FROM created_at)::BIGINT * 1000 AS "createdAt",
+              EXTRACT(EPOCH FROM last_login_at)::BIGINT * 1000 AS "lastLoginAt"
+  `
+  return rows[0] || null
+}
+
+export async function deactivateUserById(userId) {
+  const sql = getSql()
+  const rows = await sql`
+    UPDATE sentinel_users
+    SET is_active = FALSE, updated_at = NOW()
+    WHERE id = ${userId}
+    RETURNING id, email, full_name AS "fullName",
+              role, organization_id AS "organizationId", avatar_url AS "avatarUrl",
+              is_active AS "isActive",
+              EXTRACT(EPOCH FROM created_at)::BIGINT * 1000 AS "createdAt",
+              EXTRACT(EPOCH FROM last_login_at)::BIGINT * 1000 AS "lastLoginAt"
+  `
+  return rows[0] || null
+}
+
 export async function assignUserToOrganization(userId, organizationId, role) {
   const sql = getSql()
   const rows = await sql`

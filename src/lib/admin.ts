@@ -87,34 +87,6 @@ export const adminService = {
         }
       }
 
-      try {
-        const testerRes = await requestBackend("GET", "/api/sentinel/admin/testers")
-        if (testerRes.ok && testerRes.data?.ok && Array.isArray(testerRes.data.testers)) {
-          for (const tester of testerRes.data.testers as Array<Record<string, unknown>>) {
-            const email = String(tester.email || "").toLowerCase()
-            if (!email) continue
-            dedupedByEmail.set(email, {
-              id: String(tester.id || email),
-              email,
-              fullName: String(tester.fullName || "Tester"),
-              role: "tester",
-              createdAt: Number(tester.createdAt || Date.now()),
-              lastLoginAt: Number(tester.lastLoginAt || Date.now()),
-              subscription: {
-                plan: "pro",
-                status: "active",
-                proCredits: 50,
-                updatedAt: Date.now(),
-                testerSeedCredits: 50,
-                testerAutoBypassUpgrade: true,
-              },
-            })
-          }
-        }
-      } catch {
-        // Non-blocking: users list still comes from KV.
-      }
-
       return Array.from(dedupedByEmail.values())
     } catch (error) {
       console.error("Failed to get all users:", error)
@@ -142,6 +114,14 @@ export const adminService = {
     return { success: true }
   },
 
+  async manageTesterUser(userId: string, action: "promote" | "revoke"): Promise<{ success: boolean; error?: string }> {
+    const res = await postBackend("/api/sentinel/admin/testers/action", { userId, action })
+    if (!res.ok || !res.data?.ok) {
+      return { success: false, error: (res.data?.error as string) || "Failed to update tester account" }
+    }
+    return { success: true }
+  },
+
   async getUserStrategies(userId: string): Promise<SavedStrategy[]> {
     try {
       const strategies = await getSafeKVClient().get<SavedStrategy[]>(`saved-strategies-${userId}`)
@@ -162,11 +142,11 @@ export const adminService = {
     }
   },
 
-  async getAllStrategies(): Promise<{ user: UserProfile; strategies: SavedStrategy[] }[]> {
+  async getAllStrategies(users?: UserProfile[]): Promise<{ user: UserProfile; strategies: SavedStrategy[] }[]> {
     try {
-      const users = await this.getAllUsers()
+      const targetUsers = users ?? await this.getAllUsers()
       const results = await Promise.all(
-        users.map(async (user) => ({
+        targetUsers.map(async (user) => ({
           user,
           strategies: await this.getUserStrategies(user.id)
         }))
@@ -178,11 +158,11 @@ export const adminService = {
     }
   },
 
-  async getAllReviews(): Promise<{ user: UserProfile; reviews: SavedReviewDocument[] }[]> {
+  async getAllReviews(users?: UserProfile[]): Promise<{ user: UserProfile; reviews: SavedReviewDocument[] }[]> {
     try {
-      const users = await this.getAllUsers()
+      const targetUsers = users ?? await this.getAllUsers()
       const results = await Promise.all(
-        users.map(async (user) => ({
+        targetUsers.map(async (user) => ({
           user,
           reviews: await this.getUserReviews(user.id)
         }))
@@ -266,8 +246,8 @@ export const adminService = {
   }> {
     try {
       const users = await this.getAllUsers()
-      const allStrategies = await this.getAllStrategies()
-      const allReviews = await this.getAllReviews()
+      const allStrategies = await this.getAllStrategies(users)
+      const allReviews = await this.getAllReviews(users)
       
       const totalStrategies = allStrategies.reduce(
         (sum, item) => sum + item.strategies.length,

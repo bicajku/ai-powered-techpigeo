@@ -32,6 +32,8 @@ import {
   countUsersByRole,
   updateLastLogin,
   updatePasswordHash,
+  updateUserRoleById,
+  deactivateUserById,
   assignUserToOrganization,
   createOrganization,
   getUserSubscription,
@@ -757,6 +759,89 @@ async function handleListTesters(req, res, actor) {
     total: testers.length,
     testers,
   }, req)
+}
+
+async function handleTesterAccountAction(req, res, actor) {
+  if (!hasMinimumRole(actor.role, "SENTINEL_COMMANDER")) {
+    return sendJson(res, 403, { ok: false, error: "Insufficient permissions" }, req)
+  }
+
+  if (!isDbConfigured()) {
+    return sendJson(res, 503, { ok: false, error: "Tester management requires NEON_DATABASE_URL on staging backend" }, req)
+  }
+
+  const parsed = await parseJsonBody(req)
+  if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+
+  const body = parsed.data
+  const userId = typeof body.userId === "string" ? body.userId.trim() : ""
+  const action = typeof body.action === "string" ? body.action.trim().toLowerCase() : ""
+
+  if (!userId || !action) {
+    return sendJson(res, 400, { ok: false, error: "userId and action are required" }, req)
+  }
+
+  try {
+    const targetUser = await getUserById(userId)
+    if (!targetUser || !targetUser.isActive) {
+      return sendJson(res, 404, { ok: false, error: "Tester account not found" }, req)
+    }
+
+    if (targetUser.role !== "TESTER") {
+      return sendJson(res, 400, { ok: false, error: "Only active tester accounts can be managed here" }, req)
+    }
+
+    if (action === "promote") {
+      const updatedUser = await updateUserRoleById(userId, "USER")
+      await writeAuditLog({
+        userId: actor.userId,
+        action: "UPDATE",
+        resource: "tester-promote",
+        resourceId: userId,
+        ipAddress: getClientIp(req),
+        success: Boolean(updatedUser),
+        metadata: { targetEmail: targetUser.email, fromRole: "TESTER", toRole: "USER" },
+      }).catch(() => {})
+
+      if (!updatedUser) {
+        return sendJson(res, 500, { ok: false, error: "Failed to migrate tester account" }, req)
+      }
+
+      return sendJson(res, 200, {
+        ok: true,
+        action: "promote",
+        user: updatedUser,
+      }, req)
+    }
+
+    if (action === "revoke") {
+      const updatedUser = await deactivateUserById(userId)
+      await writeAuditLog({
+        userId: actor.userId,
+        action: "DELETE",
+        resource: "tester-revoke",
+        resourceId: userId,
+        ipAddress: getClientIp(req),
+        success: Boolean(updatedUser),
+        metadata: { targetEmail: targetUser.email, previousRole: "TESTER" },
+      }).catch(() => {})
+
+      if (!updatedUser) {
+        return sendJson(res, 500, { ok: false, error: "Failed to revoke tester access" }, req)
+      }
+
+      return sendJson(res, 200, {
+        ok: true,
+        action: "revoke",
+        user: updatedUser,
+      }, req)
+    }
+
+    return sendJson(res, 400, { ok: false, error: "Unsupported tester action" }, req)
+  } catch (err) {
+    console.error("[tester/manage] error:", err)
+    return sendJson(res, 500, { ok: false, error: "Failed to manage tester account" }, req)
+  }
 }
 
 function getAuthCapabilities(user) {
@@ -3666,7 +3751,18 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 401, { ok: false, error: "Token has been revoked" }, req)
       }
 
-      const user = normalizeAuthUser(authResult.user)
+      let user = normalizeAuthUser(authResult.user)
+      if (user?.role === "TESTER" && user?.userId) {
+        const freshUser = await getUserById(user.userId).catch(() => null)
+        if (!freshUser || !freshUser.isActive) {
+          return sendJson(res, 401, { ok: false, error: "User not found or inactive" }, req)
+        }
+        user = normalizeAuthUser({
+          ...freshUser,
+          userId: freshUser.id,
+          subscriptionTier: authResult.user.subscriptionTier || null,
+        })
+      }
       const testerEnv = enforceTesterEnvironment(req, user)
       if (!testerEnv.allowed) {
         return sendJson(res, testerEnv.status || 403, { ok: false, error: testerEnv.error }, req)
@@ -3971,6 +4067,10 @@ const server = http.createServer(async (req, res) => {
 
       if (method === "POST" && reqPathname === "/api/sentinel/admin/testers") {
         return handleCreateTester(req, res, user)
+      }
+
+      if (method === "POST" && reqPathname === "/api/sentinel/admin/testers/action") {
+        return handleTesterAccountAction(req, res, user)
       }
 
       // POST /api/sentinel/user-style/track-generation
