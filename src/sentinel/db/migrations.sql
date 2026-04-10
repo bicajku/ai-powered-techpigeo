@@ -102,14 +102,15 @@ CREATE TABLE IF NOT EXISTS sentinel_subscriptions (
 CREATE TABLE IF NOT EXISTS sentinel_user_subscriptions (
   id              TEXT        PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
   user_id         TEXT        NOT NULL REFERENCES sentinel_users(id) ON DELETE CASCADE,
-  subscription_id TEXT        NOT NULL REFERENCES sentinel_subscriptions(id),
+  subscription_id TEXT        REFERENCES sentinel_subscriptions(id),
   tier            subscription_tier NOT NULL,
   status          subscription_status NOT NULL DEFAULT 'ACTIVE',
   assigned_by     TEXT        NOT NULL REFERENCES sentinel_users(id),
   assigned_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   expires_at      TIMESTAMPTZ,
-  organization_id TEXT        NOT NULL REFERENCES sentinel_organizations(id),
+  organization_id TEXT        REFERENCES sentinel_organizations(id),
   auto_renew      BOOLEAN     NOT NULL DEFAULT TRUE,
+  pro_credits     INTEGER     NOT NULL DEFAULT 0,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

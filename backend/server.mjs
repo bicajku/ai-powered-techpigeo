@@ -83,6 +83,8 @@ import {
   listSkillExecutionLogs,
   listAllUsersWithSubscriptions,
   seedWelcomeCredits,
+  addCreditsToUserSubscription,
+  setUserSubscriptionPlan,
 } from "./db.mjs"
 import {
   canPerformAction,
@@ -1250,10 +1252,9 @@ async function handleLogin(req, res) {
       })
     }
 
-    // Get subscription info for token with timeout - TEMPORARILY SKIPPED FOR DEBUGGING
-    console.log(`[auth/login] Skipping subscription query (debug mode)`)
-    const subscription = null
-    const tier = null
+    // Get subscription info for token
+    const subscription = await getUserSubscription(user.id)
+    const tier = subscription?.tier || null
 
     // Sign JWT
     const token = signToken({
@@ -2361,6 +2362,110 @@ async function handleAdminListUsers(req, res, user) {
     return sendJson(res, 200, { ok: true, total: users.length, users }, req)
   } catch (err) {
     console.error("[sentinel/admin/users] error:", err)
+    return sendJson(res, 500, { ok: false, error: "Internal server error" }, req)
+  }
+}
+
+/**
+ * POST /api/sentinel/admin/subscriptions/add-credits
+ * Body: { userId, credits }
+ * Requires SENTINEL_COMMANDER.
+ */
+async function handleAdminAddCredits(req, res, user) {
+  if (!hasMinimumRole(user.role, "SENTINEL_COMMANDER")) {
+    return sendJson(res, 403, { ok: false, error: "Only Sentinel Commander can manage credits" }, req)
+  }
+
+  if (!isDbConfigured()) {
+    return sendJson(res, 503, { ok: false, error: "Database not configured" }, req)
+  }
+
+  const parsed = await parseJsonBody(req)
+  if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+
+  const body = parsed.data || {}
+  const targetUserId = typeof body.userId === "string" ? body.userId.trim() : ""
+  const credits = Number(body.credits)
+
+  if (!targetUserId || !Number.isFinite(credits) || credits <= 0) {
+    return sendJson(res, 400, { ok: false, error: "userId and positive credits are required" }, req)
+  }
+
+  try {
+    const target = await getUserById(targetUserId)
+    if (!target) {
+      return sendJson(res, 404, { ok: false, error: "User not found" }, req)
+    }
+
+    const updated = await addCreditsToUserSubscription(targetUserId, credits, user.userId)
+    if (!updated) {
+      return sendJson(res, 500, { ok: false, error: "Failed to add credits" }, req)
+    }
+
+    const tierLower = String(updated.tier || "BASIC").toLowerCase()
+    return sendJson(res, 200, {
+      ok: true,
+      userId: targetUserId,
+      credits: Number(updated.proCredits || 0),
+      tier: tierLower === "teams" ? "team" : tierLower,
+    }, req)
+  } catch (err) {
+    console.error("[sentinel/admin/subscriptions/add-credits] error:", err)
+    return sendJson(res, 500, { ok: false, error: "Internal server error" }, req)
+  }
+}
+
+/**
+ * POST /api/sentinel/admin/subscriptions/set-plan
+ * Body: { userId, plan }
+ * Requires SENTINEL_COMMANDER.
+ */
+async function handleAdminSetPlan(req, res, user) {
+  if (!hasMinimumRole(user.role, "SENTINEL_COMMANDER")) {
+    return sendJson(res, 403, { ok: false, error: "Only Sentinel Commander can set plans" }, req)
+  }
+
+  if (!isDbConfigured()) {
+    return sendJson(res, 503, { ok: false, error: "Database not configured" }, req)
+  }
+
+  const parsed = await parseJsonBody(req)
+  if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+
+  const body = parsed.data || {}
+  const targetUserId = typeof body.userId === "string" ? body.userId.trim() : ""
+  const rawPlan = typeof body.plan === "string" ? body.plan.trim().toLowerCase() : ""
+  const tierMap = {
+    basic: "BASIC",
+    pro: "PRO",
+    team: "TEAMS",
+    enterprise: "ENTERPRISE",
+  }
+  const dbTier = tierMap[rawPlan]
+
+  if (!targetUserId || !dbTier) {
+    return sendJson(res, 400, { ok: false, error: "Valid userId and plan are required" }, req)
+  }
+
+  try {
+    const target = await getUserById(targetUserId)
+    if (!target) {
+      return sendJson(res, 404, { ok: false, error: "User not found" }, req)
+    }
+
+    const updated = await setUserSubscriptionPlan(targetUserId, dbTier, user.userId)
+    if (!updated) {
+      return sendJson(res, 500, { ok: false, error: "Failed to set plan" }, req)
+    }
+
+    return sendJson(res, 200, {
+      ok: true,
+      userId: targetUserId,
+      plan: rawPlan,
+      credits: Number(updated.proCredits || 0),
+    }, req)
+  } catch (err) {
+    console.error("[sentinel/admin/subscriptions/set-plan] error:", err)
     return sendJson(res, 500, { ok: false, error: "Internal server error" }, req)
   }
 }
@@ -3954,6 +4059,16 @@ const server = http.createServer(async (req, res) => {
       // GET /api/sentinel/admin/users
       if (method === "GET" && reqPathname === "/api/sentinel/admin/users") {
         return handleAdminListUsers(req, res, user)
+      }
+
+      // POST /api/sentinel/admin/subscriptions/add-credits
+      if (method === "POST" && reqPathname === "/api/sentinel/admin/subscriptions/add-credits") {
+        return handleAdminAddCredits(req, res, user)
+      }
+
+      // POST /api/sentinel/admin/subscriptions/set-plan
+      if (method === "POST" && reqPathname === "/api/sentinel/admin/subscriptions/set-plan") {
+        return handleAdminSetPlan(req, res, user)
       }
 
       // GET /api/sentinel/admin/stats

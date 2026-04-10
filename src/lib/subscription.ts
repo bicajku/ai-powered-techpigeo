@@ -5,6 +5,56 @@ import { logEnterpriseCreditUsage } from "@/lib/enterprise-subscription"
 const USERS_STORAGE_KEY = "platform-users"
 const SUBSCRIPTION_REQUESTS_KEY = "subscription-requests"
 
+function getBackendBaseUrl(): string {
+  if (typeof import.meta !== "undefined" && import.meta.env?.VITE_BACKEND_API_BASE_URL) {
+    return import.meta.env.VITE_BACKEND_API_BASE_URL as string
+  }
+  return ""
+}
+
+function isLocalDevHost(): boolean {
+  if (typeof window === "undefined") return false
+  const host = window.location.hostname.toLowerCase()
+  return host === "localhost" || host === "127.0.0.1" || host === "::1"
+}
+
+async function postBackend(path: string, payload: unknown): Promise<{ ok: boolean; status: number; data?: Record<string, unknown> | null }> {
+  try {
+    const token = typeof localStorage !== "undefined"
+      ? localStorage.getItem("sentinel-auth-token") || localStorage.getItem("sentinel_token")
+      : null
+
+    const headers: Record<string, string> = { "Content-Type": "application/json" }
+    if (token) {
+      headers.Authorization = `Bearer ${token}`
+    }
+
+    try {
+      const csrfMatch = document.cookie
+        .split(";")
+        .map((c) => c.trim())
+        .find((c) => c.startsWith("__csrf="))
+      if (csrfMatch) {
+        headers["X-CSRF-Token"] = csrfMatch.slice("__csrf=".length)
+      }
+    } catch {
+      // Cookie access unavailable
+    }
+
+    const res = await fetch(`${getBackendBaseUrl()}${path}`, {
+      method: "POST",
+      headers,
+      credentials: "include",
+      body: JSON.stringify(payload),
+    })
+
+    const data = await res.json().catch(() => null)
+    return { ok: res.ok, status: res.status, data }
+  } catch {
+    return { ok: false, status: 0 }
+  }
+}
+
 type ChargeableModule = "review" | "humanizer"
 
 interface CreditHistoryEntry {
@@ -694,6 +744,26 @@ export async function adminAddCredits(userId: string, creditsToAdd: number): Pro
     return { success: false, credits: 0, error: "Credits must be greater than zero" }
   }
 
+  const backendRes = await postBackend("/api/sentinel/admin/subscriptions/add-credits", {
+    userId,
+    credits: creditsToAdd,
+  })
+
+  if (backendRes.status !== 0) {
+    if (backendRes.ok && backendRes.data?.ok) {
+      return { success: true, credits: Number(backendRes.data.credits || 0) }
+    }
+    return {
+      success: false,
+      credits: 0,
+      error: (backendRes.data?.error as string) || "Failed to add credits",
+    }
+  }
+
+  if (!isLocalDevHost()) {
+    return { success: false, credits: 0, error: "Backend unavailable" }
+  }
+
   try {
     const users = (await getSafeKVClient().get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
     const user = users[userId]
@@ -724,6 +794,22 @@ export async function adminAddCredits(userId: string, creditsToAdd: number): Pro
 }
 
 export async function adminSetPlan(userId: string, plan: SubscriptionPlan): Promise<{ success: boolean; error?: string }> {
+  const backendRes = await postBackend("/api/sentinel/admin/subscriptions/set-plan", {
+    userId,
+    plan,
+  })
+
+  if (backendRes.status !== 0) {
+    if (backendRes.ok && backendRes.data?.ok) {
+      return { success: true }
+    }
+    return { success: false, error: (backendRes.data?.error as string) || "Failed to set plan" }
+  }
+
+  if (!isLocalDevHost()) {
+    return { success: false, error: "Backend unavailable" }
+  }
+
   try {
     const users = (await getSafeKVClient().get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
     const user = users[userId]

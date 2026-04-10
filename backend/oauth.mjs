@@ -231,10 +231,24 @@ async function processOAuthUser(profile) {
   }
 
   // Get subscription for token
-  const subRows = await sql`SELECT sentinel_subscriptions.tier FROM sentinel_subscriptions JOIN sentinel_organizations ON sentinel_organizations.subscription_id = sentinel_subscriptions.id WHERE sentinel_organizations.id = ${user.organization_id} LIMIT 1`;
-  const tier = subRows.length > 0 ? subRows[0].tier : 'BASIC';
+  // Get subscription info from user's latest active subscription (not from a subscription product)
+  // The org.subscription_id field links to sentinel_subscriptions for plan details,
+  // but our user might have a direct user_subscription already.
+  let tier = "BASIC"
+  try {
+    const subData = await sql`
+      SELECT tier FROM sentinel_user_subscriptions
+      WHERE user_id = ${user.id} AND status = 'ACTIVE'
+      ORDER BY assigned_at DESC
+      LIMIT 1
+    `
+    if (subData.length > 0) {
+      tier = subData[0].tier
+    }
+  } catch (err) {
+    console.warn("[oauth] Failed to fetch user subscription tier:", err?.message)
+  }
 
-  // 3. Generate token using the existing signToken function
   const token = signToken({
     userId: user.id,
     email: user.email,

@@ -1116,6 +1116,122 @@ export async function seedWelcomeCredits(userId, assignedBy) {
   `
 }
 
+function normalizeSubscriptionTier(tier) {
+  const raw = String(tier || "").trim().toUpperCase()
+  if (raw === "TEAM") return "TEAMS"
+  if (raw === "TEAMS") return "TEAMS"
+  if (raw === "PRO") return "PRO"
+  if (raw === "ENTERPRISE") return "ENTERPRISE"
+  return "BASIC"
+}
+
+/**
+ * Add credits to a user's latest active subscription.
+ * If no active subscription exists, create a BASIC active record and seed credits.
+ */
+export async function addCreditsToUserSubscription(userId, creditsToAdd, assignedBy) {
+  const sql = getSql()
+  const amount = Number(creditsToAdd) || 0
+  if (amount <= 0) {
+    throw new Error("Credits must be greater than zero")
+  }
+
+  const existing = await sql`
+    SELECT id, COALESCE(pro_credits, 0) AS "proCredits"
+    FROM sentinel_user_subscriptions
+    WHERE user_id = ${userId} AND status = 'ACTIVE'
+    ORDER BY assigned_at DESC
+    LIMIT 1
+  `
+
+  if (existing.length > 0) {
+    const row = await sql`
+      UPDATE sentinel_user_subscriptions
+      SET pro_credits = GREATEST(0, COALESCE(pro_credits, 0) + ${amount}),
+          updated_at = NOW()
+      WHERE id = ${existing[0].id}
+      RETURNING id, user_id AS "userId", tier, status,
+                COALESCE(pro_credits, 0) AS "proCredits",
+                EXTRACT(EPOCH FROM assigned_at)::BIGINT * 1000 AS "assignedAt",
+                EXTRACT(EPOCH FROM expires_at)::BIGINT * 1000 AS "expiresAt"
+    `
+    return row[0] || null
+  }
+
+  const userRows = await sql`
+    SELECT organization_id AS "organizationId"
+    FROM sentinel_users
+    WHERE id = ${userId} AND is_active = TRUE
+    LIMIT 1
+  `
+  const orgId = userRows[0]?.organizationId || null
+
+  const inserted = await sql`
+    INSERT INTO sentinel_user_subscriptions
+      (id, user_id, subscription_id, organization_id, tier, status, assigned_by, pro_credits, expires_at, auto_renew)
+    VALUES
+      (${crypto.randomUUID()}, ${userId}, NULL, ${orgId}, 'BASIC', 'ACTIVE', ${assignedBy || userId}, ${amount}, NULL, false)
+    RETURNING id, user_id AS "userId", tier, status,
+              COALESCE(pro_credits, 0) AS "proCredits",
+              EXTRACT(EPOCH FROM assigned_at)::BIGINT * 1000 AS "assignedAt",
+              EXTRACT(EPOCH FROM expires_at)::BIGINT * 1000 AS "expiresAt"
+  `
+
+  return inserted[0] || null
+}
+
+/**
+ * Set the plan tier on a user's latest active subscription.
+ * If no active subscription exists, create one with the desired tier.
+ */
+export async function setUserSubscriptionPlan(userId, planTier, assignedBy) {
+  const sql = getSql()
+  const normalizedTier = normalizeSubscriptionTier(planTier)
+
+  const existing = await sql`
+    SELECT id
+    FROM sentinel_user_subscriptions
+    WHERE user_id = ${userId} AND status = 'ACTIVE'
+    ORDER BY assigned_at DESC
+    LIMIT 1
+  `
+
+  if (existing.length > 0) {
+    const row = await sql`
+      UPDATE sentinel_user_subscriptions
+      SET tier = ${normalizedTier},
+          updated_at = NOW()
+      WHERE id = ${existing[0].id}
+      RETURNING id, user_id AS "userId", tier, status,
+                COALESCE(pro_credits, 0) AS "proCredits",
+                EXTRACT(EPOCH FROM assigned_at)::BIGINT * 1000 AS "assignedAt",
+                EXTRACT(EPOCH FROM expires_at)::BIGINT * 1000 AS "expiresAt"
+    `
+    return row[0] || null
+  }
+
+  const userRows = await sql`
+    SELECT organization_id AS "organizationId"
+    FROM sentinel_users
+    WHERE id = ${userId} AND is_active = TRUE
+    LIMIT 1
+  `
+  const orgId = userRows[0]?.organizationId || null
+
+  const inserted = await sql`
+    INSERT INTO sentinel_user_subscriptions
+      (id, user_id, subscription_id, organization_id, tier, status, assigned_by, pro_credits, expires_at, auto_renew)
+    VALUES
+      (${crypto.randomUUID()}, ${userId}, NULL, ${orgId}, ${normalizedTier}, 'ACTIVE', ${assignedBy || userId}, 0, NULL, false)
+    RETURNING id, user_id AS "userId", tier, status,
+              COALESCE(pro_credits, 0) AS "proCredits",
+              EXTRACT(EPOCH FROM assigned_at)::BIGINT * 1000 AS "assignedAt",
+              EXTRACT(EPOCH FROM expires_at)::BIGINT * 1000 AS "expiresAt"
+  `
+
+  return inserted[0] || null
+}
+
 // ─────────────────────────── Module Permission Queries ───────────
 
 /**
