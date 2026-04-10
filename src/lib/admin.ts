@@ -75,10 +75,53 @@ async function simpleHash(text: string): Promise<string> {
 
 export const adminService = {
   async getAllUsers(): Promise<UserProfile[]> {
+    // Try backend Neon-backed users list first (contains all OAuth + email signups)
+    const res = await requestBackend("GET", "/api/sentinel/admin/users")
+    if (res.ok && res.data?.ok && Array.isArray(res.data.users)) {
+      return (res.data.users as unknown[]).map((u) => {
+        const raw = u as {
+          id: string; email: string; fullName: string; role: string;
+          effectivePlan: string; planStatus: string; credits: number;
+          trialDaysRemaining: number; createdAt: number; lastLoginAt: number;
+          organizationId?: string; avatarUrl?: string;
+          subscription?: { tier: string; status: string; proCredits: number; expiresAt?: number }
+        }
+        const plan = (raw.effectivePlan || "basic") as import("@/types").SubscriptionPlan
+        return {
+          id: raw.id,
+          email: raw.email,
+          fullName: raw.fullName,
+          role: (["admin", "client", "tester"].includes(raw.role?.toLowerCase())
+            ? raw.role.toLowerCase()
+            : raw.role === "SENTINEL_COMMANDER" || raw.role === "ORG_ADMIN" || raw.role === "TEAM_ADMIN"
+              ? "admin"
+              : raw.role === "TESTER" ? "tester" : "client") as import("@/types").UserRole,
+          avatarUrl: raw.avatarUrl,
+          createdAt: raw.createdAt,
+          lastLoginAt: raw.lastLoginAt,
+          subscription: {
+            plan,
+            status: (raw.planStatus === "active" || raw.planStatus === "trial" ? "active" : "inactive") as import("@/types").SubscriptionStatus,
+            proCredits: raw.credits || 0,
+            updatedAt: raw.subscription?.expiresAt || raw.createdAt,
+            ...(raw.trialDaysRemaining > 0 ? {
+              trial: {
+                requested: true,
+                creditsGranted: raw.credits,
+                submissionsUsed: 0,
+                maxSubmissions: raw.credits,
+                exhausted: false,
+              }
+            } : {}),
+          },
+        } as UserProfile
+      })
+    }
+
+    // Fallback: local KV (used on localhost dev when backend is unreachable)
     try {
       const users = await getSafeKVClient().get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
       const dedupedByEmail = new Map<string, UserProfile>()
-
       for (const user of Object.values(users)) {
         const normalizedEmail = user.email.toLowerCase()
         const existing = dedupedByEmail.get(normalizedEmail)
@@ -86,7 +129,6 @@ export const adminService = {
           dedupedByEmail.set(normalizedEmail, user)
         }
       }
-
       return Array.from(dedupedByEmail.values())
     } catch (error) {
       console.error("Failed to get all users:", error)

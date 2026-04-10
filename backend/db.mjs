@@ -1049,6 +1049,73 @@ export async function getUserSubscription(userId) {
   return rows[0] || null
 }
 
+/**
+ * List all active users with their latest subscription and org tier for admin panel.
+ * Returns a flat list ordered by most-recent signup first.
+ */
+export async function listAllUsersWithSubscriptions(limit = 500) {
+  const sql = getSql()
+  const safeLimit = Math.max(1, Math.min(Number(limit) || 500, 2000))
+  const rows = await sql`
+    SELECT
+      u.id,
+      u.email,
+      u.full_name        AS "fullName",
+      u.role,
+      u.organization_id  AS "organizationId",
+      u.avatar_url       AS "avatarUrl",
+      u.is_active        AS "isActive",
+      EXTRACT(EPOCH FROM u.created_at)::BIGINT      * 1000 AS "createdAt",
+      EXTRACT(EPOCH FROM u.last_login_at)::BIGINT   * 1000 AS "lastLoginAt",
+      s.tier             AS "subTier",
+      s.status           AS "subStatus",
+      EXTRACT(EPOCH FROM s.assigned_at)::BIGINT     * 1000 AS "subAssignedAt",
+      EXTRACT(EPOCH FROM s.expires_at)::BIGINT      * 1000 AS "subExpiresAt",
+      s.pro_credits                                         AS "proCredits",
+      o.tier             AS "orgTier"
+    FROM sentinel_users u
+    LEFT JOIN LATERAL (
+      SELECT tier, status, assigned_at, expires_at, pro_credits
+      FROM sentinel_user_subscriptions
+      WHERE user_id = u.id AND status = 'ACTIVE'
+      ORDER BY assigned_at DESC
+      LIMIT 1
+    ) s ON TRUE
+    LEFT JOIN sentinel_organizations o ON o.id = u.organization_id
+    WHERE u.is_active = TRUE
+    ORDER BY u.created_at DESC
+    LIMIT ${safeLimit}
+  `
+  return rows
+}
+
+/**
+ * Seed welcome credits for a new user (10 credits, 7-day BASIC trial).
+ * Called once right after user creation. No-op if a subscription already exists.
+ */
+export async function seedWelcomeCredits(userId, assignedBy) {
+  const sql = getSql()
+
+  // Only seed if no existing subscription
+  const existing = await sql`
+    SELECT id FROM sentinel_user_subscriptions
+    WHERE user_id = ${userId}
+    LIMIT 1
+  `
+  if (existing.length > 0) return
+
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+
+  await sql`
+    INSERT INTO sentinel_user_subscriptions
+      (id, user_id, organization_id, tier, status, assigned_by, pro_credits, expires_at, auto_renew)
+    VALUES
+      (${crypto.randomUUID()}, ${userId}, NULL, 'BASIC', 'ACTIVE',
+       ${assignedBy || userId}, 10, ${expiresAt}, false)
+    ON CONFLICT DO NOTHING
+  `
+}
+
 // ─────────────────────────── Module Permission Queries ───────────
 
 /**

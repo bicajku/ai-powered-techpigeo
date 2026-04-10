@@ -81,6 +81,8 @@ import {
   getSkillBinding,
   createSkillExecutionLog,
   listSkillExecutionLogs,
+  listAllUsersWithSubscriptions,
+  seedWelcomeCredits,
 } from "./db.mjs"
 import {
   canPerformAction,
@@ -88,6 +90,7 @@ import {
   checkModuleAccess,
   checkModuleGrantWithSeats,
   checkReportAction,
+  resolveEffectiveTier,
   MODULES,
   TIER_MODULES,
   ACTIONS,
@@ -1369,6 +1372,11 @@ async function handleRegister(req, res) {
       return sendJson(res, 409, { ok: false, error: "An account with this email already exists" }, req)
     }
 
+    // Seed welcome credits (10 credits, 7-day BASIC trial) — non-blocking
+    seedWelcomeCredits(newUser.id, newUser.id).catch((err) => {
+      console.warn("[register] welcome credits seed failed (non-blocking):", err?.message)
+    })
+
     // Sign JWT
     const token = signToken({
       userId: newUser.id,
@@ -1998,6 +2006,10 @@ async function handleCreateOrgMember(req, res, actor) {
         user = await getUserByEmailForLogin(email)
       } else {
         isNewUser = true
+        // Seed welcome credits for new org-member (non-blocking)
+        seedWelcomeCredits(user.id, actor.userId).catch((err) => {
+          console.warn("[invite] welcome credits seed failed (non-blocking):", err?.message)
+        })
       }
     }
 
@@ -2286,6 +2298,69 @@ async function handleGetAuditStats(req, res, user, url) {
     return sendJson(res, 200, { ok: true, ...stats }, req)
   } catch (err) {
     console.error("[sentinel/audit/stats] error:", err)
+    return sendJson(res, 500, { ok: false, error: "Internal server error" }, req)
+  }
+}
+
+/**
+ * GET /api/sentinel/admin/users?limit=500
+ * Full user list with effective plan resolved from Neon DB.
+ * Requires SENTINEL_COMMANDER.
+ */
+async function handleAdminListUsers(req, res, user) {
+  if (!hasMinimumRole(user.role, "SENTINEL_COMMANDER")) {
+    return sendJson(res, 403, { ok: false, error: "Only Sentinel Commander can list all users" }, req)
+  }
+
+  if (!isDbConfigured()) {
+    return sendJson(res, 503, { ok: false, error: "Database not configured" }, req)
+  }
+
+  try {
+    const rows = await listAllUsersWithSubscriptions(500)
+
+    const users = rows.map((u) => {
+      const resolved = resolveEffectiveTier({
+        role: u.role,
+        subTier: u.subTier || null,
+        subStatus: u.subStatus || null,
+        subAssignedAt: u.subAssignedAt || null,
+        subExpiresAt: u.subExpiresAt || null,
+        proCredits: u.proCredits || 0,
+        orgTier: u.orgTier || null,
+      })
+
+      return {
+        id: u.id,
+        email: u.email,
+        fullName: u.fullName,
+        role: u.role,
+        organizationId: u.organizationId,
+        avatarUrl: u.avatarUrl,
+        isActive: u.isActive,
+        createdAt: u.createdAt,
+        lastLoginAt: u.lastLoginAt,
+        // Effective resolved plan — this is what the app should use
+        effectivePlan: resolved.effectivePlan,
+        planStatus: resolved.status,
+        planSource: resolved.source,
+        planReason: resolved.reason,
+        credits: resolved.credits,
+        trialDaysRemaining: resolved.trialDaysRemaining,
+        // Raw subscription data for admin display
+        subscription: u.subTier ? {
+          tier: u.subTier,
+          status: u.subStatus,
+          assignedAt: u.subAssignedAt,
+          expiresAt: u.subExpiresAt,
+          proCredits: u.proCredits || 0,
+        } : null,
+      }
+    })
+
+    return sendJson(res, 200, { ok: true, total: users.length, users }, req)
+  } catch (err) {
+    console.error("[sentinel/admin/users] error:", err)
     return sendJson(res, 500, { ok: false, error: "Internal server error" }, req)
   }
 }
@@ -3874,6 +3949,11 @@ const server = http.createServer(async (req, res) => {
       // GET /api/sentinel/audit
       if (method === "GET" && reqPathname === "/api/sentinel/audit") {
         return handleGetAuditLogs(req, res, user, url)
+      }
+
+      // GET /api/sentinel/admin/users
+      if (method === "GET" && reqPathname === "/api/sentinel/admin/users") {
+        return handleAdminListUsers(req, res, user)
       }
 
       // GET /api/sentinel/admin/stats

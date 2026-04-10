@@ -557,3 +557,128 @@ export function checkModuleGrantPermission(actorRole, moduleName) {
 
   return { allowed: true }
 }
+
+// ─────────────────────────── Welcome Credits Policy ──────────────
+
+/**
+ * Welcome credits granted to every new signup (free 7-day BASIC trial).
+ */
+export const WELCOME_POLICY = {
+  credits: 10,
+  trialDays: 7,
+  tier: "BASIC",
+  /** Returns true if the 7-day welcome window is still active */
+  isTrialActive(subAssignedAt) {
+    if (!subAssignedAt) return false
+    const trialEndMs = Number(subAssignedAt) + WELCOME_POLICY.trialDays * 24 * 60 * 60 * 1000
+    return Date.now() < trialEndMs
+  },
+  /** Returns remaining trial days (0 if expired) */
+  trialDaysRemaining(subAssignedAt) {
+    if (!subAssignedAt) return 0
+    const trialEndMs = Number(subAssignedAt) + WELCOME_POLICY.trialDays * 24 * 60 * 60 * 1000
+    const remaining = Math.ceil((trialEndMs - Date.now()) / (24 * 60 * 60 * 1000))
+    return Math.max(0, remaining)
+  },
+}
+
+// ─────────────────────────── Effective Tier Resolver ─────────────
+
+/**
+ * Resolve the effective plan/tier for a user from all available inputs.
+ * This is the single source of truth used by backend and admin panel.
+ *
+ * Resolution order (highest wins):
+ *   1. ENTERPRISE  — user is in org with ENTERPRISE/TEAMS tier
+ *   2. PRO         — user has an active PRO subscription
+ *   3. BASIC+trial — user has welcome credits still within 7-day window
+ *   4. BASIC       — default fallback
+ *
+ * @param {object} params
+ * @param {string} params.role           - User's sentinel role
+ * @param {string|null} params.subTier   - User's subscription tier (from DB)
+ * @param {string|null} params.subStatus - Subscription status ('ACTIVE' | 'EXPIRED' | etc.)
+ * @param {number|null} params.subAssignedAt - Epoch ms when subscription was assigned
+ * @param {number|null} params.subExpiresAt  - Epoch ms when subscription expires (null = never)
+ * @param {number|null} params.proCredits    - Remaining credits in subscription
+ * @param {string|null} params.orgTier       - Org's tier if user belongs to an org
+ * @returns {{ effectivePlan: string, status: string, credits: number, trialDaysRemaining: number, source: string, reason: string }}
+ */
+export function resolveEffectiveTier({ role, subTier, subStatus, subAssignedAt, subExpiresAt, proCredits, orgTier }) {
+  const now = Date.now()
+
+  // TESTER always gets PRO for the duration of their account
+  if (role === "TESTER") {
+    return {
+      effectivePlan: "pro",
+      status: "active",
+      credits: typeof proCredits === "number" ? proCredits : 50,
+      trialDaysRemaining: 0,
+      source: "tester",
+      reason: "Tester account — PRO access granted",
+    }
+  }
+
+  // SENTINEL_COMMANDER always enterprise
+  if (role === "SENTINEL_COMMANDER") {
+    return {
+      effectivePlan: "enterprise",
+      status: "active",
+      credits: 9999,
+      trialDaysRemaining: 0,
+      source: "role",
+      reason: "Sentinel Commander — unrestricted",
+    }
+  }
+
+  // Org tier (ENTERPRISE or TEAMS from org membership)
+  if (orgTier === "ENTERPRISE" || orgTier === "TEAMS") {
+    return {
+      effectivePlan: orgTier === "ENTERPRISE" ? "enterprise" : "team",
+      status: "active",
+      credits: typeof proCredits === "number" ? proCredits : 0,
+      trialDaysRemaining: 0,
+      source: "organization",
+      reason: `Access via organization (${orgTier})`,
+    }
+  }
+
+  // Active paid subscription (non-expired)
+  const subExpired = subExpiresAt ? now > subExpiresAt : false
+  if (subStatus === "ACTIVE" && !subExpired && subTier && subTier !== "BASIC") {
+    const tierMap = { PRO: "pro", TEAMS: "team", ENTERPRISE: "enterprise" }
+    return {
+      effectivePlan: tierMap[subTier] || "pro",
+      status: "active",
+      credits: typeof proCredits === "number" ? proCredits : 0,
+      trialDaysRemaining: 0,
+      source: "subscription",
+      reason: `Active ${subTier} subscription`,
+    }
+  }
+
+  // BASIC subscription still within 7-day welcome trial
+  if (subStatus === "ACTIVE" && !subExpired && (subTier === "BASIC" || !subTier)) {
+    const daysLeft = WELCOME_POLICY.trialDaysRemaining(subAssignedAt)
+    if (daysLeft > 0) {
+      return {
+        effectivePlan: "basic",
+        status: "trial",
+        credits: typeof proCredits === "number" ? proCredits : 0,
+        trialDaysRemaining: daysLeft,
+        source: "welcome_trial",
+        reason: `Welcome trial active — ${daysLeft} day(s) remaining`,
+      }
+    }
+  }
+
+  // Expired subscription or no subscription → free BASIC
+  return {
+    effectivePlan: "basic",
+    status: "free",
+    credits: 0,
+    trialDaysRemaining: 0,
+    source: "default",
+    reason: "No active subscription — BASIC (free)",
+  }
+}
