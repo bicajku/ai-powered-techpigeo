@@ -113,7 +113,12 @@ const REQUIRE_AUTH =
   String(process.env.BACKEND_REQUIRE_AUTH || "false").toLowerCase() === "true"
 const BACKEND_API_KEY = process.env.BACKEND_API_KEY || ""
 const ADMIN_NOTIFICATION_EMAIL = process.env.ADMIN_NOTIFICATION_EMAIL || process.env.M365_SENDER_EMAIL || "admin@novussparks.com"
-const FORCED_SENTINEL_COMMANDER_EMAIL = (process.env.FORCED_SENTINEL_COMMANDER_EMAIL || "admin@novussparks.com").toLowerCase()
+const FORCED_SENTINEL_COMMANDER_EMAILS = new Set(
+  (process.env.FORCED_SENTINEL_COMMANDER_EMAILS || process.env.FORCED_SENTINEL_COMMANDER_EMAIL || "admin@novussparks.com,commander@sentinel.dev")
+    .split(",")
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean)
+)
 const TESTER_MAX_USERS = Number(process.env.TESTER_MAX_USERS || 25)
 
 /**
@@ -615,7 +620,7 @@ function authorize(req) {
 
 function normalizeAuthUser(user) {
   if (!user || typeof user !== "object") return user
-  if (typeof user.email === "string" && user.email.toLowerCase() === FORCED_SENTINEL_COMMANDER_EMAIL) {
+  if (typeof user.email === "string" && FORCED_SENTINEL_COMMANDER_EMAILS.has(user.email.toLowerCase())) {
     return {
       ...user,
       role: "SENTINEL_COMMANDER",
