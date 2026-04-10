@@ -1,6 +1,7 @@
-import { Lightbulb, Sparkle, MagnifyingGlass, PencilLine, Rocket, ChartBar, Target, CheckCircle, Crown, Lightning } from "@phosphor-icons/react"
+import { Lightbulb, Sparkle, MagnifyingGlass, PencilLine, Rocket, ChartBar, Target, CheckCircle } from "@phosphor-icons/react"
 import { motion } from "framer-motion"
 import faviconImg from "@/assets/images/novussparks-icon.svg"
+import { PLAN_LIST } from "@/lib/plan-definitions"
 
 const modules = [
   { icon: Target, label: "Strategy Engine", color: "text-primary", tab: "generate" },
@@ -16,34 +17,6 @@ const examplePrompts = [
   "Business canvas for a sustainable fashion e-commerce startup",
   "Go-to-market plan for a fintech mobile app in emerging markets",
   "Growth strategy for an EdTech platform offering coding bootcamps",
-]
-
-const plans = [
-  {
-    name: "Basic",
-    price: "Free",
-    icon: Lightbulb,
-    color: "text-muted-foreground",
-    border: "border-border/40",
-    features: ["AI Strategy Generation", "Idea Cooking & Canvas", "Pitch Deck Generation", "3 exports/month"],
-  },
-  {
-    name: "Pro",
-    price: "$5/mo",
-    icon: Lightning,
-    color: "text-primary",
-    border: "border-primary/50",
-    popular: true,
-    features: ["Everything in Basic", "Document Review & Plagiarism", "AI Humanize Module", "25 review credits/month"],
-  },
-  {
-    name: "Team",
-    price: "$25/mo",
-    icon: Crown,
-    color: "text-accent",
-    border: "border-accent/50",
-    features: ["Everything in Pro", "100 review credits/month", "Unlimited exports", "Priority AI processing"],
-  },
 ]
 
 interface EmptyStateProps {
@@ -125,7 +98,7 @@ export function EmptyState({ onNavigate }: EmptyStateProps) {
         <h4 className="text-lg font-bold text-foreground mb-2">Choose Your Plan</h4>
         <p className="text-sm text-muted-foreground mb-6">Start free, upgrade when you need more power</p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {plans.map((plan, i) => {
+          {PLAN_LIST.filter(p => p.id !== "enterprise").map((plan, i) => {
             const Icon = plan.icon
             return (
               <motion.div

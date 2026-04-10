@@ -34,6 +34,7 @@ import { hydrateSecretsFromKV } from "@/lib/secret-store"
 import { cn } from "@/lib/utils"
 import { sentinelQuery } from "@/lib/sentinel-query-pipeline"
 import { safeDateFormatters } from "@/lib/date-utils"
+import { EXAMPLE_PROMPTS_BY_PLAN } from "@/lib/plan-definitions"
 import { isNeonConfigured } from "@/lib/neon-client"
 import { isGeminiConfigured } from "@/lib/gemini-client"
 import { getFeatureEntitlements, requestUpgrade } from "@/lib/subscription"
@@ -2084,6 +2085,29 @@ ${JSON.stringify(candidate)}`
                     className="min-h-32 resize-none text-base leading-relaxed focus:ring-2 focus:ring-accent transition-all"
                     maxLength={1000}
                   />
+
+                  {/* Example Prompts Section */}
+                  {!showPromptSuggestions && description.trim().length === 0 && (
+                    <div className="absolute z-10 w-full mt-2 bg-card border border-border/70 rounded-lg shadow-lg p-3">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Try these examples:</p>
+                      <div className="space-y-2 max-h-56 overflow-y-auto">
+                        {EXAMPLE_PROMPTS_BY_PLAN.all.map((example, i) => (
+                          <button
+                            key={i}
+                            type="button"
+                            onClick={() => {
+                              setDescription(example.text)
+                              setShowPromptSuggestions(false)
+                            }}
+                            className="w-full text-left px-3 py-2 rounded-md border border-border/50 hover:bg-secondary/40 transition-colors"
+                          >
+                            <div className="text-sm text-foreground line-clamp-2">{example.text}</div>
+                            <div className="text-[11px] text-muted-foreground mt-1">{example.description}</div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {showPromptSuggestions && quickPromptSuggestions.length > 0 && (
                     <div className="absolute z-20 w-full mt-2 bg-card border border-border/70 rounded-lg shadow-lg p-3">

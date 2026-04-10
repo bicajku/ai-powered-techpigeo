@@ -26,6 +26,7 @@ import { sentinelQuery } from "@/lib/sentinel-query-pipeline"
 import { isNeonConfigured } from "@/lib/neon-client"
 import { trackGenerationInsight } from "@/lib/user-style-client"
 import { isGeminiConfigured } from "@/lib/gemini-client"
+import { EXAMPLE_PROMPTS_BY_PLAN } from "@/lib/plan-definitions"
 
 interface IdeaGenerationProps {
   userId: string
@@ -692,6 +693,25 @@ CRITICAL: Return ONLY valid JSON with no markdown.`
               className="min-h-32 resize-none text-base leading-relaxed focus:ring-2 focus:ring-accent transition-all mb-4"
               maxLength={1000}
             />
+
+            {/* Example Prompts */}
+            <div className="mb-4 p-3 rounded-lg bg-accent/5 border border-accent/20">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Try these examples:</p>
+              <div className="space-y-2">
+                {EXAMPLE_PROMPTS_BY_PLAN.all.map((example, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setIdeaInput(example.text)}
+                    className="w-full text-left p-2 rounded bg-background/50 hover:bg-background border border-border/50 hover:border-accent/50 transition-colors cursor-pointer group"
+                  >
+                    <p className="text-xs font-medium text-foreground group-hover:text-accent transition-colors line-clamp-1">
+                      {example.text}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">{example.description}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
 
             <div className="mb-4">
               <PostProcessControls
