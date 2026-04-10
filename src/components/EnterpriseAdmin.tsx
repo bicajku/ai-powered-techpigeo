@@ -43,6 +43,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
 import { adminService } from "@/lib/admin"
+import { safeDateFormatters } from "@/lib/date-utils"
 
 interface EnterpriseAdminProps {
   user: UserProfile
@@ -604,7 +605,7 @@ export function EnterpriseAdmin({ user, organizationId }: EnterpriseAdminProps) 
             </div>
             <div>
               <p className="text-sm text-gray-600">Renewal</p>
-              <p className="font-semibold">{new Date(subscription.renewalDate).toLocaleDateString()}</p>
+              <p className="font-semibold">{safeDateFormatters.toLocaleDateString(subscription.renewalDate)}</p>
             </div>
           </div>
 

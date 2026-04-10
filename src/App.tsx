@@ -33,6 +33,7 @@ import { logError } from "@/lib/error-logger"
 import { hydrateSecretsFromKV } from "@/lib/secret-store"
 import { cn } from "@/lib/utils"
 import { sentinelQuery } from "@/lib/sentinel-query-pipeline"
+import { safeDateFormatters } from "@/lib/date-utils"
 import { isNeonConfigured } from "@/lib/neon-client"
 import { isGeminiConfigured } from "@/lib/gemini-client"
 import { getFeatureEntitlements, requestUpgrade } from "@/lib/subscription"
@@ -2886,9 +2887,9 @@ ${JSON.stringify(candidate)}`
                               <div className="min-w-0">
                                 <p className="text-sm font-medium text-foreground truncate">{run.description}</p>
                                 <p className="text-xs text-muted-foreground">
-                                  {new Date(run.timestamp).toLocaleString()} • {run.plan.toUpperCase()} • {run.steps.length} steps • ${(
-                                    run.estimatedCostCents / 100
-                                  ).toFixed(2)} est.
+                                  {safeDateFormatters.toLocaleString(run.timestamp)} • {run.plan.toUpperCase()} • {run.steps.length} steps • ${
+                                    (run.estimatedCostCents / 100).toFixed(2)
+                                  } est.
                                 </p>
                               </div>
                               <Button size="sm" variant="outline" onClick={() => handleRestoreWorkflowRun(run)}>
@@ -3250,7 +3251,7 @@ ${JSON.stringify(candidate)}`
                         <div className="min-w-0">
                           <p className="text-sm font-medium text-foreground truncate">{run.description}</p>
                           <p className="text-xs text-muted-foreground">
-                            {new Date(run.timestamp).toLocaleString()} • {run.plan.toUpperCase()} • {run.conceptMode} • {run.modelUsed} • ${(
+                            {safeDateFormatters.toLocaleString(run.timestamp)} • {run.plan.toUpperCase()} • {run.conceptMode} • {run.modelUsed} • ${(
                               run.estimatedCostCents / 100
                             ).toFixed(2)}
                           </p>
@@ -3278,7 +3279,7 @@ ${JSON.stringify(candidate)}`
                       {comparedRuns.map((run) => (
                         <div key={run.id} className="rounded border border-border/50 p-3 space-y-2">
                           <p className="text-sm font-semibold text-foreground truncate">{run.description}</p>
-                          <p className="text-xs text-muted-foreground">{new Date(run.timestamp).toLocaleString()}</p>
+                          <p className="text-xs text-muted-foreground">{safeDateFormatters.toLocaleString(run.timestamp)}</p>
                           <p className="text-xs text-muted-foreground">Plan: {run.plan.toUpperCase()} • Model: {run.modelUsed}</p>
                           <p className="text-xs text-muted-foreground">Workflow steps: {run.steps.length}</p>
                           <p className="text-xs text-muted-foreground">Marketing copy length: {run.resultSnapshot?.marketingCopy?.length || 0}</p>
