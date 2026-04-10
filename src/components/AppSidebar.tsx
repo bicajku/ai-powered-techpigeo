@@ -32,6 +32,7 @@ interface AppSidebarProps {
   user: UserProfile
   activeTab: string
   collapsed: boolean
+  isSentinelCommander?: boolean
   onToggleCollapsed: () => void
   onTabChange: (tab: string) => void
   onOpenProfile: () => void
@@ -60,6 +61,7 @@ export function AppSidebar({
   user,
   activeTab,
   collapsed,
+  isSentinelCommander = false,
   onToggleCollapsed,
   onTabChange,
   onOpenProfile,
@@ -71,6 +73,13 @@ export function AppSidebar({
   const roleNavItems = useMemo<SidebarNavItem[]>(() => {
     if (isAdmin) {
       return [
+        ...(isSentinelCommander ? [{
+          id: "global-dashboard",
+          label: "Global Dashboard",
+          icon: ChartBar,
+          onClick: () => onTabChange("global-dashboard"),
+          active: activeTab === "global-dashboard",
+        }] : []),
         {
           id: "admin",
           label: "Admin Dashboard",
@@ -104,7 +113,7 @@ export function AppSidebar({
         active: activeTab === "dashboard",
       },
     ]
-  }, [activeTab, isAdmin, onTabChange])
+  }, [activeTab, isAdmin, isSentinelCommander, onTabChange])
 
   const accountItems: SidebarNavItem[] = [
     {

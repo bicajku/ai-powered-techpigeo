@@ -40,6 +40,7 @@ import { isGeminiConfigured } from "@/lib/gemini-client"
 import { getFeatureEntitlements, requestUpgrade } from "@/lib/subscription"
 import { estimateGenerationCostCents, estimatePromptTokens, getCurrentMonthKey, getExportPlanConfig, getStrategyPlanConfig, loadBudgetLimits } from "@/lib/strategy-governance"
 import { adminService } from "@/lib/admin"
+import { fetchAuthCapabilities, type AuthCapabilities } from "@/lib/auth-capabilities"
 import { getEnvConfig } from "@/lib/env-config"
 
 // Lazy-loaded tab components (code splitting)
@@ -50,6 +51,7 @@ const PlagiarismChecker = lazy(() => import("@/components/PlagiarismChecker").th
 const IdeaGeneration = lazy(() => import("@/components/IdeaGeneration").then(m => ({ default: m.IdeaGeneration })))
 const RagChat = lazy(() => import("@/components/RagChat").then(m => ({ default: m.RagChat })))
 const Dashboard = lazy(() => import("@/components/Dashboard").then(m => ({ default: m.Dashboard })))
+const GlobalDashboard = lazy(() => import("@/components/GlobalDashboard").then(m => ({ default: m.GlobalDashboard })))
 const AdminDashboard = lazy(() => import("@/components/AdminDashboard").then(m => ({ default: m.AdminDashboard })))
 const EnterpriseAdmin = lazy(() => import("@/components/EnterpriseAdmin").then(m => ({ default: m.EnterpriseAdmin })))
 const SavedStrategies = lazy(() => import("@/components/SavedStrategies").then(m => ({ default: m.SavedStrategies })))
@@ -320,6 +322,12 @@ function App() {
   const [showLandingPage, setShowLandingPage] = useState(false)
   const [adminAllStrategies, setAdminAllStrategies] = useState<SavedStrategy[]>([])
   const [activeStrategyId, setActiveStrategyId] = useState<string | null>(null)
+  const [authCapabilities, setAuthCapabilities] = useState<AuthCapabilities>({
+    canSetPasswords: false,
+    canManageProviderRouting: false,
+    canSendInviteEmails: false,
+    isSentinelCommander: false,
+  })
   const resultsRef = useRef<HTMLDivElement>(null)
 
   // When admin logs in, load all users' strategies for a global view
@@ -372,12 +380,19 @@ function App() {
 
         await withTimeout(authService.initializeMasterAdmin(), "Auth bootstrap")
         const currentUser = await withTimeout(authService.getCurrentUser(), "Current user lookup")
+        const capabilities = currentUser ? await withTimeout(fetchAuthCapabilities(), "Auth capabilities") : {
+          canSetPasswords: false,
+          canManageProviderRouting: false,
+          canSendInviteEmails: false,
+          isSentinelCommander: false,
+        }
 
         if (cancelled) {
           return
         }
 
         setUser(currentUser)
+        setAuthCapabilities(capabilities)
         if (currentUser) {
           setUserIdForKV(currentUser.id)
           setShowLandingPage(false)
@@ -410,6 +425,12 @@ function App() {
 
         if (!cancelled) {
           setUser(null)
+          setAuthCapabilities({
+            canSetPasswords: false,
+            canManageProviderRouting: false,
+            canSendInviteEmails: false,
+            isSentinelCommander: false,
+          })
           setUserIdForKV("temp")
         }
       } finally {
@@ -507,6 +528,9 @@ function App() {
       allowedTabs.add("sentinel-brain")
       allowedTabs.add("admin")
       allowedTabs.add("enterprise")
+      if (authCapabilities.isSentinelCommander) {
+        allowedTabs.add("global-dashboard")
+      }
     }
 
     if (canAccessNGOSaaS) {
@@ -516,7 +540,7 @@ function App() {
     if (!allowedTabs.has(activeTab)) {
       setActiveTab(getDefaultSignedInTab(ragChatEnabled))
     }
-  }, [activeTab, user, canAccessNGOSaaS, ragChatEnabled])
+  }, [activeTab, user, canAccessNGOSaaS, ragChatEnabled, authCapabilities.isSentinelCommander])
 
   const quickPromptSuggestions = useMemo(() => {
     const current = description.trim().toLowerCase()
@@ -1917,6 +1941,7 @@ ${JSON.stringify(candidate)}`
           user={user}
           activeTab={activeTab}
           collapsed={isSidebarCollapsed}
+          isSentinelCommander={authCapabilities.isSentinelCommander}
           onToggleCollapsed={() => setIsSidebarCollapsed((prev) => !prev)}
           onTabChange={setActiveTab}
           onOpenProfile={() => setShowProfileEdit(true)}
@@ -3320,6 +3345,14 @@ ${JSON.stringify(candidate)}`
               <TabsContent value="sentinel-brain" className="space-y-6">
                 <Suspense fallback={<LoadingState />}>
                   <SentinelBrain />
+                </Suspense>
+              </TabsContent>
+            )}
+
+            {user.role === "admin" && authCapabilities.isSentinelCommander && (
+              <TabsContent value="global-dashboard" className="space-y-6">
+                <Suspense fallback={<LoadingState />}>
+                  <GlobalDashboard />
                 </Suspense>
               </TabsContent>
             )}

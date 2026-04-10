@@ -11,6 +11,52 @@ interface StoredCredential {
   userId: string
 }
 
+interface BackendSystemStatsResponse {
+  users?: { total?: number; active?: number }
+  organizations?: { total?: number }
+  subscriptions?: { total?: number; active?: number; expired?: number }
+  reports?: { total?: number; drafts?: number; submitted?: number; approvedSigned?: number; published?: number }
+  moduleSubscriptions?: { total?: number; active?: number; trial?: number; expired?: number; cancelled?: number }
+  recentLogins7d?: number
+}
+
+interface ProviderUsageSummary {
+  windowDays: number
+  totals: {
+    events: number
+    requests: number
+    tokens: number
+    cost: number
+    errors: number
+  }
+  byProvider: Array<{
+    provider: string
+    kind: string
+    events: number
+    requests: number
+    tokens: number
+    cost: number
+  }>
+  byModule: Array<{
+    moduleName: string
+    events: number
+    requests: number
+    tokens: number
+    cost: number
+  }>
+  dailyCosts: Array<{
+    day: string
+    cost: number
+    requests: number
+  }>
+}
+
+export interface GlobalAnalyticsPayload {
+  users: UserProfile[]
+  platformStats: BackendSystemStatsResponse | null
+  providerSummary: ProviderUsageSummary | null
+}
+
 function getBackendBaseUrl(): string {
   if (typeof import.meta !== "undefined" && import.meta.env?.VITE_BACKEND_API_BASE_URL) {
     return import.meta.env.VITE_BACKEND_API_BASE_URL as string
@@ -346,6 +392,30 @@ export const adminService = {
         totalReviews: 0,
         recentUsers: 0,
       }
+    }
+  },
+
+  async getGlobalAnalytics(days = 30): Promise<GlobalAnalyticsPayload> {
+    const safeDays = Math.max(1, Math.min(Number(days) || 30, 365))
+
+    const [users, statsRes, providerRes] = await Promise.all([
+      this.getAllUsers(),
+      requestBackend("GET", "/api/sentinel/admin/stats"),
+      requestBackend("GET", `/api/sentinel/admin/provider-usage?days=${safeDays}&module=global`),
+    ])
+
+    const platformStats = statsRes.ok && statsRes.data?.ok
+      ? (statsRes.data as unknown as BackendSystemStatsResponse)
+      : null
+
+    const providerSummary = providerRes.ok && providerRes.data?.ok
+      ? ((providerRes.data.summary as unknown as ProviderUsageSummary) || null)
+      : null
+
+    return {
+      users,
+      platformStats,
+      providerSummary,
     }
   },
 
