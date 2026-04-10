@@ -631,11 +631,6 @@ function normalizeAuthUser(user) {
   return user
 }
 
-function isProductionHost(req) {
-  const host = String(req.headers.host || "").toLowerCase()
-  return host.includes("novussparks.com") && !host.includes("staging")
-}
-
 function enforceTesterEnvironment(req, authUser) {
   if (!authUser || authUser.role !== "TESTER") return { allowed: true }
   // Tester accounts are allowed on both staging and production.
