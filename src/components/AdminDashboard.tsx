@@ -149,6 +149,44 @@ export function AdminDashboard() {
     }
   }
 
+  const handleGenerateTesterPassword = () => {
+    const randomChunk = () => Math.random().toString(36).slice(-4)
+    const generated = `Ns-${randomChunk()}-${Date.now().toString().slice(-4)}!`
+    setTesterForm((prev) => ({ ...prev, password: generated }))
+    toast.success("Temporary tester password generated")
+  }
+
+  const handleCopyTesterInvite = async () => {
+    const email = testerForm.email.trim().toLowerCase()
+    const password = testerForm.password
+    if (!email || !password) {
+      toast.error("Enter tester email and password first")
+      return
+    }
+
+    const stagingUrl = window.location.origin
+    const inviteText = [
+      "NovusSparks Testing Access (Staging)",
+      "",
+      `URL: ${stagingUrl}`,
+      `Email: ${email}`,
+      `Temporary Password: ${password}`,
+      "",
+      "Access policy:",
+      "- Staging environment only",
+      "- Tester role with PRO testing access",
+      "- Please change your password after first login",
+    ].join("\n")
+
+    try {
+      await navigator.clipboard.writeText(inviteText)
+      toast.success("Tester invite text copied")
+    } catch (error) {
+      console.error("Failed to copy tester invite:", error)
+      toast.error("Could not copy invite text")
+    }
+  }
+
   const loadProviderStatus = useCallback(async () => {
     setProviderStatusLoading(true)
     setProviderStatusError(null)
@@ -1151,6 +1189,17 @@ export function AdminDashboard() {
                     />
                     <Button onClick={handleCreateTester} disabled={creatingTester || !authCapabilities.isSentinelCommander}>
                       {creatingTester ? "Creating..." : "Create Tester"}
+                    </Button>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="outline" onClick={handleGenerateTesterPassword}>
+                      <Sparkle size={14} weight="bold" className="mr-2" />
+                      Generate Temporary Password
+                    </Button>
+                    <Button variant="outline" onClick={handleCopyTesterInvite}>
+                      <LinkIcon size={14} weight="bold" className="mr-2" />
+                      Copy Invite Text
                     </Button>
                   </div>
 
