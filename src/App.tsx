@@ -657,7 +657,7 @@ function App() {
           useConsensus: true,
           sparkFallback: async () => {
             if (typeof spark !== "undefined" && typeof spark.llm === "function") {
-              const preferredModel = strategyPlan === "pro" ? "gpt-4o" : "gpt-4o-mini"
+              const preferredModel = strategyPlan === "pro" ? "gpt-4.1" : "gpt-4.1-mini"
               return await spark.llm(prompt, preferredModel, false) as string
             }
             throw new Error("Spark fallback unavailable")
@@ -680,7 +680,7 @@ function App() {
       throw new Error("Spark LLM is not available. Please refresh the page.")
     }
 
-    const preferredModel = strategyPlan === "pro" ? "gpt-4o" : "gpt-4o-mini"
+    const preferredModel = strategyPlan === "pro" ? "gpt-4.1" : "gpt-4.1-mini"
 
     try {
       const response = await spark.llm(prompt, preferredModel, parseJson)
@@ -689,9 +689,9 @@ function App() {
        }
       return { response, modelUsed: preferredModel }
     } catch (error) {
-      if (preferredModel !== "gpt-4o") {
-        const response = await spark.llm(prompt, "gpt-4o", parseJson)
-        return { response, modelUsed: "gpt-4o" }
+      if (preferredModel !== "gpt-4.1") {
+        const response = await spark.llm(prompt, "gpt-4.1", parseJson)
+        return { response, modelUsed: "gpt-4.1" }
       }
       throw error
     }

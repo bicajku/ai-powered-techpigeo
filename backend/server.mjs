@@ -4422,6 +4422,50 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // ── GET /api/llm/models ──
+  if (method === "GET" && reqPathname === "/api/llm/models") {
+    const auth = authorize(req)
+    if (!auth.authorized) {
+      return sendJson(res, 401, { ok: false, error: "Unauthorized" }, req)
+    }
+
+    const copilotToken = process.env.GITHUB_TOKEN || process.env.GITHUB_MODELS_TOKEN
+    const geminiApiKey = process.env.GEMINI_API_KEY
+    const groqApiKey = process.env.GROQ_API_KEY
+
+    const ALL_MODELS = [
+      { id: "gpt-4.1",                    name: "GPT-4.1",              provider: "copilot", tier: "high" },
+      { id: "gpt-4.1-mini",               name: "GPT-4.1 Mini",         provider: "copilot", tier: "low"  },
+      { id: "gpt-4o",                     name: "GPT-4o",               provider: "copilot", tier: "high" },
+      { id: "gpt-4o-mini",                name: "GPT-4o Mini",          provider: "copilot", tier: "low"  },
+      { id: "gpt-5",                      name: "GPT-5",                provider: "copilot", tier: "high" },
+      { id: "gpt-5-mini",                 name: "GPT-5 Mini",           provider: "copilot", tier: "low"  },
+      { id: "o4-mini",                    name: "o4-mini",              provider: "copilot", tier: "high" },
+      { id: "claude-3-5-sonnet",          name: "Claude 3.5 Sonnet",    provider: "copilot", tier: "high" },
+      { id: "claude-3-5-haiku",           name: "Claude 3.5 Haiku",     provider: "copilot", tier: "low"  },
+      { id: "claude-3-haiku",             name: "Claude 3 Haiku",       provider: "copilot", tier: "low"  },
+      { id: "Meta-Llama-3.1-70B-Instruct","name": "Llama 3.1 70B",      provider: "copilot", tier: "high" },
+      { id: "Llama-3.3-70B-Instruct",     name: "Llama 3.3 70B",        provider: "copilot", tier: "high" },
+      { id: "Mistral-large",              name: "Mistral Large",        provider: "copilot", tier: "high" },
+      { id: "DeepSeek-R1",                name: "DeepSeek R1",          provider: "copilot", tier: "high" },
+      { id: "grok-3",                     name: "Grok-3",               provider: "copilot", tier: "high" },
+      { id: "gemini-2.5-pro",             name: "Gemini 2.5 Pro",       provider: "gemini",  tier: "high" },
+      { id: "gemini-2.5-flash",           name: "Gemini 2.5 Flash",     provider: "gemini",  tier: "low"  },
+      { id: "gemini-1.5-pro",             name: "Gemini 1.5 Pro",       provider: "gemini",  tier: "high" },
+      { id: "llama-3.3-70b-versatile",    name: "Llama 3.3 70B (Groq)", provider: "groq",    tier: "high" },
+      { id: "llama-3.1-8b-instant",       name: "Llama 3.1 8B (Groq)",  provider: "groq",    tier: "low"  },
+    ]
+
+    const models = ALL_MODELS.filter((m) => {
+      if (m.provider === "copilot") return Boolean(copilotToken)
+      if (m.provider === "gemini") return Boolean(geminiApiKey)
+      if (m.provider === "groq") return Boolean(groqApiKey)
+      return false
+    })
+
+    return sendJson(res, 200, { ok: true, models }, req)
+  }
+
   // ── POST /api/llm/generate ──
   if (method === "POST" && reqPathname === "/api/llm/generate") {
     const auth = authorize(req)

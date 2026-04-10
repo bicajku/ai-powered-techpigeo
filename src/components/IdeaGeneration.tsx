@@ -23,9 +23,7 @@ import { useSafeKV } from "@/hooks/useSafeKV"
 import { toast } from "sonner"
 import { getFeatureEntitlements } from "@/lib/subscription"
 import { sentinelQuery } from "@/lib/sentinel-query-pipeline"
-import { isNeonConfigured } from "@/lib/neon-client"
 import { trackGenerationInsight } from "@/lib/user-style-client"
-import { isGeminiConfigured } from "@/lib/gemini-client"
 import { EXAMPLE_PROMPTS_BY_PLAN } from "@/lib/plan-definitions"
 
 interface IdeaGenerationProps {
@@ -129,7 +127,7 @@ export function IdeaGeneration({ userId, user }: IdeaGenerationProps) {
       }
     }
 
-    // If spark.llm already parsed the response (parseJson: true), return as-is
+    // If response is already a parsed object, return it as-is.
     if (typeof raw === "object" && raw !== null) {
       return raw
     }
@@ -273,13 +271,9 @@ export function IdeaGeneration({ userId, user }: IdeaGenerationProps) {
     setIsLoadingIdea(true)
 
     try {
-      if (typeof spark === "undefined" || typeof spark.llm !== "function") {
-        throw new Error("AI service is not available. Please refresh the page.")
-      }
-
       const memoryContext = buildMemoryContext()
 
-      const prompt = spark.llmPrompt`You are a world-class business mentor and innovation strategist.
+      const prompt = `You are a world-class business mentor and innovation strategist.
 Your task is to analyze and refine the following business idea:
 
 "${ideaInput}"${memoryContext}
@@ -300,45 +294,26 @@ Provide a comprehensive analysis in valid JSON format with the following structu
 CRITICAL: Return ONLY valid JSON with no markdown, no code blocks, no explanatory text.`
 
       let response: unknown
-      const strPrompt = prompt as string
-      if (isNeonConfigured() || isGeminiConfigured()) {
-        try {
-          const res = await sentinelQuery(strPrompt, {
-            module: "idea-generation",
-            contentType: "strategy",
-            humanizeOnOutput: postProcessSettings.humanizeOnOutput,
-            preserveFactsStrictly: postProcessSettings.preserveFactsStrictly,
-            matchMyVoice: postProcessSettings.matchMyVoice,
-            voiceSample: postProcessSettings.voiceSample,
-            postProcessProfile: postProcessSettings.postProcessProfile,
-            userId: user?.id || undefined,
-            enableQualityGate: true,
-            userInputForQualityGate: ideaInput,
-            qualityGateProfile: "balanced",
-            preferCopilot: true,
-            useConsensus: true,
-            sparkFallback: async () => {
-              if (typeof spark !== "undefined" && typeof spark.llm === "function") {
-                return (await spark.llm(strPrompt, "gpt-4o", false)) as string
-              }
-              throw new Error("Spark fallback unavailable")
-            }
-          })
-          if (res.status === "needs_clarification") {
-            toast.error(res.response || "Please clarify your idea before generation.")
-            return
-          }
-          response = cleanJsonResponse(res.response)
-        } catch {
-          if (typeof spark !== "undefined" && typeof spark.llm === "function") {
-            response = await spark.llm(strPrompt, "gpt-4o", true)
-          } else {
-            throw new Error("AI service unavailable")
-          }
-        }
-      } else {
-        response = await spark.llm(strPrompt, "gpt-4o", true)
+      const res = await sentinelQuery(prompt, {
+        module: "idea-generation",
+        contentType: "strategy",
+        humanizeOnOutput: postProcessSettings.humanizeOnOutput,
+        preserveFactsStrictly: postProcessSettings.preserveFactsStrictly,
+        matchMyVoice: postProcessSettings.matchMyVoice,
+        voiceSample: postProcessSettings.voiceSample,
+        postProcessProfile: postProcessSettings.postProcessProfile,
+        userId: user?.id || undefined,
+        enableQualityGate: true,
+        userInputForQualityGate: ideaInput,
+        qualityGateProfile: "balanced",
+        preferCopilot: true,
+        useConsensus: true,
+      })
+      if (res.status === "needs_clarification") {
+        toast.error(res.response || "Please clarify your idea before generation.")
+        return
       }
+      response = cleanJsonResponse(res.response)
 
       const parsedResult = cleanJsonResponse(response)
       const cookedIdeaWithOriginal = normalizeCookedIdea(parsedResult, ideaInput)
@@ -393,15 +368,10 @@ CRITICAL: Return ONLY valid JSON with no markdown, no code blocks, no explanator
       return
     }
 
-    if (typeof spark === "undefined" || typeof spark.llm !== "function") {
-      toast.error("AI service is not available. Please refresh the page.")
-      return
-    }
-
     setIsLoadingCanvas(true)
 
     try {
-      const prompt = spark.llmPrompt`You are an expert business model strategist. Based on the refined business idea below, generate a comprehensive Business Model Canvas.
+      const prompt = `You are an expert business model strategist. Based on the refined business idea below, generate a comprehensive Business Model Canvas.
 
 Refined Idea: ${cookedIdea.refinedIdea}
 Target Market: ${cookedIdea.targetMarket}
@@ -412,45 +382,21 @@ Return a valid JSON object with these keys: keyPartners, keyActivities, keyResou
 CRITICAL: Return ONLY valid JSON with no markdown formatting.`
 
       let response: unknown
-      const strPrompt = prompt as string
-      if (isNeonConfigured() || isGeminiConfigured()) {
-        try {
-          const res = await sentinelQuery(strPrompt, {
-            module: "idea-generation-canvas",
-            userId: user?.id || undefined,
-            enableQualityGate: true,
-            userInputForQualityGate: cookedIdea.refinedIdea,
-            qualityGateProfile: "balanced",
-            preferCopilot: true,
-            useConsensus: true,
-            sparkFallback: async () => {
-              if (typeof spark !== "undefined" && typeof spark.llm === "function") {
-                return (await spark.llm(strPrompt, "gpt-4o", false)) as string
-              }
-              throw new Error("Spark fallback unavailable")
-            }
-          })
-          if (res.status === "needs_clarification") {
-            toast.error(res.response || "Please provide clearer idea details for canvas generation.")
-            return
-          }
-          response = cleanJsonResponse(res.response)
-        } catch {
-          if (typeof spark !== "undefined" && typeof spark.llm === "function") {
-            response = await spark.llm(strPrompt, "gpt-4o", true)
-          } else {
-            throw new Error("AI service unavailable")
-          }
-        }
-      } else {
-        try {
-          response = await spark.llm(strPrompt, "gpt-4o", true)
-        } catch {
-          if (typeof spark !== "undefined" && typeof spark.llm === "function") {
-            response = await spark.llm(strPrompt, "gpt-4o-mini", true)
-          }
-        }
+      const res = await sentinelQuery(prompt, {
+        module: "idea-generation-canvas",
+        contentType: "strategy",
+        userId: user?.id || undefined,
+        enableQualityGate: true,
+        userInputForQualityGate: cookedIdea.refinedIdea,
+        qualityGateProfile: "balanced",
+        preferCopilot: true,
+        useConsensus: true,
+      })
+      if (res.status === "needs_clarification") {
+        toast.error(res.response || "Please provide clearer idea details for canvas generation.")
+        return
       }
+      response = cleanJsonResponse(res.response)
 
       const parsedResult = cleanJsonResponse(response)
       const normalizedCanvas = normalizeBusinessCanvas(parsedResult)
@@ -500,15 +446,10 @@ CRITICAL: Return ONLY valid JSON with no markdown formatting.`
       return
     }
 
-    if (typeof spark === "undefined" || typeof spark.llm !== "function") {
-      toast.error("AI service is not available. Please refresh the page.")
-      return
-    }
-
     setIsLoadingPitch(true)
 
     try {
-      const prompt = spark.llmPrompt`You are an expert pitch deck consultant. Create a compelling investor pitch deck based on this business idea:
+      const prompt = `You are an expert pitch deck consultant. Create a compelling investor pitch deck based on this business idea:
 
 Refined Idea: ${cookedIdea.refinedIdea}
 Market Opportunity: ${cookedIdea.marketOpportunity}
@@ -520,45 +461,21 @@ Generate a pitch deck with exactly 8 slides. Return valid JSON with keys: execut
 CRITICAL: Return ONLY valid JSON with no markdown.`
 
       let response: unknown
-      const strPrompt = prompt as string
-      if (isNeonConfigured() || isGeminiConfigured()) {
-        try {
-          const res = await sentinelQuery(strPrompt, {
-            module: "idea-generation-pitchdeck",
-            userId: user?.id || undefined,
-            enableQualityGate: true,
-            userInputForQualityGate: cookedIdea.refinedIdea,
-            qualityGateProfile: "balanced",
-            preferCopilot: true,
-            useConsensus: true,
-            sparkFallback: async () => {
-              if (typeof spark !== "undefined" && typeof spark.llm === "function") {
-                return (await spark.llm(strPrompt, "gpt-4o", false)) as string
-              }
-              throw new Error("Spark fallback unavailable")
-            }
-          })
-          if (res.status === "needs_clarification") {
-            toast.error(res.response || "Please provide clearer idea details for pitch deck generation.")
-            return
-          }
-          response = cleanJsonResponse(res.response)
-        } catch {
-          if (typeof spark !== "undefined" && typeof spark.llm === "function") {
-            response = await spark.llm(strPrompt, "gpt-4o", true)
-          } else {
-            throw new Error("AI service unavailable")
-          }
-        }
-      } else {
-        try {
-          response = await spark.llm(strPrompt, "gpt-4o", true)
-        } catch {
-          if (typeof spark !== "undefined" && typeof spark.llm === "function") {
-            response = await spark.llm(strPrompt, "gpt-4o-mini", true)
-          }
-        }
+      const res = await sentinelQuery(prompt, {
+        module: "idea-generation-pitchdeck",
+        contentType: "strategy",
+        userId: user?.id || undefined,
+        enableQualityGate: true,
+        userInputForQualityGate: cookedIdea.refinedIdea,
+        qualityGateProfile: "balanced",
+        preferCopilot: true,
+        useConsensus: true,
+      })
+      if (res.status === "needs_clarification") {
+        toast.error(res.response || "Please provide clearer idea details for pitch deck generation.")
+        return
       }
+      response = cleanJsonResponse(res.response)
 
       const parsedResult = cleanJsonResponse(response)
       const normalizedPitchDeck = normalizePitchDeck(parsedResult)

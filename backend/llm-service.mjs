@@ -1,4 +1,4 @@
-const DEFAULT_MODEL = "gpt-4o"
+const DEFAULT_MODEL = "gpt-4.1"
 
 const COST_PER_1K = {
   copilot: Number(process.env.COST_PER_1K_COPILOT || 0.0018),
@@ -107,7 +107,7 @@ async function callCopilot(prompt, model, token) {
 }
 
 async function callGemini(prompt, model, apiKey) {
-  const selectedModel = model && model.startsWith("gemini") ? model : "gemini-1.5-flash"
+  const selectedModel = model && model.startsWith("gemini") ? model : "gemini-2.5-flash"
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${encodeURIComponent(apiKey)}`
 
   const response = await fetch(endpoint, {
@@ -159,7 +159,7 @@ async function callGemini(prompt, model, apiKey) {
 }
 
 async function callGroq(prompt, model, apiKey) {
-  const selectedModel = model || process.env.GROQ_MODEL || "llama-3.1-8b-instant"
+  const selectedModel = model || process.env.GROQ_MODEL || "llama-3.3-70b-versatile"
   const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: {

@@ -97,6 +97,7 @@ export async function sentinelQuery(
     voiceSample?: string
     postProcessProfile?: "strict" | "balanced" | "creative"
     contentType?: "strategy" | "chat" | "email-template" | "ngo-report" | "general"
+    model?: string
   }
 ): Promise<PipelineResult> {
   const providers: QueryProvider[] = []
@@ -371,7 +372,7 @@ export async function sentinelQuery(
         : queryText
 
       const backendProviders = providerOrder.filter((name) => name !== "spark" && name !== "sentinel")
-      const raw = await platformLlm(backendPrompt, "gpt-4o", false, {
+      const raw = await platformLlm(backendPrompt, options?.model || "gpt-4.1", false, {
         providers: backendProviders,
         module: moduleName,
       })
@@ -391,7 +392,7 @@ export async function sentinelQuery(
         brainHits,
         brainContext,
         cached: false,
-        model: "backend-llm",
+        model: options?.model || "gpt-4.1",
         status: "ok",
       }, Date.now() - generationStart)
     } catch (err) {

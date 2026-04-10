@@ -20,6 +20,23 @@ import { sentinelQuery } from "@/lib/sentinel-query-pipeline"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 
+type AvailableModel = { id: string; name: string; provider: string; tier: string }
+
+const DEFAULT_MODELS: AvailableModel[] = [
+  { id: "gpt-4.1",                 name: "GPT-4.1",           provider: "copilot", tier: "high" },
+  { id: "gpt-4.1-mini",            name: "GPT-4.1 Mini",      provider: "copilot", tier: "low"  },
+  { id: "gpt-4o",                  name: "GPT-4o",            provider: "copilot", tier: "high" },
+  { id: "gpt-5",                   name: "GPT-5",             provider: "copilot", tier: "high" },
+  { id: "gpt-5-mini",              name: "GPT-5 Mini",        provider: "copilot", tier: "low"  },
+  { id: "o4-mini",                 name: "o4-mini",           provider: "copilot", tier: "high" },
+  { id: "claude-3-5-sonnet",       name: "Claude 3.5 Sonnet", provider: "copilot", tier: "high" },
+  { id: "claude-3-5-haiku",        name: "Claude 3.5 Haiku",  provider: "copilot", tier: "low"  },
+  { id: "DeepSeek-R1",             name: "DeepSeek R1",       provider: "copilot", tier: "high" },
+  { id: "grok-3",                  name: "Grok-3",            provider: "copilot", tier: "high" },
+  { id: "gemini-2.5-flash",        name: "Gemini 2.5 Flash",  provider: "gemini",  tier: "low"  },
+  { id: "llama-3.3-70b-versatile", name: "Llama 3.3 70B",     provider: "groq",    tier: "high" },
+]
+
 interface RagChatProps {
   userId: string
   isAdmin?: boolean
@@ -43,6 +60,8 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
   const [isLoadingThreads, setIsLoadingThreads] = useState(true)
   const [isCreatingThread, setIsCreatingThread] = useState(false)
   const [isSending, setIsSending] = useState(false)
+  const [selectedModel, setSelectedModel] = useState("gpt-4.1")
+  const [availableModels, setAvailableModels] = useState<AvailableModel[]>(DEFAULT_MODELS)
   const [postProcessSettings, setPostProcessSettings] = useState<PostProcessSettings>({
     humanizeOnOutput: true,
     preserveFactsStrictly: false,
@@ -141,6 +160,22 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
     setMobileTraceOpen(false)
     void loadThreadData(activeThreadId)
   }, [activeThreadId])
+
+  useEffect(() => {
+    const token = localStorage.getItem("sentinel-auth-token") || localStorage.getItem("sentinel_token")
+    if (!token) return
+    fetch("/api/llm/models", {
+      headers: { Authorization: `Bearer ${token}` },
+      credentials: "include",
+    })
+      .then((res) => res.ok ? res.json() : null)
+      .then((data: { models?: AvailableModel[] } | null) => {
+        if (Array.isArray(data?.models) && data.models.length > 0) {
+          setAvailableModels(data.models)
+        }
+      })
+      .catch(() => null)
+  }, [])
 
   const loadThreads = async () => {
     if (!dbUserId?.trim()) return
@@ -305,6 +340,7 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
         qualityGateProfile: "lenient",
         enableQualityGate: false,
         preferCopilot: true,
+        model: selectedModel,
         userMessageMetadata: editingMessageId
           ? {
               edited_from_message_id: editingMessageId,
@@ -692,6 +728,18 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
                 onKeyDown={handleKeyDown}
                 className="min-h-[120px] md:min-h-[140px] resize-none pb-14 text-base md:text-lg rounded-none border-0 bg-transparent focus-visible:ring-0"
               />
+              <div className="absolute bottom-3 left-3">
+                <select
+                  value={selectedModel}
+                  onChange={(e) => setSelectedModel(e.target.value)}
+                  className="h-8 rounded-lg border border-border/60 bg-background/90 px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
+                  title="Select AI model"
+                >
+                  {availableModels.map((m) => (
+                    <option key={m.id} value={m.id}>{m.name}</option>
+                  ))}
+                </select>
+              </div>
               <div className="absolute bottom-3 right-3 flex items-center gap-2">
                 <div className="h-9 w-9 rounded-full bg-emerald-600/15 text-emerald-600 flex items-center justify-center">
                   <Robot size={18} weight="fill" />
@@ -845,6 +893,19 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
                 </div>
                 <div className="relative shadow-sm rounded-xl">
                   <div className="mb-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-xs text-muted-foreground shrink-0">Model:</span>
+                      <select
+                        value={selectedModel}
+                        onChange={(e) => setSelectedModel(e.target.value)}
+                        className="h-7 flex-1 rounded-md border border-border/60 bg-background/80 px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
+                        title="Select AI model"
+                      >
+                        {availableModels.map((m) => (
+                          <option key={m.id} value={m.id}>{m.name}</option>
+                        ))}
+                      </select>
+                    </div>
                     <PostProcessControls
                       settings={postProcessSettings}
                       onChange={setPostProcessSettings}
