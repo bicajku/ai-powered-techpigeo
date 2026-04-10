@@ -2419,13 +2419,7 @@ async function handleAdminDeleteUser(req, res, user) {
       return sendJson(res, 404, { ok: false, error: "User not found" }, req)
     }
 
-    // Log the action
-    await logAuditAction({
-      userId: user.id,
-      action: "ADMIN_DELETE_USER",
-      details: { deletedUserId: userIdToDelete, deletedEmail: deletedUser.email },
-      ipAddress: req.headers["x-forwarded-for"] || req.socket.remoteAddress || ""
-    })
+    console.log(`[ADMIN DELETE USER] Admin ${user.email} deleted user ${deletedUser.email} (ID: ${userIdToDelete})`)
 
     return sendJson(res, 200, { ok: true, message: "User deleted successfully", deletedUser }, req)
   } catch (err) {
