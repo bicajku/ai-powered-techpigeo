@@ -19,6 +19,10 @@ function getBackendBaseUrl(): string {
 }
 
 async function postBackend(path: string, payload: unknown): Promise<{ ok: boolean; status: number; data?: Record<string, unknown> | null }> {
+  return requestBackend("POST", path, payload)
+}
+
+async function requestBackend(method: "GET" | "POST", path: string, payload?: unknown): Promise<{ ok: boolean; status: number; data?: Record<string, unknown> | null }> {
   try {
     const token = typeof localStorage !== "undefined"
       ? localStorage.getItem("sentinel-auth-token") || localStorage.getItem("sentinel_token")
@@ -42,10 +46,10 @@ async function postBackend(path: string, payload: unknown): Promise<{ ok: boolea
     }
 
     const res = await fetch(`${getBackendBaseUrl()}${path}`, {
-      method: "POST",
+      method,
       headers,
       credentials: "include",
-      body: JSON.stringify(payload),
+      body: method === "POST" ? JSON.stringify(payload) : undefined,
     })
     const data = await res.json().catch(() => null)
     return { ok: res.ok, status: res.status, data }
@@ -88,6 +92,26 @@ export const adminService = {
       console.error("Failed to get all users:", error)
       return []
     }
+  },
+
+  async listTesterUsers(): Promise<{ maxTesters: number; total: number; testers: Array<Pick<UserProfile, "id" | "email" | "fullName" | "role" | "lastLoginAt" | "createdAt">> }> {
+    const res = await requestBackend("GET", "/api/sentinel/admin/testers")
+    if (!res.ok || !res.data?.ok) {
+      throw new Error((res.data?.error as string) || "Failed to load tester accounts")
+    }
+    return {
+      maxTesters: Number(res.data.maxTesters || 0),
+      total: Number(res.data.total || 0),
+      testers: Array.isArray(res.data.testers) ? res.data.testers as Array<Pick<UserProfile, "id" | "email" | "fullName" | "role" | "lastLoginAt" | "createdAt">> : [],
+    }
+  },
+
+  async createTesterUser(payload: { email: string; fullName: string; password: string }): Promise<{ success: boolean; error?: string }> {
+    const res = await postBackend("/api/sentinel/admin/testers", payload)
+    if (!res.ok || !res.data?.ok) {
+      return { success: false, error: (res.data?.error as string) || "Failed to create tester" }
+    }
+    return { success: true }
   },
 
   async getUserStrategies(userId: string): Promise<SavedStrategy[]> {

@@ -21,7 +21,7 @@ interface CreditHistoryEntry {
 const CREDIT_HISTORY_KEY = "credit-usage-history"
 
 function hasModuleAccess(user: UserProfile, module: ChargeableModule): boolean {
-  if (user.role === "admin") return true
+  if (user.role === "admin" || user.role === "tester") return true
   const sub = user.subscription || getDefaultSubscription()
   if (sub.plan !== "enterprise") return true
 
@@ -96,7 +96,7 @@ async function chargeCredits(
   const { payer, actor, chargeToOrgId } = await resolveCreditPayer(users, user)
   const payerSub = payer.subscription || getDefaultSubscription()
 
-  if (payer.role === "admin") {
+  if (payer.role === "admin" || payer.role === "tester") {
     return { success: true, remainingCredits: payerSub.proCredits || 0 }
   }
 
@@ -262,6 +262,7 @@ export function getFeatureEntitlements(user: UserProfile): FeatureEntitlements {
   const safeUser = ensureUserSubscription(user)
   const subscription = safeUser.subscription || getDefaultSubscription()
   const isAdmin = user.role === "admin"
+  const isTester = user.role === "tester"
 
   const isPro = subscription.plan === "pro"
   const isTeam = subscription.plan === "team"
@@ -280,10 +281,10 @@ export function getFeatureEntitlements(user: UserProfile): FeatureEntitlements {
     : 0
 
   // Review access: admin always, paid plans with active sub & credits, or active trial with remaining submissions
-  const canAccessReview = isAdmin || (isPaidPlan && isSubscriptionActive && credits > 0) || isTrialActive
+  const canAccessReview = isAdmin || isTester || (isPaidPlan && isSubscriptionActive && credits > 0) || isTrialActive
 
   // Humanize: admin always, paid plans with active sub & credits, or active trial with remaining submissions
-  const canUseHumanizer = isAdmin || (isPaidPlan && isSubscriptionActive && credits > 0) || isTrialActive
+  const canUseHumanizer = isAdmin || isTester || (isPaidPlan && isSubscriptionActive && credits > 0) || isTrialActive
 
   // NGO SaaS: strictly admin OR enterprise + explicitly created by NGO admin (ngoTeamAdminId/ngoAccessLevel set)
   const canAccessNGOSaaS =
@@ -318,7 +319,7 @@ export async function consumeReviewCredit(userId: string): Promise<{ success: bo
     const subscription = safeUser.subscription || getDefaultSubscription()
 
     // Admin always allowed
-    if (safeUser.role === "admin") {
+    if (safeUser.role === "admin" || safeUser.role === "tester") {
       return { success: true, remainingCredits: subscription.proCredits || 0 }
     }
 

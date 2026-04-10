@@ -98,7 +98,56 @@ export function AdminDashboard() {
   })
   const hasLoadedOnceRef = useRef(false)
   const loadInFlightRef = useRef(false)
+  const [testerUsers, setTesterUsers] = useState<Array<Pick<UserProfile, "id" | "email" | "fullName" | "role" | "lastLoginAt" | "createdAt">>>([])
+  const [testerMaxUsers, setTesterMaxUsers] = useState(0)
+  const [testerLoading, setTesterLoading] = useState(false)
+  const [creatingTester, setCreatingTester] = useState(false)
+  const [testerForm, setTesterForm] = useState({ email: "", fullName: "", password: "" })
   const envConfig = getEnvConfig()
+
+  const loadTesterUsers = useCallback(async () => {
+    if (!authCapabilities.isSentinelCommander) return
+    setTesterLoading(true)
+    try {
+      const result = await adminService.listTesterUsers()
+      setTesterUsers(result.testers)
+      setTesterMaxUsers(result.maxTesters)
+    } catch (error) {
+      console.error("Failed to load tester users:", error)
+      toast.error(error instanceof Error ? error.message : "Failed to load tester users")
+    } finally {
+      setTesterLoading(false)
+    }
+  }, [authCapabilities.isSentinelCommander])
+
+  const handleCreateTester = async () => {
+    const email = testerForm.email.trim().toLowerCase()
+    const fullName = testerForm.fullName.trim()
+    const password = testerForm.password
+    if (!email || !fullName || !password) {
+      toast.error("Email, full name, and password are required")
+      return
+    }
+    if (password.length < 8) {
+      toast.error("Tester password must be at least 8 characters")
+      return
+    }
+
+    setCreatingTester(true)
+    try {
+      const result = await adminService.createTesterUser({ email, fullName, password })
+      if (!result.success) {
+        toast.error(result.error || "Failed to create tester")
+        return
+      }
+      toast.success("Tester account created (staging-only, PRO tier, testing credits seeded)")
+      setTesterForm({ email: "", fullName: "", password: "" })
+      await loadTesterUsers()
+      await loadData(false, true)
+    } finally {
+      setCreatingTester(false)
+    }
+  }
 
   const loadProviderStatus = useCallback(async () => {
     setProviderStatusLoading(true)
@@ -231,6 +280,10 @@ export function AdminDashboard() {
     void loadProviderStatus()
     void loadCapabilities()
   }, [loadProviderStatus, loadCapabilities])
+
+  useEffect(() => {
+    void loadTesterUsers()
+  }, [loadTesterUsers])
 
   const handleRoleChange = async (email: string, newRole: UserRole) => {
     if (email === "admin") {
@@ -639,7 +692,7 @@ export function AdminDashboard() {
         >
           <Tabs defaultValue="users" className="w-full">
             <div className="mb-4 overflow-x-auto pb-1">
-              <TabsList className="grid min-w-[1200px] grid-cols-8">
+              <TabsList className="grid min-w-[1320px] grid-cols-9">
                 <TabsTrigger value="users" className="gap-2">
                   <Users size={18} weight="bold" />
                   User Management
@@ -663,6 +716,10 @@ export function AdminDashboard() {
                 <TabsTrigger value="invites" className="gap-2">
                   <LinkIcon size={18} weight="bold" />
                   Invites
+                </TabsTrigger>
+                <TabsTrigger value="testers" className="gap-2" disabled={!authCapabilities.isSentinelCommander}>
+                  <Users size={18} weight="bold" />
+                  Testers
                 </TabsTrigger>
                 <TabsTrigger value="errors" className="gap-2">
                   <Bug size={18} weight="bold" />
@@ -744,6 +801,12 @@ export function AdminDashboard() {
                                         <div className="flex items-center gap-1">
                                           <User size={14} />
                                           Client
+                                        </div>
+                                      </SelectItem>
+                                      <SelectItem value="tester">
+                                        <div className="flex items-center gap-1">
+                                          <Users size={14} />
+                                          Tester
                                         </div>
                                       </SelectItem>
                                     </SelectContent>
@@ -1051,6 +1114,82 @@ export function AdminDashboard() {
                     user={users.find(u => u.email === "admin") || { id: "admin", email: "admin", fullName: "Admin", role: "admin", createdAt: Date.now(), lastLoginAt: Date.now() } as UserProfile}
                     canSendInviteEmails={authCapabilities.canSendInviteEmails}
                   />
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="testers">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg font-semibold">Tester Accounts (Staging-only)</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="rounded-lg border border-border/60 bg-muted/20 p-3 text-sm text-muted-foreground">
+                    Tester users are restricted to staging, default to PRO tier, and are seeded with testing credits. 
+                    Limit: {testerMaxUsers || "-"}. Current: {testerUsers.length}.
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                    <input
+                      className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                      placeholder="tester email"
+                      value={testerForm.email}
+                      onChange={(e) => setTesterForm((prev) => ({ ...prev, email: e.target.value }))}
+                    />
+                    <input
+                      className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                      placeholder="full name"
+                      value={testerForm.fullName}
+                      onChange={(e) => setTesterForm((prev) => ({ ...prev, fullName: e.target.value }))}
+                    />
+                    <input
+                      className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                      placeholder="temporary password"
+                      type="password"
+                      value={testerForm.password}
+                      onChange={(e) => setTesterForm((prev) => ({ ...prev, password: e.target.value }))}
+                    />
+                    <Button onClick={handleCreateTester} disabled={creatingTester || !authCapabilities.isSentinelCommander}>
+                      {creatingTester ? "Creating..." : "Create Tester"}
+                    </Button>
+                  </div>
+
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Name</TableHead>
+                          <TableHead>Email</TableHead>
+                          <TableHead>Role</TableHead>
+                          <TableHead>Created</TableHead>
+                          <TableHead>Last Login</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {testerLoading ? (
+                          <TableRow>
+                            <TableCell colSpan={5} className="text-center text-muted-foreground py-6">Loading tester accounts...</TableCell>
+                          </TableRow>
+                        ) : testerUsers.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={5} className="text-center text-muted-foreground py-6">No tester accounts found.</TableCell>
+                          </TableRow>
+                        ) : (
+                          testerUsers.map((tester) => (
+                            <TableRow key={tester.id}>
+                              <TableCell className="font-medium">{tester.fullName}</TableCell>
+                              <TableCell>{tester.email}</TableCell>
+                              <TableCell>
+                                <Badge variant="secondary">TESTER</Badge>
+                              </TableCell>
+                              <TableCell className="text-sm text-muted-foreground">{formatDate(tester.createdAt)}</TableCell>
+                              <TableCell className="text-sm text-muted-foreground">{formatDate(tester.lastLoginAt)}</TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
                 </CardContent>
               </Card>
             </TabsContent>

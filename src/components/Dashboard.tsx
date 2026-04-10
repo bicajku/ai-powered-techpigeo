@@ -132,6 +132,10 @@ export function Dashboard({ strategies: rawStrategies, promptMemory: rawPromptMe
         ? Math.min(...strategies.map(s => s?.timestamp || Date.now()))
         : Date.now()
       const daysSinceFirstStrategy = Math.floor((now - oldestStrategy) / (1000 * 60 * 60 * 24))
+      const activeDays = Math.max(1, daysSinceFirstStrategy || 1)
+      const avgGenerationsPerDay = Number((totalPrompts / activeDays).toFixed(2))
+      const topPrompt = [...promptMemory]
+        .sort((a, b) => (b?.count || 0) - (a?.count || 0))[0]
 
       return {
         totalStrategies,
@@ -141,6 +145,8 @@ export function Dashboard({ strategies: rawStrategies, promptMemory: rawPromptMe
         recentStrategies,
         monthlyStrategies,
         daysSinceFirstStrategy,
+        avgGenerationsPerDay,
+        topPromptLabel: topPrompt?.prompt?.slice(0, 72) || null,
       }
     } catch (e) {
       console.error("Dashboard stats computation failed:", e)
@@ -152,6 +158,8 @@ export function Dashboard({ strategies: rawStrategies, promptMemory: rawPromptMe
         recentStrategies: 0,
         monthlyStrategies: 0,
         daysSinceFirstStrategy: 0,
+        avgGenerationsPerDay: 0,
+        topPromptLabel: null,
       }
     }
   }, [strategies, promptMemory])
@@ -437,6 +445,35 @@ export function Dashboard({ strategies: rawStrategies, promptMemory: rawPromptMe
           </Card>
         </motion.div>
       )}
+
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 0.75 }}
+      >
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg font-semibold">Platform Usage Insights</CardTitle>
+          </CardHeader>
+          <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Generations / day</p>
+              <p className="mt-1 text-2xl font-bold text-foreground">{stats.avgGenerationsPerDay}</p>
+              <p className="text-xs text-muted-foreground mt-1">Based on usage history window</p>
+            </div>
+            <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Most Used Flow</p>
+              <p className="mt-1 text-sm font-semibold text-foreground">{CONCEPT_MODE_LABELS[stats.mostUsedMode] || stats.mostUsedMode}</p>
+              <p className="text-xs text-muted-foreground mt-1">Dominant generation behavior</p>
+            </div>
+            <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Top Prompt Pattern</p>
+              <p className="mt-1 text-sm font-medium text-foreground line-clamp-2">{stats.topPromptLabel || "No prompt pattern yet"}</p>
+              <p className="text-xs text-muted-foreground mt-1">Highest reused instruction seed</p>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
     </div>
   )
 }

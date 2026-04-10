@@ -875,6 +875,33 @@ export async function createUser({ id, email, fullName, passwordHash, role = "US
   return rows[0] || null
 }
 
+export async function listUsersByRole(role, limit = 100) {
+  const sql = getSql()
+  const safeLimit = Math.max(1, Math.min(Number(limit) || 100, 500))
+  const rows = await sql`
+    SELECT id, email, full_name AS "fullName",
+           role, organization_id AS "organizationId", avatar_url AS "avatarUrl",
+           is_active AS "isActive",
+           EXTRACT(EPOCH FROM created_at)::BIGINT * 1000 AS "createdAt",
+           EXTRACT(EPOCH FROM last_login_at)::BIGINT * 1000 AS "lastLoginAt"
+    FROM sentinel_users
+    WHERE role = ${role} AND is_active = TRUE
+    ORDER BY created_at DESC
+    LIMIT ${safeLimit}
+  `
+  return rows
+}
+
+export async function countUsersByRole(role) {
+  const sql = getSql()
+  const rows = await sql`
+    SELECT COUNT(*)::INTEGER AS count
+    FROM sentinel_users
+    WHERE role = ${role} AND is_active = TRUE
+  `
+  return Number(rows?.[0]?.count || 0)
+}
+
 /**
  * Get user by email for login.
  * Returns user + password_hash for verification.

@@ -60,17 +60,29 @@ function mapSentinelUserToUserProfile(user: SentinelUser): UserProfile {
     user.role === "TEAM_ADMIN"
 
   const defaultSub = getDefaultSubscription()
+  const isTesterRole = user.role === "TESTER"
+  const testerSubscription = isTesterRole
+    ? {
+        ...defaultSub,
+        plan: "pro" as const,
+        status: "active" as const,
+        proCredits: Math.max(50, defaultSub.proCredits || 0),
+        testerSeedCredits: 50,
+        testerAutoBypassUpgrade: true,
+        updatedAt: Date.now(),
+      }
+    : null
 
   return {
     id: user.id,
     email: user.email,
     fullName: user.fullName,
-    role: isAdminRole ? "admin" : "client",
+    role: isAdminRole ? "admin" : isTesterRole ? "tester" : "client",
     avatarUrl: user.avatarUrl,
     subscription: user.organizationId ? {
-      ...defaultSub,
+      ...(testerSubscription || defaultSub),
       enterpriseOrganizationId: user.organizationId,
-    } : defaultSub,
+    } : (testerSubscription || defaultSub),
     createdAt: user.createdAt,
     lastLoginAt: user.lastLoginAt,
   }

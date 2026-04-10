@@ -28,6 +28,8 @@ import {
   createUser,
   getUserByEmailForLogin,
   getUserById,
+  listUsersByRole,
+  countUsersByRole,
   updateLastLogin,
   updatePasswordHash,
   assignUserToOrganization,
@@ -112,6 +114,7 @@ const REQUIRE_AUTH =
 const BACKEND_API_KEY = process.env.BACKEND_API_KEY || ""
 const ADMIN_NOTIFICATION_EMAIL = process.env.ADMIN_NOTIFICATION_EMAIL || process.env.M365_SENDER_EMAIL || "admin@novussparks.com"
 const FORCED_SENTINEL_COMMANDER_EMAIL = (process.env.FORCED_SENTINEL_COMMANDER_EMAIL || "admin@novussparks.com").toLowerCase()
+const TESTER_MAX_USERS = Number(process.env.TESTER_MAX_USERS || 25)
 
 /**
  * Feature flag: when true, sentinel auth routes are enabled.
@@ -592,7 +595,12 @@ function authorize(req) {
       }
       const jwtResult = authenticateRequest(req)
       if (jwtResult.authenticated) {
-        return { authorized: true, user: normalizeAuthUser(jwtResult.user) }
+        const normalized = normalizeAuthUser(jwtResult.user)
+        const testerEnv = enforceTesterEnvironment(req, normalized)
+        if (!testerEnv.allowed) {
+          return { authorized: false }
+        }
+        return { authorized: true, user: normalized }
       }
     }
   }
@@ -614,6 +622,128 @@ function normalizeAuthUser(user) {
     }
   }
   return user
+}
+
+function isProductionHost(req) {
+  const host = String(req.headers.host || "").toLowerCase()
+  return host.includes("novussparks.com") && !host.includes("staging")
+}
+
+function enforceTesterEnvironment(req, authUser) {
+  if (!authUser || authUser.role !== "TESTER") return { allowed: true }
+  if (isProductionHost(req)) {
+    return {
+      allowed: false,
+      status: 403,
+      error: "Tester accounts are restricted to staging environment",
+    }
+  }
+  return { allowed: true }
+}
+
+async function ensureTesterSubscription(userId, assignedBy) {
+  try {
+    const { getSql } = await import("./db.mjs")
+    const sql = getSql()
+    const existing = await sql`
+      SELECT id FROM sentinel_user_subscriptions
+      WHERE user_id = ${userId} AND status = 'ACTIVE'
+      ORDER BY assigned_at DESC
+      LIMIT 1
+    `
+    if (existing.length > 0) return
+
+    const rows = await sql`
+      SELECT organization_id AS "organizationId"
+      FROM sentinel_users
+      WHERE id = ${userId}
+      LIMIT 1
+    `
+    const orgId = rows[0]?.organizationId || null
+    if (!orgId) return
+
+    await sql`
+      INSERT INTO sentinel_user_subscriptions
+        (id, user_id, organization_id, tier, status, assigned_by, expires_at, auto_renew)
+      VALUES
+        (${crypto.randomUUID()}, ${userId}, ${orgId}, 'PRO', 'ACTIVE', ${assignedBy || userId}, NULL, false)
+    `
+  } catch (err) {
+    console.warn("[tester] ensure subscription failed (non-blocking):", err?.message || err)
+  }
+}
+
+async function handleCreateTester(req, res, actor) {
+  if (!hasMinimumRole(actor.role, "SENTINEL_COMMANDER")) {
+    return sendJson(res, 403, { ok: false, error: "Insufficient permissions" }, req)
+  }
+
+  const parsed = await parseJsonBody(req)
+  if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+  const body = parsed.data
+
+  const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : ""
+  const fullName = typeof body.fullName === "string" ? body.fullName.trim() : ""
+  const password = typeof body.password === "string" ? body.password : ""
+
+  if (!email || !fullName || !password) {
+    return sendJson(res, 400, { ok: false, error: "email, fullName, and password are required" }, req)
+  }
+  if (password.length < 8) {
+    return sendJson(res, 400, { ok: false, error: "Password must be at least 8 characters" }, req)
+  }
+
+  const currentTesters = await countUsersByRole("TESTER")
+  if (currentTesters >= TESTER_MAX_USERS) {
+    return sendJson(res, 400, { ok: false, error: `Tester limit reached (${TESTER_MAX_USERS})` }, req)
+  }
+
+  const existing = await getUserByEmailForLogin(email)
+  if (existing) {
+    return sendJson(res, 409, { ok: false, error: "An account with this email already exists" }, req)
+  }
+
+  const newUser = await createUser({
+    id: crypto.randomUUID(),
+    email,
+    fullName,
+    passwordHash: await hashPassword(password),
+    role: "TESTER",
+    organizationId: actor.organizationId || null,
+  })
+
+  if (!newUser) {
+    return sendJson(res, 500, { ok: false, error: "Failed to create tester account" }, req)
+  }
+
+  await ensureTesterSubscription(newUser.id, actor.userId)
+
+  return sendJson(res, 200, {
+    ok: true,
+    tester: {
+      ...newUser,
+      role: "TESTER",
+      testingPolicy: {
+        stagingOnly: true,
+        maxCredits: 50,
+        tier: "PRO",
+      },
+    },
+  }, req)
+}
+
+async function handleListTesters(req, res, actor) {
+  if (!hasMinimumRole(actor.role, "SENTINEL_COMMANDER")) {
+    return sendJson(res, 403, { ok: false, error: "Insufficient permissions" }, req)
+  }
+
+  const testers = await listUsersByRole("TESTER", TESTER_MAX_USERS)
+  return sendJson(res, 200, {
+    ok: true,
+    maxTesters: TESTER_MAX_USERS,
+    total: testers.length,
+    testers,
+  }, req)
 }
 
 function getAuthCapabilities(user) {
@@ -1059,6 +1189,14 @@ async function handleLogin(req, res) {
     // Return user info (without passwordHash)
     const safeUser = { ...user }
     delete safeUser.passwordHash
+
+    if (safeUser.role === "TESTER") {
+      const testerEnv = enforceTesterEnvironment(req, safeUser)
+      if (!testerEnv.allowed) {
+        return sendJson(res, testerEnv.status || 403, { ok: false, error: testerEnv.error }, req)
+      }
+      await ensureTesterSubscription(safeUser.id, safeUser.id)
+    }
     // M1 fix: Set CSRF cookie on login
     const csrfToken = generateCsrfToken()
     console.log(`[auth/login] Login successful for ${email}`)
@@ -1459,6 +1597,14 @@ async function handleVerify(req, res) {
 
     const subscription = await getUserSubscription(user.id)
     const normalizedUser = normalizeAuthUser(user)
+
+    if (normalizedUser.role === "TESTER") {
+      const testerEnv = enforceTesterEnvironment(req, normalizedUser)
+      if (!testerEnv.allowed) {
+        return sendJson(res, testerEnv.status || 403, { ok: false, error: testerEnv.error }, req)
+      }
+      await ensureTesterSubscription(normalizedUser.id, normalizedUser.id)
+    }
 
     return sendJson(res, 200, {
       ok: true,
@@ -3508,6 +3654,10 @@ const server = http.createServer(async (req, res) => {
       }
 
       const user = normalizeAuthUser(authResult.user)
+      const testerEnv = enforceTesterEnvironment(req, user)
+      if (!testerEnv.allowed) {
+        return sendJson(res, testerEnv.status || 403, { ok: false, error: testerEnv.error }, req)
+      }
 
       // H6 fix: API rate limiting for sentinel routes
       const rlKey = user.userId || getClientIp(req)
@@ -3801,6 +3951,14 @@ const server = http.createServer(async (req, res) => {
       }
 
       // ── User Style Profile Routes ──
+
+      if (method === "GET" && reqPathname === "/api/sentinel/admin/testers") {
+        return handleListTesters(req, res, user)
+      }
+
+      if (method === "POST" && reqPathname === "/api/sentinel/admin/testers") {
+        return handleCreateTester(req, res, user)
+      }
 
       // POST /api/sentinel/user-style/track-generation
       if (method === "POST" && reqPathname === "/api/sentinel/user-style/track-generation") {

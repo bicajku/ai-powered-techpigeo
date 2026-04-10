@@ -63,7 +63,7 @@ export interface SavedStrategy {
   }[]
 }
 
-export type UserRole = "admin" | "client"
+export type UserRole = "admin" | "client" | "tester"
 
 export type SubscriptionPlan = "basic" | "pro" | "team" | "enterprise"
 export type SubscriptionStatus = "active" | "inactive" | "grace"
@@ -119,6 +119,8 @@ export interface SubscriptionInfo {
   status: SubscriptionStatus
   proCredits: number
   updatedAt: number
+  testerSeedCredits?: number
+  testerAutoBypassUpgrade?: boolean
   trial?: TrialInfo
   hasNgoModuleAccess?: boolean
   ngoAccessLevel?: NGOAccessLevel

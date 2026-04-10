@@ -5,6 +5,7 @@ export type SentinelRole =
   | "ORG_ADMIN"
   | "TEAM_ADMIN"
   | "TEAM_MEMBER"
+  | "TESTER"
   | "USER"
 
 export type SubscriptionTier = "BASIC" | "PRO" | "TEAMS" | "ENTERPRISE"

@@ -19,6 +19,7 @@ const ROLE_RANK = {
   ORG_ADMIN: 80,
   TEAM_ADMIN: 60,
   TEAM_MEMBER: 40,
+  TESTER: 30,
   USER: 20,
 }
 
@@ -133,6 +134,15 @@ export const ACTIONS = {
  * Higher roles inherit all permissions of lower roles.
  */
 const ROLE_ACTIONS = {
+  TESTER: new Set([
+    ACTIONS.REPORT_READ,
+    ACTIONS.AI_GENERATE,
+    ACTIONS.AI_HUMANIZE,
+    ACTIONS.AI_RAG_QUERY,
+    ACTIONS.ORG_VIEW,
+    ACTIONS.SUB_VIEW,
+  ]),
+
   USER: new Set([
     ACTIONS.REPORT_READ,
     ACTIONS.AI_GENERATE,
