@@ -922,6 +922,24 @@ export async function getUserByEmailForLogin(email) {
 }
 
 /**
+ * Get user by email (no password_hash, for admin lookups).
+ */
+export async function getUserByEmail(email) {
+  const sql = getSql()
+  const rows = await sql`
+    SELECT id, email, full_name AS "fullName",
+           role, organization_id AS "organizationId", avatar_url AS "avatarUrl",
+           is_active AS "isActive",
+           EXTRACT(EPOCH FROM created_at)::BIGINT * 1000 AS "createdAt",
+           EXTRACT(EPOCH FROM last_login_at)::BIGINT * 1000 AS "lastLoginAt"
+    FROM sentinel_users
+    WHERE email = ${email.toLowerCase()}
+    LIMIT 1
+  `
+  return rows[0] || null
+}
+
+/**
  * Get user by ID (no password_hash).
  */
 export async function getUserById(userId) {
@@ -987,6 +1005,40 @@ export async function deactivateUserById(userId) {
               EXTRACT(EPOCH FROM last_login_at)::BIGINT * 1000 AS "lastLoginAt"
   `
   return rows[0] || null
+}
+
+/**
+ * Hard delete a user and their subscription from Neon.
+ * Removes all related records including subscription and permissions.
+ * Used by admin to permanently remove test users, etc.
+ */
+export async function deleteUserById(userId) {
+  const sql = getSql()
+  try {
+    // Delete user's subscriptions first (FK constraint)
+    await sql`
+      DELETE FROM sentinel_user_subscriptions
+      WHERE user_id = ${userId}
+    `
+
+    // Delete user's module permissions
+    await sql`
+      DELETE FROM sentinel_module_permissions
+      WHERE user_id = ${userId}
+    `
+
+    // Delete the user record
+    const rows = await sql`
+      DELETE FROM sentinel_users
+      WHERE id = ${userId}
+      RETURNING id, email, full_name AS "fullName"
+    `
+
+    return rows[0] || null
+  } catch (err) {
+    console.error(`[db.deleteUserById] error deleting user ${userId}:`, err)
+    throw err
+  }
 }
 
 export async function assignUserToOrganization(userId, organizationId, role) {

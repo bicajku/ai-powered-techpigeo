@@ -18,6 +18,12 @@ function getBackendBaseUrl(): string {
   return ""
 }
 
+function isLocalDevHost(): boolean {
+  if (typeof window === "undefined") return false
+  const host = window.location.hostname.toLowerCase()
+  return host === "localhost" || host === "127.0.0.1" || host === "::1"
+}
+
 async function postBackend(path: string, payload: unknown): Promise<{ ok: boolean; status: number; data?: Record<string, unknown> | null }> {
   return requestBackend("POST", path, payload)
 }
@@ -244,7 +250,25 @@ export const adminService = {
         return { success: false, error: "Cannot delete master admin" }
       }
 
-      const users = await getSafeKVClient().get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
+      // Try backend first
+      const backendRes = await postBackend("/api/sentinel/admin/users/delete", { email })
+
+      if (backendRes.status !== 0) {
+        if (backendRes.ok && backendRes.data?.success) {
+          return { success: true }
+        }
+        return {
+          success: false,
+          error: (backendRes.data?.error as string) || "Failed to delete user",
+        }
+      }
+
+      // Backend unavailable - fall back to KV (localhost only)
+      if (!isLocalDevHost()) {
+        return { success: false, error: "Backend unavailable" }
+      }
+
+      const users = (await getSafeKVClient().get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
       const userEntry = Object.entries(users).find(([, candidate]) => candidate.email === email)
       const user = userEntry?.[1]
       const userId = userEntry?.[0]
@@ -256,7 +280,7 @@ export const adminService = {
       delete users[userId]
       await getSafeKVClient().set(USERS_STORAGE_KEY, users)
 
-      const credentials = await getSafeKVClient().get<Record<string, StoredCredential>>(USER_CREDENTIALS_KEY) || {}
+      const credentials = (await getSafeKVClient().get<Record<string, StoredCredential>>(USER_CREDENTIALS_KEY)) || {}
       delete credentials[email.toLowerCase()]
       await getSafeKVClient().set(USER_CREDENTIALS_KEY, credentials)
 

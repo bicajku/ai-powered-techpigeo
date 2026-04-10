@@ -34,9 +34,11 @@ import {
   updatePasswordHash,
   updateUserRoleById,
   deactivateUserById,
+  deleteUserById,
   assignUserToOrganization,
   createOrganization,
   getUserSubscription,
+  getUserByEmail,
   getUserModulePermissions,
   getOrganization,
   listOrgUsers,
@@ -2367,6 +2369,72 @@ async function handleAdminListUsers(req, res, user) {
 }
 
 /**
+ * POST /api/sentinel/admin/users/delete
+ * Body: { userId or email }
+ * Hard delete a user from Neon database.
+ * Removes user, subscriptions, and permissions.
+ * Requires SENTINEL_COMMANDER.
+ */
+async function handleAdminDeleteUser(req, res, user) {
+  if (!hasMinimumRole(user.role, "SENTINEL_COMMANDER")) {
+    return sendJson(res, 403, { ok: false, error: "Only Sentinel Commander can delete users" }, req)
+  }
+
+  if (!isDbConfigured()) {
+    return sendJson(res, 503, { ok: false, error: "Database not configured" }, req)
+  }
+
+  const parsed = await parseJsonBody(req)
+  if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+
+  const body = parsed.data || {}
+  // Accept either userId or email
+  const targetUserId = typeof body.userId === "string" ? body.userId.trim() : ""
+  const targetEmail = typeof body.email === "string" ? body.email.trim() : ""
+
+  if (!targetUserId && !targetEmail) {
+    return sendJson(res, 400, { ok: false, error: "Provide either userId or email" }, req)
+  }
+
+  // Prevent deleting master admin
+  if (targetEmail && targetEmail.toLowerCase() === "admin@novussparks.com") {
+    return sendJson(res, 409, { ok: false, error: "Cannot delete master admin" }, req)
+  }
+
+  try {
+    let userIdToDelete = targetUserId
+
+    // If only email provided, look up the user ID first
+    if (!userIdToDelete && targetEmail) {
+      const userRow = await getUserByEmail(targetEmail)
+      if (!userRow) {
+        return sendJson(res, 404, { ok: false, error: "User not found" }, req)
+      }
+      userIdToDelete = userRow.id
+    }
+
+    // Delete the user from Neon
+    const deletedUser = await deleteUserById(userIdToDelete)
+    if (!deletedUser) {
+      return sendJson(res, 404, { ok: false, error: "User not found" }, req)
+    }
+
+    // Log the action
+    await logAuditAction({
+      userId: user.id,
+      action: "ADMIN_DELETE_USER",
+      details: { deletedUserId: userIdToDelete, deletedEmail: deletedUser.email },
+      ipAddress: req.headers["x-forwarded-for"] || req.socket.remoteAddress || ""
+    })
+
+    return sendJson(res, 200, { ok: true, message: "User deleted successfully", deletedUser }, req)
+  } catch (err) {
+    console.error("[handleAdminDeleteUser] error:", err)
+    return sendJson(res, 500, { ok: false, error: "Internal server error" }, req)
+  }
+}
+
+/**
  * POST /api/sentinel/admin/subscriptions/add-credits
  * Body: { userId, credits }
  * Requires SENTINEL_COMMANDER.
@@ -4059,6 +4127,11 @@ const server = http.createServer(async (req, res) => {
       // GET /api/sentinel/admin/users
       if (method === "GET" && reqPathname === "/api/sentinel/admin/users") {
         return handleAdminListUsers(req, res, user)
+      }
+
+      // POST /api/sentinel/admin/users/delete
+      if (method === "POST" && reqPathname === "/api/sentinel/admin/users/delete") {
+        return handleAdminDeleteUser(req, res, user)
       }
 
       // POST /api/sentinel/admin/subscriptions/add-credits
