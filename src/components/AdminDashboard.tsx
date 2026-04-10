@@ -1212,16 +1212,17 @@ export function AdminDashboard() {
                           <TableHead>Role</TableHead>
                           <TableHead>Created</TableHead>
                           <TableHead>Last Login</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {testerLoading ? (
                           <TableRow>
-                            <TableCell colSpan={5} className="text-center text-muted-foreground py-6">Loading tester accounts...</TableCell>
+                            <TableCell colSpan={6} className="text-center text-muted-foreground py-6">Loading tester accounts...</TableCell>
                           </TableRow>
                         ) : testerUsers.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={5} className="text-center text-muted-foreground py-6">No tester accounts found.</TableCell>
+                            <TableCell colSpan={6} className="text-center text-muted-foreground py-6">No tester accounts found.</TableCell>
                           </TableRow>
                         ) : (
                           testerUsers.map((tester) => (
@@ -1233,6 +1234,17 @@ export function AdminDashboard() {
                               </TableCell>
                               <TableCell className="text-sm text-muted-foreground">{formatDate(tester.createdAt)}</TableCell>
                               <TableCell className="text-sm text-muted-foreground">{formatDate(tester.lastLoginAt)}</TableCell>
+                              <TableCell className="text-right">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleResetPassword(tester.email)}
+                                  title={authCapabilities.canSetPasswords ? "Reset tester password" : "Requires Sentinel Commander permissions"}
+                                  disabled={!authCapabilities.canSetPasswords}
+                                >
+                                  <Key size={16} weight="bold" />
+                                </Button>
+                              </TableCell>
                             </TableRow>
                           ))
                         )}

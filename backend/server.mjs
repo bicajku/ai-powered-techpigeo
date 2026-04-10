@@ -683,6 +683,10 @@ async function handleCreateTester(req, res, actor) {
     return sendJson(res, 403, { ok: false, error: "Insufficient permissions" }, req)
   }
 
+  if (!isDbConfigured()) {
+    return sendJson(res, 503, { ok: false, error: "Tester management requires NEON_DATABASE_URL on staging backend" }, req)
+  }
+
   const parsed = await parseJsonBody(req)
   if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
   const body = parsed.data
@@ -740,6 +744,10 @@ async function handleCreateTester(req, res, actor) {
 async function handleListTesters(req, res, actor) {
   if (!hasMinimumRole(actor.role, "SENTINEL_COMMANDER")) {
     return sendJson(res, 403, { ok: false, error: "Insufficient permissions" }, req)
+  }
+
+  if (!isDbConfigured()) {
+    return sendJson(res, 503, { ok: false, error: "Tester management requires NEON_DATABASE_URL on staging backend" }, req)
   }
 
   const testers = await listUsersByRole("TESTER", TESTER_MAX_USERS)
