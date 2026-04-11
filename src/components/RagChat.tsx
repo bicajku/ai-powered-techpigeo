@@ -179,6 +179,7 @@ export function RagChat({ userId, userName, isAdmin = false }: RagChatProps) {
   const [isLoadingThreads, setIsLoadingThreads] = useState(true)
   const [isCreatingThread, setIsCreatingThread] = useState(false)
   const [isSending, setIsSending] = useState(false)
+  const [liveAssistantText, setLiveAssistantText] = useState("")
   const [sendProgress, setSendProgress] = useState(0)
   const [sendStage, setSendStage] = useState<"idle" | "preparing" | "retrieving" | "generating" | "finalizing">("idle")
   const [sendElapsedSec, setSendElapsedSec] = useState(0)
@@ -626,6 +627,7 @@ export function RagChat({ userId, userName, isAdmin = false }: RagChatProps) {
     }
 
     setIsSending(true)
+    setLiveAssistantText("")
     setSendStage("preparing")
     setSendProgress(8)
     setInput("")
@@ -673,6 +675,11 @@ export function RagChat({ userId, userName, isAdmin = false }: RagChatProps) {
         enableQualityGate: false,
         preferCopilot: true,
         model: selectedModel,
+        onToken: (token) => {
+          setSendStage("generating")
+          setSendProgress((p) => Math.max(p, 58))
+          setLiveAssistantText((current) => `${current}${token}`)
+        },
         userMessageMetadata: editingMessageId
           ? {
               edited_from_message_id: editingMessageId,
@@ -726,6 +733,7 @@ export function RagChat({ userId, userName, isAdmin = false }: RagChatProps) {
       setIsSending(false)
       setSendStage("idle")
       setSendProgress(0)
+      setLiveAssistantText("")
     }
   }
 
@@ -1293,6 +1301,23 @@ export function RagChat({ userId, userName, isAdmin = false }: RagChatProps) {
                       </div>
                     )
                   })}
+                  {isSending && (
+                    <div className="rounded-2xl border border-primary/30 bg-primary/5 p-4">
+                      <div className="flex items-center gap-2 text-xs mb-3">
+                        <div className="h-6 w-6 rounded-full flex items-center justify-center bg-primary/20 text-primary">
+                          <Robot size={14} weight="fill" />
+                        </div>
+                        <span className="font-semibold text-foreground">NovusSparks AI</span>
+                        <span className="text-muted-foreground">typing...</span>
+                        <span className="text-muted-foreground ml-auto">{sendElapsedSec}s</span>
+                      </div>
+                      {liveAssistantText ? (
+                        renderAssistantContent(liveAssistantText)
+                      ) : (
+                        <div className="text-sm text-muted-foreground">Working on your response...</div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </ScrollArea>
 

@@ -9,7 +9,7 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 import { handleMcpRequest } from "./mcp-server.mjs";
-import { generateWithFallback, getProviderStatus } from "./llm-service.mjs"
+import { generateWithFallback, generateWithFallbackStream, getProviderStatus } from "./llm-service.mjs"
 import {
   signToken,
   verifyToken,
@@ -4562,6 +4562,101 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 500, {
         error: "LLM generation failed",
       }, req)
+    }
+  }
+
+  // ── POST /api/llm/generate/stream ── (SSE token streaming)
+  if (method === "POST" && reqPathname === "/api/llm/generate/stream") {
+    const auth = authorize(req)
+    if (!auth.authorized) {
+      return sendJson(res, 401, { error: "Unauthorized" }, req)
+    }
+
+    try {
+      const parsed = await parseJsonBody(req)
+      if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+      const body = parsed.data
+      const prompt = typeof body.prompt === "string" ? body.prompt.trim() : ""
+      const model = typeof body.model === "string" ? body.model : undefined
+      const moduleName = typeof body.module === "string" ? body.module : "global"
+      const providers = Array.isArray(body.providers)
+        ? body.providers.filter((p) => p === "copilot" || p === "groq" || p === "gemini")
+        : undefined
+
+      if (!prompt) {
+        return sendJson(res, 400, { error: "Missing required field: prompt" }, req)
+      }
+
+      const routing = await getResolvedRouting(moduleName)
+      const activeRoute = providers && providers.length > 0
+        ? providers
+        : filterActiveGenerationProviders(routing.generationOrder, routing.enabledProviders)
+
+      if ((routing.budgetExceeded.daily || routing.budgetExceeded.monthly) && !providers) {
+        return sendJson(res, 429, {
+          error: "Provider budget exceeded",
+          details: routing.budgetExceeded,
+        }, req)
+      }
+
+      const allowedProviders = activeRoute.filter((p) => p !== "spark")
+      if (allowedProviders.length === 0) {
+        return sendJson(res, 503, {
+          error: "No active hosted providers configured",
+          module: moduleName,
+        }, req)
+      }
+
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+        ...SECURITY_HEADERS,
+      })
+
+      const sendEvent = (event, payload) => {
+        res.write(`event: ${event}\n`)
+        res.write(`data: ${JSON.stringify(payload)}\n\n`)
+      }
+
+      sendEvent("start", { ok: true })
+
+      const result = await generateWithFallbackStream({
+        prompt,
+        model,
+        providers: allowedProviders,
+        onToken: (token) => {
+          sendEvent("token", { token })
+        },
+      })
+
+      void logProviderUsage({
+        provider: result.provider,
+        moduleName,
+        kind: "generation",
+        model: result.model,
+        inputTokens: result.usage?.inputTokens,
+        outputTokens: result.usage?.outputTokens,
+        totalTokens: result.usage?.totalTokens,
+        estimatedCostUsd: result.usage?.estimatedCostUsd || 0,
+        status: "ok",
+      }).catch(() => null)
+
+      sendEvent("done", {
+        text: result.text,
+        provider: result.provider,
+        model: result.model,
+      })
+      return res.end()
+    } catch (error) {
+      console.error("[llm/generate/stream] error:", error instanceof Error ? error.message : error)
+      try {
+        res.write(`event: error\ndata: ${JSON.stringify({ error: "LLM generation failed" })}\n\n`)
+      } catch {
+        // ignore secondary stream write failures
+      }
+      return res.end()
     }
   }
 

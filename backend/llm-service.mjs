@@ -109,6 +109,90 @@ async function callCopilot(prompt, model, token) {
   }
 }
 
+async function callCopilotStream(prompt, model, token, onToken) {
+  const response = await fetch("https://models.inference.ai.azure.com/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: model || DEFAULT_MODEL,
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.3,
+      max_tokens: 4096,
+      stream: true,
+    }),
+  })
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "")
+    console.error(`[llm-service] Copilot stream API error ${response.status}:`, body)
+    throw new Error("LLM provider request failed")
+  }
+
+  if (!response.body) {
+    throw new Error("Copilot stream response body is empty")
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder("utf-8")
+  let buffer = ""
+  let output = ""
+  let streamedModel = model || DEFAULT_MODEL
+  let usage = null
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split("\n")
+    buffer = lines.pop() || ""
+
+    for (const rawLine of lines) {
+      const line = rawLine.trim()
+      if (!line || !line.startsWith("data:")) continue
+
+      const payload = line.slice(5).trim()
+      if (payload === "[DONE]") {
+        break
+      }
+
+      try {
+        const parsed = JSON.parse(payload)
+        streamedModel = parsed?.model || streamedModel
+        usage = parsed?.usage || usage
+        const tokenText = parsed?.choices?.[0]?.delta?.content
+        if (typeof tokenText === "string" && tokenText.length > 0) {
+          output += tokenText
+          onToken?.(tokenText)
+        }
+      } catch {
+        // Ignore malformed stream lines
+      }
+    }
+  }
+
+  if (!output || output.trim().length === 0) {
+    throw new Error("Copilot provider returned empty streamed response")
+  }
+
+  const totalTokens = Number(usage?.total_tokens || estimateTokens(prompt, output))
+
+  return {
+    text: output,
+    model: streamedModel,
+    provider: "copilot",
+    usage: {
+      inputTokens: Number(usage?.prompt_tokens || 0),
+      outputTokens: Number(usage?.completion_tokens || 0),
+      totalTokens,
+      estimatedCostUsd: estimateCost("copilot", totalTokens),
+    },
+  }
+}
+
 async function callGemini(prompt, model, apiKey) {
   const selectedModel = model && model.startsWith("gemini") ? model : "gemini-2.5-flash"
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${encodeURIComponent(apiKey)}`
@@ -233,6 +317,50 @@ export async function generateWithFallback({ prompt, model, providers }) {
       if (provider === "groq") {
         if (!groqApiKey) throw new Error("Groq provider not configured")
         return await callGroq(prompt, model, groqApiKey)
+      }
+
+      failures.push(`${provider}: unsupported provider`)
+    } catch (error) {
+      failures.push(`${provider}: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  throw new Error(`All providers failed. ${failures.join(" | ")}`)
+}
+
+export async function generateWithFallbackStream({ prompt, model, providers, onToken }) {
+  const requestedProviders = Array.isArray(providers) && providers.length > 0
+    ? providers
+    : ["copilot", "groq", "gemini"]
+
+  const failures = []
+  const copilotToken = process.env.GITHUB_COPILOT_TOKEN
+    || process.env.GitHub_Models_token
+    || process.env.GITHUB_MODELS_TOKEN
+    || process.env.GITHUB_TOKEN
+  const groqApiKey = process.env.GROQ_API_KEY
+  const geminiApiKey = process.env.GEMINI_API_KEY
+
+  for (const provider of requestedProviders) {
+    try {
+      if (provider === "copilot") {
+        if (!copilotToken) throw new Error("Copilot provider not configured")
+        return await callCopilotStream(prompt, model, copilotToken, onToken)
+      }
+
+      // Non-streaming fallback providers still emit a single final chunk.
+      if (provider === "gemini") {
+        if (!geminiApiKey) throw new Error("Gemini provider not configured")
+        const result = await callGemini(prompt, model, geminiApiKey)
+        onToken?.(result.text)
+        return result
+      }
+
+      if (provider === "groq") {
+        if (!groqApiKey) throw new Error("Groq provider not configured")
+        const result = await callGroq(prompt, model, groqApiKey)
+        onToken?.(result.text)
+        return result
       }
 
       failures.push(`${provider}: unsupported provider`)

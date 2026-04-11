@@ -14,7 +14,7 @@ import {
 } from "./chat-api"
 import { isNeonConfigured } from "./neon-client"
 import { getEnvConfig } from "./env-config"
-import { platformLlm } from "./platform-client"
+import { platformLlm, platformLlmStream } from "./platform-client"
 import { searchWeb } from "./web-search-client"
 import { fetchProviderRouting, type ProviderRoutingConfig } from "./provider-routing"
 
@@ -101,6 +101,7 @@ export async function sentinelQuery(
     postProcessProfile?: "strict" | "balanced" | "creative"
     contentType?: "strategy" | "chat" | "email-template" | "ngo-report" | "general"
     model?: string
+    onToken?: (token: string) => void
   }
 ): Promise<PipelineResult> {
   const providers: QueryProvider[] = []
@@ -370,11 +371,23 @@ export async function sentinelQuery(
         : queryText
 
       const backendProviders = providerOrder.filter((name) => name !== "spark" && name !== "sentinel")
-      const raw = await platformLlm(backendPrompt, options?.model || "gpt-4.1", false, {
-        providers: backendProviders,
-        module: moduleName,
-      })
-      const response = typeof raw === "string" ? raw : JSON.stringify(raw)
+      let response = ""
+      let resolvedModel = options?.model || "gpt-4.1"
+      if (typeof options?.onToken === "function") {
+        const streamed = await platformLlmStream(backendPrompt, options?.model || "gpt-4.1", {
+          providers: backendProviders,
+          module: moduleName,
+          onToken: options.onToken,
+        })
+        response = streamed.text
+        resolvedModel = streamed.model || resolvedModel
+      } else {
+        const raw = await platformLlm(backendPrompt, options?.model || "gpt-4.1", false, {
+          providers: backendProviders,
+          module: moduleName,
+        })
+        response = typeof raw === "string" ? raw : JSON.stringify(raw)
+      }
       if (!response || response.trim().length === 0) {
         throw new Error("Backend LLM returned empty response")
       }
@@ -390,7 +403,7 @@ export async function sentinelQuery(
         brainHits,
         brainContext,
         cached: false,
-        model: options?.model || "gpt-4.1",
+        model: resolvedModel,
         status: "ok",
       }, Date.now() - generationStart)
     } catch (err) {

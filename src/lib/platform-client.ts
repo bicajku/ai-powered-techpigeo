@@ -39,6 +39,10 @@ export interface PlatformLlmOptions {
   module?: string
 }
 
+export interface PlatformLlmStreamOptions extends PlatformLlmOptions {
+  onToken?: (token: string) => void
+}
+
 function getSparkGlobal(): {
   llmPrompt?: (strings: TemplateStringsArray, ...values: unknown[]) => unknown
   llm?: (prompt: unknown, model?: string, parseJson?: boolean) => Promise<unknown>
@@ -117,6 +121,111 @@ async function callBackendLlm(request: BackendLlmRequest): Promise<unknown> {
   return JSON.stringify(data.raw ?? data)
 }
 
+async function callBackendLlmStream(
+  request: BackendLlmRequest,
+  onToken?: (token: string) => void
+): Promise<{ text: string; provider?: string; model?: string }> {
+  const config = getEnvConfig()
+  const baseUrl = config.backendApiBaseUrl ? config.backendApiBaseUrl.replace(/\/$/, "") : ""
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  }
+
+  const sentinelToken = typeof window !== "undefined"
+    ? (localStorage.getItem("sentinel-auth-token") || localStorage.getItem("sentinel_token"))
+    : null
+  if (sentinelToken) {
+    headers["Authorization"] = `Bearer ${sentinelToken}`
+  }
+
+  if (typeof document !== "undefined") {
+    const csrfMatch = document.cookie
+      .split(";")
+      .map((c) => c.trim())
+      .find((c) => c.startsWith("__csrf="))
+    if (csrfMatch) {
+      headers["X-CSRF-Token"] = csrfMatch.slice("__csrf=".length)
+    }
+  }
+
+  const response = await fetch(`${baseUrl}/api/llm/generate/stream`, {
+    method: "POST",
+    headers,
+    credentials: "include",
+    body: JSON.stringify(request),
+  })
+
+  if (!response.ok || !response.body) {
+    const body = await response.text().catch(() => "")
+    throw new Error(`Backend LLM stream error ${response.status}: ${body}`)
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder("utf-8")
+  let buffer = ""
+  let accumulatedText = ""
+  let provider: string | undefined
+  let model: string | undefined
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+
+    buffer += decoder.decode(value, { stream: true })
+    let boundary = buffer.indexOf("\n\n")
+
+    while (boundary !== -1) {
+      const frame = buffer.slice(0, boundary)
+      buffer = buffer.slice(boundary + 2)
+      boundary = buffer.indexOf("\n\n")
+
+      let eventName = "message"
+      const dataLines: string[] = []
+      for (const rawLine of frame.split(/\r?\n/)) {
+        const line = rawLine.trim()
+        if (line.startsWith("event:")) {
+          eventName = line.slice(6).trim()
+        } else if (line.startsWith("data:")) {
+          dataLines.push(line.slice(5).trim())
+        }
+      }
+
+      const payloadRaw = dataLines.join("\n")
+      if (!payloadRaw) continue
+
+      let payload: Record<string, unknown>
+      try {
+        payload = JSON.parse(payloadRaw) as Record<string, unknown>
+      } catch {
+        continue
+      }
+
+      if (eventName === "token") {
+        const token = typeof payload.token === "string" ? payload.token : ""
+        if (token) {
+          accumulatedText += token
+          onToken?.(token)
+        }
+      }
+
+      if (eventName === "done") {
+        if (typeof payload.text === "string") {
+          accumulatedText = payload.text
+        }
+        provider = typeof payload.provider === "string" ? payload.provider : provider
+        model = typeof payload.model === "string" ? payload.model : model
+      }
+
+      if (eventName === "error") {
+        throw new Error(typeof payload.error === "string" ? payload.error : "Streaming failed")
+      }
+    }
+  }
+
+  return { text: accumulatedText, provider, model }
+}
+
 export function platformLlmPrompt(strings: TemplateStringsArray, ...values: unknown[]): unknown {
   const spark = getSparkGlobal()
   if (spark?.llmPrompt) {
@@ -152,6 +261,24 @@ export async function platformLlm(
   }
 
   return spark.llm(prompt, model, parseJson)
+}
+
+export async function platformLlmStream(
+  prompt: unknown,
+  model: SparkLLMModel = "gpt-4o",
+  options?: PlatformLlmStreamOptions
+): Promise<{ text: string; provider?: string; model?: string }> {
+  const asText = typeof prompt === "string" ? prompt : JSON.stringify(prompt)
+  return callBackendLlmStream(
+    {
+      prompt: asText,
+      model,
+      parseJson: false,
+      ...(options?.providers ? { providers: options.providers } : {}),
+      ...(options?.module ? { module: options.module } : {}),
+    } as BackendLlmRequest & { providers?: string[]; module?: string },
+    options?.onToken
+  )
 }
 
 export function getPlatformKV() {
