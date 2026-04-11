@@ -683,10 +683,28 @@ function ConnectorsPanel() {
   const handleHealthCheck = async (connector: PlatformConnector) => {
     setTestingId(connector.id)
     const result = await testConnectorHealth(connector)
+    const humanizeConnectorError = (error?: string) => {
+      const msg = (error || "").toLowerCase()
+      if (!msg) return "unreachable"
+      if (msg.includes("authentication failed") || msg.includes("401") || msg.includes("403")) {
+        return "authentication failed (check API key/token)"
+      }
+      if (msg.includes("timed out") || msg.includes("timeout") || msg.includes("408") || msg.includes("504")) {
+        return "request timed out (upstream too slow or blocked)"
+      }
+      if (msg.includes("network") || msg.includes("cors") || msg.includes("dns") || msg.includes("failed to fetch")) {
+        return "network error (host unreachable, DNS, or CORS)"
+      }
+      if (msg.includes("upstream api unavailable") || msg.includes("502") || msg.includes("503") || msg.includes("500")) {
+        return "upstream API unavailable"
+      }
+      return error || "unreachable"
+    }
+
     if (result.ok) {
       toast.success(`${connector.name}: healthy (${result.latencyMs}ms)`)
     } else {
-      toast.error(`${connector.name}: ${result.error || "unreachable"}`)
+      toast.error(`${connector.name}: ${humanizeConnectorError(result.error)}`)
     }
     await loadConnectors()
     setTestingId(null)
