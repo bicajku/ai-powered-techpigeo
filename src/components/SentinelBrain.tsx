@@ -712,6 +712,10 @@ function ConnectorsPanel() {
 
   return (
     <div className="space-y-4">
+      {browseTarget && (
+        <ConnectorBrowserSheet connector={browseTarget} onClose={() => setBrowseTarget(null)} />
+      )}
+
       <AlertDialog open={deleteTarget !== null} onOpenChange={() => setDeleteTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
