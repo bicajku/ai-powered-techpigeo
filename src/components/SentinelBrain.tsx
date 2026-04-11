@@ -32,6 +32,14 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import {
   Brain,
   Gear,
   Plugs,
@@ -78,6 +86,7 @@ import {
   addConnector,
   deleteConnector,
   testConnectorHealth,
+  callConnector,
   type PlatformConnector,
 } from "@/lib/platform-connectors"
 
@@ -298,6 +307,310 @@ function DataSyncPanel() {
   )
 }
 
+// ─── Connector Browser Sheet ────────────────────────────────────────
+type AirtableBase = { id: string; name: string; permissionLevel: string }
+type AirtableTable = { id: string; name: string }
+type AirtableRecord = { id: string; fields: Record<string, unknown> }
+
+function ConnectorBrowserSheet({
+  connector,
+  onClose,
+}: {
+  connector: PlatformConnector
+  onClose: () => void
+}) {
+  const isAirtable = connector.base_url.toLowerCase().includes("airtable.com")
+
+  if (isAirtable) {
+    return <AirtableBrowser connector={connector} onClose={onClose} />
+  }
+  return <GenericRestBrowser connector={connector} onClose={onClose} />
+}
+
+function AirtableBrowser({
+  connector,
+  onClose,
+}: {
+  connector: PlatformConnector
+  onClose: () => void
+}) {
+  type View = { level: "bases" } | { level: "tables"; base: AirtableBase } | { level: "records"; base: AirtableBase; table: AirtableTable }
+  const [view, setView] = useState<View>({ level: "bases" })
+  const [bases, setBases] = useState<AirtableBase[]>([])
+  const [tables, setTables] = useState<AirtableTable[]>([])
+  const [records, setRecords] = useState<AirtableRecord[]>([])
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const fetchBases = useCallback(async () => {
+    setIsLoading(true); setError(null)
+    try {
+      const { data } = await callConnector(connector, "/v0/meta/bases")
+      const d = data as { bases?: AirtableBase[] }
+      setBases(d.bases ?? [])
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load bases")
+    } finally {
+      setIsLoading(false)
+    }
+  }, [connector])
+
+  const fetchTables = useCallback(async (base: AirtableBase) => {
+    setIsLoading(true); setError(null)
+    try {
+      const { data } = await callConnector(connector, `/v0/meta/bases/${base.id}/tables`)
+      const d = data as { tables?: AirtableTable[] }
+      setTables(d.tables ?? [])
+      setView({ level: "tables", base })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load tables")
+    } finally {
+      setIsLoading(false)
+    }
+  }, [connector])
+
+  const fetchRecords = useCallback(async (base: AirtableBase, table: AirtableTable) => {
+    setIsLoading(true); setError(null)
+    try {
+      const { data } = await callConnector(connector, `/v0/${base.id}/${encodeURIComponent(table.name)}`)
+      const d = data as { records?: AirtableRecord[] }
+      setRecords(d.records ?? [])
+      setView({ level: "records", base, table })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load records")
+    } finally {
+      setIsLoading(false)
+    }
+  }, [connector])
+
+  useEffect(() => { fetchBases() }, [fetchBases])
+
+  const allFields = records.length > 0
+    ? Array.from(new Set(records.flatMap(r => Object.keys(r.fields))))
+    : []
+
+  return (
+    <Sheet open onOpenChange={(o) => { if (!o) onClose() }}>
+      <SheetContent side="right" className="w-full sm:max-w-3xl flex flex-col gap-0 p-0">
+        <SheetHeader className="px-6 py-4 border-b">
+          <SheetTitle className="flex items-center gap-2">
+            <Plugs size={20} weight="duotone" className="text-primary" />
+            {connector.name}
+            <Badge variant="outline" className="ml-1 text-[10px]">Airtable</Badge>
+          </SheetTitle>
+          <SheetDescription>
+            {view.level === "bases" && "Accessible Airtable bases (workspaces)"}
+            {view.level === "tables" && `Tables in: ${(view as { level: "tables"; base: AirtableBase }).base.name}`}
+            {view.level === "records" && `Records in: ${(view as { level: "records"; base: AirtableBase; table: AirtableTable }).table.name}`}
+          </SheetDescription>
+        </SheetHeader>
+
+        {/* Breadcrumb */}
+        <div className="flex items-center gap-1 px-6 py-2 text-xs text-muted-foreground border-b bg-muted/30">
+          <button
+            className="hover:text-foreground font-medium transition-colors"
+            onClick={() => { setView({ level: "bases" }) }}
+          >Bases</button>
+          {view.level !== "bases" && (
+            <>
+              <span>/</span>
+              <button
+                className="hover:text-foreground font-medium transition-colors"
+                onClick={() => {
+                  const v = view as { level: "tables" | "records"; base: AirtableBase }
+                  fetchTables(v.base)
+                }}
+              >{(view as { base: AirtableBase }).base.name}</button>
+            </>
+          )}
+          {view.level === "records" && (
+            <>
+              <span>/</span>
+              <span className="text-foreground font-medium">{(view as { table: AirtableTable }).table.name}</span>
+            </>
+          )}
+        </div>
+
+        <ScrollArea className="flex-1 px-6 py-4">
+          {error && (
+            <div className="mb-4 p-3 rounded-md bg-destructive/10 text-destructive text-sm flex items-center gap-2">
+              <WarningCircle size={16} weight="fill" />
+              {error}
+              <Button variant="ghost" size="sm" className="ml-auto h-6 px-2 text-xs" onClick={fetchBases}>Retry</Button>
+            </div>
+          )}
+
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center py-16 gap-3">
+              <ArrowsClockwise size={28} className="animate-spin text-primary" />
+              <p className="text-sm text-muted-foreground">Loading&hellip;</p>
+            </div>
+          ) : view.level === "bases" ? (
+            <div className="space-y-2">
+              {bases.length === 0 && !error && (
+                <p className="text-sm text-muted-foreground text-center py-8">No bases found. Check your PAT scopes.</p>
+              )}
+              {bases.map(b => (
+                <button
+                  key={b.id}
+                  onClick={() => fetchTables(b)}
+                  className="w-full text-left flex items-center justify-between p-4 rounded-lg border border-border/50 hover:border-primary/40 hover:bg-primary/5 transition-all group"
+                >
+                  <div>
+                    <p className="font-medium text-sm group-hover:text-primary transition-colors">{b.name}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{b.id}</p>
+                  </div>
+                  <Badge variant="outline" className="text-[10px] capitalize">{b.permissionLevel}</Badge>
+                </button>
+              ))}
+            </div>
+          ) : view.level === "tables" ? (
+            <div className="space-y-2">
+              {tables.map(t => (
+                <button
+                  key={t.id}
+                  onClick={() => fetchRecords((view as { base: AirtableBase }).base, t)}
+                  className="w-full text-left flex items-center justify-between p-4 rounded-lg border border-border/50 hover:border-primary/40 hover:bg-primary/5 transition-all group"
+                >
+                  <div>
+                    <p className="font-medium text-sm group-hover:text-primary transition-colors">{t.name}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{t.id}</p>
+                  </div>
+                  <Badge variant="outline" className="text-[10px]">Table</Badge>
+                </button>
+              ))}
+            </div>
+          ) : (
+            records.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">No records found in this table.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">Record ID</TableHead>
+                      {allFields.map(f => (
+                        <TableHead key={f} className="text-xs">{f}</TableHead>
+                      ))}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {records.map(r => (
+                      <TableRow key={r.id}>
+                        <TableCell className="text-xs font-mono text-muted-foreground">{r.id}</TableCell>
+                        {allFields.map(f => (
+                          <TableCell key={f} className="text-xs max-w-[200px] truncate">
+                            {r.fields[f] === null || r.fields[f] === undefined
+                              ? <span className="text-muted-foreground/40">—</span>
+                              : typeof r.fields[f] === "object"
+                                ? JSON.stringify(r.fields[f])
+                                : String(r.fields[f])}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )
+          )}
+        </ScrollArea>
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+function GenericRestBrowser({
+  connector,
+  onClose,
+}: {
+  connector: PlatformConnector
+  onClose: () => void
+}) {
+  const [endpoint, setEndpoint] = useState("/")
+  const [method, setMethod] = useState("GET")
+  const [response, setResponse] = useState<unknown>(null)
+  const [statusCode, setStatusCode] = useState<number | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const handleRequest = async () => {
+    setIsLoading(true); setError(null); setResponse(null)
+    try {
+      const result = await callConnector(connector, endpoint, { method })
+      setResponse(result.data)
+      setStatusCode(result.status)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Request failed")
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  return (
+    <Sheet open onOpenChange={(o) => { if (!o) onClose() }}>
+      <SheetContent side="right" className="w-full sm:max-w-2xl flex flex-col gap-0 p-0">
+        <SheetHeader className="px-6 py-4 border-b">
+          <SheetTitle className="flex items-center gap-2">
+            <Globe size={20} weight="duotone" className="text-primary" />
+            {connector.name}
+            <Badge variant="outline" className="ml-1 text-[10px] capitalize">{connector.platform_type.replace("_", " ")}</Badge>
+          </SheetTitle>
+          <SheetDescription className="text-xs font-mono truncate">{connector.base_url}</SheetDescription>
+        </SheetHeader>
+
+        <div className="px-6 py-4 border-b space-y-3">
+          <div className="flex gap-2">
+            <Select value={method} onValueChange={setMethod}>
+              <SelectTrigger className="w-[100px] text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {["GET", "POST", "PUT", "PATCH", "DELETE"].map(m => (
+                  <SelectItem key={m} value={m} className="text-xs">{m}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Input
+              className="flex-1 font-mono text-xs"
+              placeholder="/path/to/endpoint"
+              value={endpoint}
+              onChange={e => setEndpoint(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") handleRequest() }}
+            />
+            <Button size="sm" onClick={handleRequest} disabled={isLoading}>
+              {isLoading ? <ArrowsClockwise size={14} className="animate-spin" /> : "Send"}
+            </Button>
+          </div>
+        </div>
+
+        <ScrollArea className="flex-1 px-6 py-4">
+          {error && (
+            <div className="mb-4 p-3 rounded-md bg-destructive/10 text-destructive text-sm">{error}</div>
+          )}
+          {response !== null && (
+            <div>
+              {statusCode !== null && (
+                <div className="mb-2 flex items-center gap-2">
+                  <Badge variant={statusCode < 300 ? "default" : "destructive"} className="text-xs">
+                    {statusCode}
+                  </Badge>
+                </div>
+              )}
+              <pre className="text-xs bg-muted rounded-md p-4 overflow-x-auto whitespace-pre-wrap break-words">
+                {JSON.stringify(response, null, 2)}
+              </pre>
+            </div>
+          )}
+          {response === null && !error && !isLoading && (
+            <p className="text-sm text-muted-foreground text-center py-16">Enter an endpoint path and press Send.</p>
+          )}
+        </ScrollArea>
+      </SheetContent>
+    </Sheet>
+  )
+}
+
 // ─── Platform Connectors Sub-Tab ─────────────────────────────────────
 function ConnectorsPanel() {
   const [connectors, setConnectors] = useState<PlatformConnector[]>([])
@@ -305,6 +618,7 @@ function ConnectorsPanel() {
   const [showAddForm, setShowAddForm] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<number | null>(null)
   const [testingId, setTestingId] = useState<number | null>(null)
+  const [browseTarget, setBrowseTarget] = useState<PlatformConnector | null>(null)
 
   const [name, setName] = useState("")
   const [baseUrl, setBaseUrl] = useState("")
@@ -540,6 +854,16 @@ function ConnectorsPanel() {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
+                      {c.health_status === "healthy" && (
+                        <Button
+                          variant="ghost" size="sm"
+                          onClick={() => setBrowseTarget(c)}
+                          title="Browse Connector"
+                          className="text-primary hover:text-primary"
+                        >
+                          <Eye size={16} weight="bold" />
+                        </Button>
+                      )}
                       <Button
                         variant="ghost" size="sm"
                         onClick={() => handleHealthCheck(c)}
