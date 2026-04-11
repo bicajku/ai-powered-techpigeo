@@ -28,13 +28,14 @@ CREATE TABLE IF NOT EXISTS brain_documents (
 );
 
 -- ─── 2. sentinel_brain ──────────────────────────────────────────────────────
--- Knowledge chunks with 768-dimensional vector embeddings for semantic search.
+-- Knowledge chunks with 1536-dimensional vector embeddings for semantic search.
 -- Source: src/lib/sentinel-brain.ts
+-- NOTE: Uses text-embedding-3-small at 1536 dimensions (updated 2026-04-11)
 
 CREATE TABLE IF NOT EXISTS sentinel_brain (
     id           SERIAL       PRIMARY KEY,
     content      TEXT         NOT NULL,
-    embedding    vector(768),
+    embedding    vector(1536),
     sector       TEXT,
     metadata     JSONB,
     document_id  INTEGER      REFERENCES brain_documents(id) ON DELETE CASCADE,
@@ -45,12 +46,13 @@ CREATE TABLE IF NOT EXISTS sentinel_brain (
 -- ─── 3. query_log ───────────────────────────────────────────────────────────
 -- Logs every query sent through the Sentinel query pipeline.
 -- Source: src/lib/sentinel-brain.ts
+-- NOTE: user_id is TEXT (matches Clerk/auth user IDs, not an FK) — updated 2026-04-11
 
 CREATE TABLE IF NOT EXISTS query_log (
     id              SERIAL       PRIMARY KEY,
-    user_id         INTEGER,
+    user_id         TEXT,
     query_text      TEXT         NOT NULL,
-    query_embedding vector(768),
+    query_embedding vector(1536),
     module          TEXT,
     response_json   JSONB,
     providers_used  TEXT[],
