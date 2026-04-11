@@ -119,6 +119,46 @@ interface RagChatProps {
 
 type TraceByMessage = Record<number, RetrievalTrace>
 
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+}
+
+function normalizeAssistantContent(text: string): string {
+  return text
+    .replace(/\r\n/g, "\n")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .trim()
+}
+
+function toWordHtmlDocument(text: string): string {
+  const body = escapeHtml(normalizeAssistantContent(text)).replace(/\n/g, "<br/>")
+  return `<!DOCTYPE html><html><head><meta charset=\"utf-8\" /></head><body><h2>NovusSparks AI Chat Output</h2><div>${body}</div></body></html>`
+}
+
+function toCsvFromText(text: string): string {
+  const normalized = normalizeAssistantContent(text)
+  const rows = normalized.split("\n").filter((line) => line.trim().length > 0)
+  const tableRows = rows
+    .filter((line) => line.includes("|"))
+    .map((line) => line.split("|").map((cell) => cell.trim()).filter(Boolean))
+    .filter((cells) => cells.length > 0)
+
+  if (tableRows.length >= 2) {
+    return tableRows
+      .map((cells) => cells.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(","))
+      .join("\n")
+  }
+
+  return rows.map((line) => `"${line.replace(/"/g, '""')}"`).join("\n")
+}
+
 export function RagChat({ userId, isAdmin = false }: RagChatProps) {
   // Use the raw string userId directly — the chat_threads.user_id column
   // is now TEXT to properly support UUID-based user IDs from the backend.
@@ -130,6 +170,7 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
   const [tracesByMessage, setTracesByMessage] = useState<TraceByMessage>({})
   const [selectedAssistantMessageId, setSelectedAssistantMessageId] = useState<number | null>(null)
   const [mobileTraceOpen, setMobileTraceOpen] = useState(false)
+  const [desktopTraceOpen, setDesktopTraceOpen] = useState(false)
   const [mobileThreadsOpen, setMobileThreadsOpen] = useState(false)
   const [input, setInput] = useState("")
   const [isLoadingThreads, setIsLoadingThreads] = useState(true)
@@ -320,20 +361,19 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
     triggerDownload(new Blob([text], { type: "text/plain;charset=utf-8" }), file)
   }
 
-  const exportMessageDocx = (text: string) => {
-    const payload = `NovusSparks AI Chat Output\n\n${text}`
+  const exportMessageDoc = (text: string) => {
+    const payload = toWordHtmlDocument(text)
     triggerDownload(
-      new Blob([payload], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }),
-      `chat-output-${Date.now()}.docx`
+      new Blob([payload], { type: "application/msword" }),
+      `chat-output-${Date.now()}.doc`
     )
   }
 
-  const exportMessageXlsx = (text: string) => {
-    const lines = text.split(/\n+/).filter(Boolean)
-    const tsv = lines.map((line) => line.replace(/\|/g, "\t")).join("\n")
+  const exportMessageCsv = (text: string) => {
+    const csv = toCsvFromText(text)
     triggerDownload(
-      new Blob([tsv], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
-      `chat-output-${Date.now()}.xlsx`
+      new Blob([csv], { type: "text/csv;charset=utf-8" }),
+      `chat-output-${Date.now()}.csv`
     )
   }
 
@@ -377,10 +417,12 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
       setTracesByMessage({})
       setSelectedAssistantMessageId(null)
       setMobileTraceOpen(false)
+      setDesktopTraceOpen(false)
       return
     }
     setSelectedAssistantMessageId(null)
     setMobileTraceOpen(false)
+    setDesktopTraceOpen(false)
     void loadThreadData(activeThreadId)
   }, [activeThreadId])
 
@@ -487,6 +529,7 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
       setTracesByMessage({})
       setSelectedAssistantMessageId(null)
       setMobileTraceOpen(false)
+      setDesktopTraceOpen(false)
       toast.success("New chat created")
     }
 
@@ -555,13 +598,14 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
         .join("\n\n")
 
       const wantsSpreadsheet = /excel|xlsx|spreadsheet|sheet|formula|table/.test(text.toLowerCase())
+      const readabilityHint = "\n\nFormat the answer for end users with clear headings, clean bullets, and readable paragraphs. Avoid noisy symbols unless needed."
       const formatHint = wantsSpreadsheet
         ? "\n\nIf solving spreadsheet-related tasks, provide a clear table and include formulas per row/column where relevant."
         : ""
 
       const enrichedQuery = recentContext
-        ? `Use uploaded files as trusted context where relevant. If context is not relevant, ignore it.\n\n${recentContext}\n\nUser query: ${text}${formatHint}`
-        : `${text}${formatHint}`
+        ? `Use uploaded files as trusted context where relevant. If context is not relevant, ignore it.\n\n${recentContext}\n\nUser query: ${text}${formatHint}${readabilityHint}`
+        : `${text}${formatHint}${readabilityHint}`
 
       const result = await sentinelQuery(enrichedQuery, {
         module: "rag_chat",
@@ -649,6 +693,7 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
           setTracesByMessage({})
           setSelectedAssistantMessageId(null)
           setMobileTraceOpen(false)
+          setDesktopTraceOpen(false)
         }
       }
 
@@ -706,17 +751,68 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
     [selectedAssistantMessageId, tracedAssistantMessageIds]
   )
 
-  const openTraceForMessage = (messageId: number) => {
-    setSelectedAssistantMessageId(messageId)
-    setMobileTraceOpen(true)
-  }
-
   const goToPreviousTrace = () => {
     if (selectedTraceIndex <= 0) return
     setSelectedAssistantMessageId(tracedAssistantMessageIds[selectedTraceIndex - 1])
   }
 
   const goToNextTrace = () => {
+      const openTraceCenter = (mode: "desktop" | "mobile") => {
+        if (tracedAssistantMessageIds.length === 0) {
+          toast.info("No trace data available for this thread yet")
+          return
+        }
+
+        const hasSelectedTrace = selectedAssistantMessageId && tracesByMessage[selectedAssistantMessageId]
+        if (!hasSelectedTrace) {
+          setSelectedAssistantMessageId(tracedAssistantMessageIds[tracedAssistantMessageIds.length - 1])
+        }
+
+        if (mode === "mobile") {
+          setMobileTraceOpen(true)
+          return
+        }
+
+        setDesktopTraceOpen(true)
+      }
+
+      const renderAssistantContent = (content: string) => {
+        const normalized = normalizeAssistantContent(content)
+        const sections = normalized.split(/\n{2,}/).map((s) => s.trim()).filter(Boolean)
+
+        return (
+          <div dir="auto" className="text-sm text-foreground leading-relaxed space-y-3">
+            {sections.map((section, index) => {
+              const heading = section.match(/^#{1,6}\s+(.+)$/)
+              if (heading) {
+                return <h4 key={`sec-${index}`} className="text-base font-semibold text-foreground">{heading[1]}</h4>
+              }
+
+              const lines = section.split("\n").map((line) => line.trim()).filter(Boolean)
+              const bullets = lines.filter((line) => /^[-*]\s+/.test(line))
+              if (bullets.length === lines.length && bullets.length > 0) {
+                return (
+                  <ul key={`sec-${index}`} className="list-disc pl-5 space-y-1 marker:text-primary">
+                    {bullets.map((line, bulletIndex) => (
+                      <li key={`sec-${index}-bullet-${bulletIndex}`}>{line.replace(/^[-*]\s+/, "")}</li>
+                    ))}
+                  </ul>
+                )
+              }
+
+              return (
+                <p key={`sec-${index}`} className="whitespace-pre-wrap">
+                  {section
+                    .replace(/\*\*(.*?)\*\*/g, "$1")
+                    .replace(/`([^`]+)`/g, "$1")
+                    .replace(/^#{1,6}\s+/gm, "")}
+                </p>
+              )
+            })}
+          </div>
+        )
+      }
+
     if (selectedTraceIndex < 0 || selectedTraceIndex >= tracedAssistantMessageIds.length - 1) return
     setSelectedAssistantMessageId(tracedAssistantMessageIds[selectedTraceIndex + 1])
   }
@@ -747,7 +843,7 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
     if (!selectedTrace) {
       return (
         <div className="rounded-md border border-dashed border-border/60 p-3 text-xs text-muted-foreground">
-          Select any assistant message trace using "Open trace".
+          Open Trace Center to review all traces in this thread.
         </div>
       )
     }
@@ -816,7 +912,7 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
   }
 
   const showThreadsSidebar = true
-  const showDesktopTrace = isAdmin && Boolean(selectedAssistantMessageId)
+  const showDesktopTrace = isAdmin && desktopTraceOpen
   const composerSuggestions = starterPrompts.slice(0, 4)
 
   return (
@@ -936,10 +1032,21 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
                   size="sm"
                   variant="outline"
                   className="xl:hidden"
-                  onClick={() => setMobileTraceOpen(true)}
-                  disabled={!selectedTrace}
+                  onClick={() => openTraceCenter("mobile")}
+                  disabled={tracedAssistantMessageIds.length === 0}
                 >
-                  Open Trace
+                  Trace Center ({tracedAssistantMessageIds.length})
+                </Button>
+              )}
+              {isAdmin && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="hidden xl:inline-flex"
+                  onClick={() => openTraceCenter("desktop")}
+                  disabled={tracedAssistantMessageIds.length === 0}
+                >
+                  Trace Center ({tracedAssistantMessageIds.length})
                 </Button>
               )}
             </div>
@@ -997,7 +1104,7 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
                       checked={autoIngestToBrain}
                       onChange={(e) => setAutoIngestToBrain(e.target.checked)}
                     />
-                    Ingest to Sentinel Brain
+                    Use files in My Knowledge Memory
                   </label>
                 </div>
                 {uploadedFiles.length > 0 && (
@@ -1080,8 +1187,6 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
                 <div className="space-y-4 pb-4">
                   {messages.map((message) => {
                     const isAssistant = message.role === "assistant"
-                    const trace = tracesByMessage[message.id]
-                    const isSelected = selectedAssistantMessageId === message.id
                     return (
                       <div key={message.id} className={cn("rounded-2xl border p-4", isAssistant ? "border-primary/30 bg-primary/5" : "border-border/60 bg-secondary/20")}>
                         <div className="flex items-center gap-2 text-xs mb-3">
@@ -1102,9 +1207,11 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
                             </Button>
                           )}
                         </div>
-                        <div dir="auto" className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
-                          {message.content}
-                        </div>
+                        {isAssistant ? renderAssistantContent(message.content) : (
+                          <div dir="auto" className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
+                            {message.content}
+                          </div>
+                        )}
 
                         {isAssistant && (
                           <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -1114,36 +1221,15 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
                             <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => exportMessageTxt(message.content)}>
                               .txt
                             </Button>
-                            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => exportMessageDocx(message.content)}>
-                              .docx
+                            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => exportMessageDoc(message.content)}>
+                              .doc
                             </Button>
-                            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => exportMessageXlsx(message.content)}>
-                              .xlsx
+                            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => exportMessageCsv(message.content)}>
+                              .csv
                             </Button>
                             <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => void exportMessagePptx(message.content)}>
                               .pptx
                             </Button>
-                          </div>
-                        )}
-
-                        {isAdmin && isAssistant && trace && (
-                          <div className="mt-4 rounded-xl border border-border/50 bg-background/80 p-3 text-xs text-muted-foreground space-y-2">
-                            <div className="flex flex-wrap items-center gap-4">
-                              <span className="inline-flex items-center gap-1 font-medium"><LinkSimple size={14} /> Chunks: {Array.isArray(trace.selected_chunks) ? trace.selected_chunks.length : 0}</span>
-                              <span>Candidates: {trace.total_candidates}</span>
-                              {trace.avg_similarity !== null && <span>Avg Sim: {trace.avg_similarity.toFixed(3)}</span>}
-                            </div>
-
-                            <div className="flex justify-end">
-                              <Button
-                                size="sm"
-                                variant={isSelected ? "default" : "secondary"}
-                                className="h-8 px-3 text-xs rounded-lg"
-                                onClick={() => openTraceForMessage(message.id)}
-                              >
-                                {isSelected ? "Trace selected" : "Open trace"}
-                              </Button>
-                            </div>
                           </div>
                         )}
                       </div>
@@ -1218,7 +1304,7 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
                       checked={autoIngestToBrain}
                       onChange={(e) => setAutoIngestToBrain(e.target.checked)}
                     />
-                    Save to Brain
+                    Use files in My Knowledge Memory
                   </label>
                 </div>
                 {uploadedFiles.length > 0 && (
@@ -1281,7 +1367,7 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
                       <p className="text-[11px] text-muted-foreground">Selected response metadata</p>
                     </div>
                     {selectedAssistantMessageId && (
-                      <Button size="sm" variant="ghost" className="h-8 w-8 p-0 rounded-full" onClick={() => setSelectedAssistantMessageId(null)}>
+                      <Button size="sm" variant="ghost" className="h-8 w-8 p-0 rounded-full" onClick={() => { setSelectedAssistantMessageId(null); setDesktopTraceOpen(false) }}>
                         <X size={14} />
                       </Button>
                     )}
