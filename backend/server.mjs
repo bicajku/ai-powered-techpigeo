@@ -4429,7 +4429,10 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 401, { ok: false, error: "Unauthorized" }, req)
     }
 
-    const copilotToken = process.env.GITHUB_TOKEN || process.env.GITHUB_MODELS_TOKEN
+    const copilotToken = process.env.GITHUB_COPILOT_TOKEN
+      || process.env.GitHub_Models_token
+      || process.env.GITHUB_MODELS_TOKEN
+      || process.env.GITHUB_TOKEN
     const geminiApiKey = process.env.GEMINI_API_KEY
     const groqApiKey = process.env.GROQ_API_KEY
 
@@ -4818,7 +4821,10 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 400, { ok: false, error: "text or texts is required" }, req)
       }
 
-      const githubToken = process.env.GITHUB_COPILOT_TOKEN || process.env.GITHUB_TOKEN
+      const githubToken = process.env.GITHUB_COPILOT_TOKEN
+        || process.env.GitHub_Models_token
+        || process.env.GITHUB_MODELS_TOKEN
+        || process.env.GITHUB_TOKEN
       if (githubToken) {
         // GitHub Models / Azure AI Inference — text-embedding-3-small at 768 dims
         const endpoint = "https://models.inference.ai.azure.com/embeddings"

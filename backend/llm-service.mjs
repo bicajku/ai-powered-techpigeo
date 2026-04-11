@@ -18,7 +18,10 @@ function estimateCost(provider, totalTokens) {
 }
 
 export function getProviderStatus() {
-  const copilotToken = process.env.GITHUB_TOKEN || process.env.GITHUB_MODELS_TOKEN
+  const copilotToken = process.env.GITHUB_COPILOT_TOKEN
+    || process.env.GitHub_Models_token
+    || process.env.GITHUB_MODELS_TOKEN
+    || process.env.GITHUB_TOKEN
   const groqApiKey = process.env.GROQ_API_KEY
   const geminiApiKey = process.env.GEMINI_API_KEY
 
@@ -208,7 +211,10 @@ export async function generateWithFallback({ prompt, model, providers }) {
     : ["copilot", "groq", "gemini"]
 
   const failures = []
-  const copilotToken = process.env.GITHUB_TOKEN || process.env.GITHUB_MODELS_TOKEN
+  const copilotToken = process.env.GITHUB_COPILOT_TOKEN
+    || process.env.GitHub_Models_token
+    || process.env.GITHUB_MODELS_TOKEN
+    || process.env.GITHUB_TOKEN
   const groqApiKey = process.env.GROQ_API_KEY
   const geminiApiKey = process.env.GEMINI_API_KEY
 
