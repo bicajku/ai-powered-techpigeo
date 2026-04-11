@@ -644,19 +644,69 @@ function enforceTesterEnvironment(req, authUser) {
   return { allowed: true }
 }
 
-function getConnectorCryptoKey() {
-  const source = process.env.CONNECTOR_ENCRYPTION_KEY || process.env.JWT_SECRET || "connector-dev-key"
-  return crypto.createHash("sha256").update(source).digest()
+function deriveConnectorCryptoKey(rawSecret) {
+  return crypto.createHash("sha256").update(rawSecret).digest()
+}
+
+function getConnectorKeyring() {
+  const keyring = new Map()
+
+  if (typeof process.env.CONNECTOR_ENCRYPTION_KEYS === "string" && process.env.CONNECTOR_ENCRYPTION_KEYS.trim()) {
+    const raw = process.env.CONNECTOR_ENCRYPTION_KEYS.trim()
+    // Supported formats:
+    // 1) JSON object: {"1":"keyA","2":"keyB"}
+    // 2) CSV pairs: 1:keyA,2:keyB
+    try {
+      const parsed = JSON.parse(raw)
+      if (parsed && typeof parsed === "object") {
+        for (const [k, v] of Object.entries(parsed)) {
+          const ver = Number(k)
+          if (Number.isFinite(ver) && typeof v === "string" && v.trim()) {
+            keyring.set(ver, deriveConnectorCryptoKey(v.trim()))
+          }
+        }
+      }
+    } catch {
+      const parts = raw.split(",").map((p) => p.trim()).filter(Boolean)
+      for (const part of parts) {
+        const idx = part.indexOf(":")
+        if (idx <= 0) continue
+        const ver = Number(part.slice(0, idx).trim())
+        const secret = part.slice(idx + 1).trim()
+        if (Number.isFinite(ver) && secret) {
+          keyring.set(ver, deriveConnectorCryptoKey(secret))
+        }
+      }
+    }
+  }
+
+  if (keyring.size === 0) {
+    const fallbackSecret = process.env.CONNECTOR_ENCRYPTION_KEY || process.env.JWT_SECRET || "connector-dev-key"
+    keyring.set(1, deriveConnectorCryptoKey(fallbackSecret))
+  }
+
+  return keyring
+}
+
+function getActiveConnectorKeyVersion(keyring) {
+  const configured = Number(process.env.CONNECTOR_ENCRYPTION_KEY_VERSION || "")
+  if (Number.isFinite(configured) && keyring.has(configured)) return configured
+  return Math.max(...Array.from(keyring.keys()))
 }
 
 function encryptConnectorAuthConfig(authConfig) {
+  const keyring = getConnectorKeyring()
+  const keyVersion = getActiveConnectorKeyVersion(keyring)
+  const key = keyring.get(keyVersion)
   const payload = JSON.stringify(authConfig || {})
   const iv = crypto.randomBytes(12)
-  const cipher = crypto.createCipheriv("aes-256-gcm", getConnectorCryptoKey(), iv)
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv)
   const encrypted = Buffer.concat([cipher.update(payload, "utf8"), cipher.final()])
   const tag = cipher.getAuthTag()
   return {
     enc_v: 1,
+    key_version: keyVersion,
+    alg: "aes-256-gcm",
     iv: iv.toString("base64"),
     tag: tag.toString("base64"),
     data: encrypted.toString("base64"),
@@ -670,14 +720,30 @@ function decryptConnectorAuthConfig(stored) {
     return stored
   }
 
+  const keyring = getConnectorKeyring()
+  const preferredVersion = Number(stored.key_version || 1)
+  const candidateVersions = keyring.has(preferredVersion)
+    ? [preferredVersion, ...Array.from(keyring.keys()).filter((k) => k !== preferredVersion)]
+    : Array.from(keyring.keys())
+
   const iv = Buffer.from(String(stored.iv), "base64")
   const tag = Buffer.from(String(stored.tag), "base64")
   const encrypted = Buffer.from(String(stored.data), "base64")
-  const decipher = crypto.createDecipheriv("aes-256-gcm", getConnectorCryptoKey(), iv)
-  decipher.setAuthTag(tag)
-  const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8")
-  const parsed = JSON.parse(decrypted)
-  return parsed && typeof parsed === "object" ? parsed : {}
+
+  for (const version of candidateVersions) {
+    try {
+      const key = keyring.get(version)
+      const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv)
+      decipher.setAuthTag(tag)
+      const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8")
+      const parsed = JSON.parse(decrypted)
+      return parsed && typeof parsed === "object" ? parsed : {}
+    } catch {
+      // Try next key version (migration-safe rotation)
+    }
+  }
+
+  throw new Error("Unable to decrypt connector auth configuration with current keyring")
 }
 
 function sanitizeConnectorForClient(row) {
@@ -701,7 +767,48 @@ function isPrivateOrLocalHostname(hostname) {
   return false
 }
 
-function validateConnectorBaseUrl(rawUrl) {
+function parseHostAllowlist(value) {
+  if (typeof value !== "string" || !value.trim()) return []
+  return value
+    .split(",")
+    .map((v) => v.trim().toLowerCase())
+    .filter(Boolean)
+}
+
+function hostMatchesPattern(host, pattern) {
+  if (!host || !pattern) return false
+  if (pattern.startsWith("*.")) {
+    const suffix = pattern.slice(1)
+    return host.endsWith(suffix)
+  }
+  return host === pattern
+}
+
+function isHostAllowedForConnectorType(host, platformType, connectorName = "") {
+  const byType = {
+    rest_api: parseHostAllowlist(process.env.CONNECTOR_ALLOWED_HOSTS_REST_API || ""),
+    graphql: parseHostAllowlist(process.env.CONNECTOR_ALLOWED_HOSTS_GRAPHQL || ""),
+    webhook: parseHostAllowlist(process.env.CONNECTOR_ALLOWED_HOSTS_WEBHOOK || ""),
+    oauth2: parseHostAllowlist(process.env.CONNECTOR_ALLOWED_HOSTS_OAUTH2 || ""),
+    custom: parseHostAllowlist(process.env.CONNECTOR_ALLOWED_HOSTS_CUSTOM || ""),
+  }
+
+  const typeList = byType[platformType] || []
+  if (typeList.length > 0) {
+    return typeList.some((p) => hostMatchesPattern(host, p))
+  }
+
+  // Airtable-specific strict allowlist (fallback default)
+  const isAirtable = host.includes("airtable.com") || connectorName.toLowerCase().includes("airtable")
+  if (isAirtable) {
+    const airtableAllowed = parseHostAllowlist(process.env.CONNECTOR_ALLOWED_HOSTS_AIRTABLE || "api.airtable.com")
+    return airtableAllowed.some((p) => hostMatchesPattern(host, p))
+  }
+
+  return true
+}
+
+function validateConnectorBaseUrl(rawUrl, platformType = "rest_api", connectorName = "") {
   try {
     const parsed = new URL(rawUrl)
     if (parsed.protocol !== "https:") {
@@ -710,10 +817,26 @@ function validateConnectorBaseUrl(rawUrl) {
     if (isPrivateOrLocalHostname(parsed.hostname)) {
       return { ok: false, error: "Private/local hostnames are not allowed" }
     }
+    if (!isHostAllowedForConnectorType(parsed.hostname.toLowerCase(), platformType, connectorName)) {
+      return { ok: false, error: "Host is not allowed for this connector type" }
+    }
     return { ok: true, normalized: parsed.toString().replace(/\/$/, "") }
   } catch {
     return { ok: false, error: "Invalid base URL" }
   }
+}
+
+function buildConnectorCallUrl(baseUrl, endpoint = "", params = undefined) {
+  const url = new URL(baseUrl.replace(/\/$/, "") + "/")
+  const cleanEndpoint = String(endpoint || "").replace(/^\//, "")
+  url.pathname = url.pathname.replace(/\/$/, "") + (cleanEndpoint ? `/${cleanEndpoint}` : "")
+  if (params && typeof params === "object") {
+    for (const [k, v] of Object.entries(params)) {
+      if (v == null) continue
+      url.searchParams.set(k, String(v))
+    }
+  }
+  return url.toString()
 }
 
 function buildConnectorHeaders(authType, authConfig, headers = {}) {
@@ -4551,7 +4674,7 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 400, { ok: false, error: "name and base_url are required" }, req)
       }
 
-      const validUrl = validateConnectorBaseUrl(baseUrlRaw)
+      const validUrl = validateConnectorBaseUrl(baseUrlRaw, platformType, name)
       if (!validUrl.ok) {
         return sendJson(res, 400, { ok: false, error: validUrl.error }, req)
       }
@@ -4584,6 +4707,96 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  if (method === "PATCH" && reqPathname.match(/^\/api\/connectors\/\d+$/)) {
+    const auth = authorize(req)
+    if (!auth.authorized) return sendJson(res, 401, { ok: false, error: "Unauthorized" }, req)
+    if (!isDbConfigured()) return sendJson(res, 503, { ok: false, error: "Database not configured" }, req)
+
+    try {
+      const connectorId = parseInt(reqPathname.split("/")[3], 10)
+      const parsed = await parseJsonBody(req)
+      if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+
+      const currentRows = await executeProxyQuery(
+        `SELECT id, name, platform_type, base_url, auth_type, auth_config, headers, enabled,
+                description, sector, health_status, last_health_check, created_by, created_at
+         FROM platform_connectors
+         WHERE id = $1
+         LIMIT 1`,
+        [connectorId]
+      )
+      if (!currentRows || currentRows.length === 0) {
+        return sendJson(res, 404, { ok: false, error: "Connector not found" }, req)
+      }
+      const current = currentRows[0]
+
+      const nextName = typeof parsed.data.name === "string" ? parsed.data.name.trim() : current.name
+      const nextPlatformType = typeof parsed.data.platform_type === "string" ? parsed.data.platform_type : current.platform_type
+      const nextAuthType = typeof parsed.data.auth_type === "string" ? parsed.data.auth_type : current.auth_type
+      const nextDescription = typeof parsed.data.description === "string" ? parsed.data.description.trim() : current.description
+      const nextEnabled = typeof parsed.data.enabled === "boolean" ? parsed.data.enabled : current.enabled
+      const nextSector = typeof parsed.data.sector === "string" ? parsed.data.sector.trim() : current.sector
+      const rotateSecret = Boolean(parsed.data.rotate_secret)
+
+      let nextBaseUrl = current.base_url
+      if (typeof parsed.data.base_url === "string" && parsed.data.base_url.trim()) {
+        const validUrl = validateConnectorBaseUrl(parsed.data.base_url.trim(), nextPlatformType, nextName)
+        if (!validUrl.ok) {
+          return sendJson(res, 400, { ok: false, error: validUrl.error }, req)
+        }
+        nextBaseUrl = validUrl.normalized
+      }
+
+      let authConfigPlain = decryptConnectorAuthConfig(current.auth_config)
+      if (parsed.data.auth_config && typeof parsed.data.auth_config === "object") {
+        authConfigPlain = {
+          ...authConfigPlain,
+          ...parsed.data.auth_config,
+        }
+      }
+      const nextAuthConfig = (rotateSecret || parsed.data.auth_config)
+        ? encryptConnectorAuthConfig(authConfigPlain)
+        : current.auth_config
+
+      const nextHeaders = parsed.data.headers && typeof parsed.data.headers === "object"
+        ? parsed.data.headers
+        : (current.headers || {})
+
+      const updatedRows = await executeProxyQuery(
+        `UPDATE platform_connectors
+         SET name = $1,
+             platform_type = $2,
+             base_url = $3,
+             auth_type = $4,
+             auth_config = $5::jsonb,
+             headers = $6::jsonb,
+             enabled = $7,
+             description = $8,
+             sector = $9
+         WHERE id = $10
+         RETURNING id, name, platform_type, base_url, auth_type, auth_config, headers, enabled,
+                   description, sector, health_status, last_health_check, created_by, created_at`,
+        [
+          nextName,
+          nextPlatformType,
+          nextBaseUrl,
+          nextAuthType,
+          JSON.stringify(nextAuthConfig),
+          JSON.stringify(nextHeaders || {}),
+          nextEnabled,
+          nextDescription,
+          nextSector || null,
+          connectorId,
+        ]
+      )
+
+      return sendJson(res, 200, { ok: true, connector: sanitizeConnectorForClient(updatedRows[0]) }, req)
+    } catch (err) {
+      console.error("[connectors/update] error:", err)
+      return sendJson(res, 500, { ok: false, error: "Failed to update connector" }, req)
+    }
+  }
+
   if (method === "DELETE" && reqPathname.match(/^\/api\/connectors\/\d+$/)) {
     const auth = authorize(req)
     if (!auth.authorized) return sendJson(res, 401, { ok: false, error: "Unauthorized" }, req)
@@ -4610,7 +4823,7 @@ const server = http.createServer(async (req, res) => {
     try {
       const connectorId = parseInt(reqPathname.split("/")[3], 10)
       const rows = await executeProxyQuery(
-        `SELECT id, name, base_url, auth_type, auth_config, headers
+        `SELECT id, name, platform_type, base_url, auth_type, auth_config, headers
          FROM platform_connectors
          WHERE id = $1
          LIMIT 1`,
@@ -4621,7 +4834,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       const connector = rows[0]
-      const baseUrlCheck = validateConnectorBaseUrl(connector.base_url)
+      const baseUrlCheck = validateConnectorBaseUrl(connector.base_url, connector.platform_type, connector.name)
       if (!baseUrlCheck.ok) {
         await executeProxyQuery(
           "UPDATE platform_connectors SET health_status = 'down', last_health_check = NOW() WHERE id = $1",
@@ -4661,6 +4874,100 @@ const server = http.createServer(async (req, res) => {
         // ignore secondary update errors
       }
       return sendJson(res, 200, { ok: false, latencyMs: 0, error: err instanceof Error ? err.message : "Health check failed" }, req)
+    }
+  }
+
+  if (method === "POST" && reqPathname.match(/^\/api\/connectors\/\d+\/call$/)) {
+    const auth = authorize(req)
+    if (!auth.authorized) return sendJson(res, 401, { ok: false, error: "Unauthorized" }, req)
+    if (!isDbConfigured()) return sendJson(res, 503, { ok: false, error: "Database not configured" }, req)
+
+    try {
+      const connectorId = parseInt(reqPathname.split("/")[3], 10)
+      const parsed = await parseJsonBody(req)
+      if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+
+      const rows = await executeProxyQuery(
+        `SELECT id, name, platform_type, base_url, auth_type, auth_config, headers, enabled
+         FROM platform_connectors
+         WHERE id = $1
+         LIMIT 1`,
+        [connectorId]
+      )
+      if (!rows || rows.length === 0) {
+        return sendJson(res, 404, { ok: false, error: "Connector not found" }, req)
+      }
+
+      const connector = rows[0]
+      if (!connector.enabled) {
+        return sendJson(res, 400, { ok: false, error: "Connector is disabled" }, req)
+      }
+
+      const validBase = validateConnectorBaseUrl(connector.base_url, connector.platform_type, connector.name)
+      if (!validBase.ok) {
+        return sendJson(res, 400, { ok: false, error: validBase.error }, req)
+      }
+
+      const methodRaw = typeof parsed.data.method === "string" ? parsed.data.method.toUpperCase() : "GET"
+      const allowedMethods = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"])
+      const callMethod = allowedMethods.has(methodRaw) ? methodRaw : "GET"
+      const endpoint = typeof parsed.data.endpoint === "string" ? parsed.data.endpoint : ""
+      const params = parsed.data.params && typeof parsed.data.params === "object" ? parsed.data.params : undefined
+      const body = parsed.data.body
+
+      const authConfig = decryptConnectorAuthConfig(connector.auth_config)
+      const baseHeaders = connector.headers && typeof connector.headers === "object" ? connector.headers : {}
+      const requestHeaders = parsed.data.headers && typeof parsed.data.headers === "object" ? parsed.data.headers : {}
+      const headers = buildConnectorHeaders(connector.auth_type, authConfig, {
+        ...baseHeaders,
+        ...requestHeaders,
+      })
+
+      const callUrl = buildConnectorCallUrl(validBase.normalized, endpoint, params)
+      const startedAt = Date.now()
+      const upstream = await fetch(callUrl, {
+        method: callMethod,
+        headers,
+        body: callMethod === "GET" || callMethod === "DELETE" ? undefined : (body != null ? JSON.stringify(body) : undefined),
+        signal: AbortSignal.timeout(30000),
+      })
+      const latencyMs = Date.now() - startedAt
+
+      const contentType = upstream.headers.get("content-type") || ""
+      let responseBody
+      if (contentType.includes("application/json")) {
+        responseBody = await upstream.json().catch(() => null)
+      } else {
+        responseBody = await upstream.text().catch(() => "")
+      }
+
+      const nextStatus = upstream.ok ? "healthy" : "degraded"
+      await executeProxyQuery(
+        "UPDATE platform_connectors SET health_status = $1, last_health_check = NOW() WHERE id = $2",
+        [nextStatus, connectorId]
+      )
+
+      if (!upstream.ok) {
+        return sendJson(res, 502, {
+          ok: false,
+          error: "Connector upstream request failed",
+          status: upstream.status,
+          latencyMs,
+          data: responseBody,
+        }, req)
+      }
+
+      return sendJson(res, 200, {
+        ok: true,
+        status: upstream.status,
+        latencyMs,
+        data: responseBody,
+      }, req)
+    } catch (err) {
+      return sendJson(res, 500, {
+        ok: false,
+        error: err instanceof Error ? err.message : "Connector call failed",
+      }, req)
     }
   }
 

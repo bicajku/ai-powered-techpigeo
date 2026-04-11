@@ -93,9 +93,16 @@ export async function updateConnector(
   _id: number,
   _updates: Partial<Pick<PlatformConnector, "name" | "base_url" | "auth_type" | "auth_config" | "headers" | "enabled" | "description" | "sector">>
 ): Promise<void> {
-  void _id
-  void _updates
-  throw new Error("Connector update is not exposed client-side yet")
+  const res = await fetch(`${getBackendBaseUrl()}/api/connectors/${_id}`, {
+    method: "PATCH",
+    headers: getAuthHeaders(),
+    credentials: "include",
+    body: JSON.stringify(_updates),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string }
+    throw new Error(body.error || `Failed to update connector (${res.status})`)
+  }
 }
 
 export async function deleteConnector(id: number): Promise<void> {
@@ -129,8 +136,23 @@ export async function callConnector(
   _endpoint: string,
   _options?: { method?: string; body?: unknown; params?: Record<string, string> }
 ): Promise<{ data: unknown; status: number }> {
-  void _connector
-  void _endpoint
-  void _options
-  throw new Error("Connector direct call is disabled client-side. Use backend connector runtime routes.")
+  const res = await fetch(`${getBackendBaseUrl()}/api/connectors/${_connector.id}/call`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+    credentials: "include",
+    body: JSON.stringify({
+      endpoint: _endpoint,
+      method: _options?.method,
+      body: _options?.body,
+      params: _options?.params,
+    }),
+  })
+  const payload = await res.json().catch(() => ({})) as { ok?: boolean; status?: number; data?: unknown; error?: string }
+  if (!res.ok || payload.ok === false) {
+    throw new Error(payload.error || `Connector request failed (${res.status})`)
+  }
+  return {
+    data: payload.data,
+    status: Number(payload.status || 200),
+  }
 }
