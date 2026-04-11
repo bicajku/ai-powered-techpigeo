@@ -4,7 +4,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { PostProcessControls, type PostProcessSettings } from "@/components/PostProcessControls"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
-import { Plus, ChatsCircle, User, Robot, ClockCounterClockwise, LinkSimple, X, Lightning, Bell, Question, UserCircle, Gift, Trash, PencilSimple, ArrowUp, ArrowDown } from "@phosphor-icons/react"
+import { Plus, ChatsCircle, User, Robot, ClockCounterClockwise, X, Lightning, Bell, Question, UserCircle, Gift, Trash, PencilSimple, ArrowUp, ArrowDown } from "@phosphor-icons/react"
 import mammoth from "mammoth"
 import * as pdfjsLib from "pdfjs-dist"
 import PptxGenJS from "pptxgenjs"
@@ -124,7 +124,7 @@ function escapeHtml(text: string): string {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;")
+    .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;")
 }
 
@@ -139,7 +139,7 @@ function normalizeAssistantContent(text: string): string {
 
 function toWordHtmlDocument(text: string): string {
   const body = escapeHtml(normalizeAssistantContent(text)).replace(/\n/g, "<br/>")
-  return `<!DOCTYPE html><html><head><meta charset=\"utf-8\" /></head><body><h2>NovusSparks AI Chat Output</h2><div>${body}</div></body></html>`
+  return `<!DOCTYPE html><html><head><meta charset="utf-8" /></head><body><h2>NovusSparks AI Chat Output</h2><div>${body}</div></body></html>`
 }
 
 function toCsvFromText(text: string): string {
@@ -757,64 +757,64 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
   }
 
   const goToNextTrace = () => {
-      const openTraceCenter = (mode: "desktop" | "mobile") => {
-        if (tracedAssistantMessageIds.length === 0) {
-          toast.info("No trace data available for this thread yet")
-          return
-        }
-
-        const hasSelectedTrace = selectedAssistantMessageId && tracesByMessage[selectedAssistantMessageId]
-        if (!hasSelectedTrace) {
-          setSelectedAssistantMessageId(tracedAssistantMessageIds[tracedAssistantMessageIds.length - 1])
-        }
-
-        if (mode === "mobile") {
-          setMobileTraceOpen(true)
-          return
-        }
-
-        setDesktopTraceOpen(true)
-      }
-
-      const renderAssistantContent = (content: string) => {
-        const normalized = normalizeAssistantContent(content)
-        const sections = normalized.split(/\n{2,}/).map((s) => s.trim()).filter(Boolean)
-
-        return (
-          <div dir="auto" className="text-sm text-foreground leading-relaxed space-y-3">
-            {sections.map((section, index) => {
-              const heading = section.match(/^#{1,6}\s+(.+)$/)
-              if (heading) {
-                return <h4 key={`sec-${index}`} className="text-base font-semibold text-foreground">{heading[1]}</h4>
-              }
-
-              const lines = section.split("\n").map((line) => line.trim()).filter(Boolean)
-              const bullets = lines.filter((line) => /^[-*]\s+/.test(line))
-              if (bullets.length === lines.length && bullets.length > 0) {
-                return (
-                  <ul key={`sec-${index}`} className="list-disc pl-5 space-y-1 marker:text-primary">
-                    {bullets.map((line, bulletIndex) => (
-                      <li key={`sec-${index}-bullet-${bulletIndex}`}>{line.replace(/^[-*]\s+/, "")}</li>
-                    ))}
-                  </ul>
-                )
-              }
-
-              return (
-                <p key={`sec-${index}`} className="whitespace-pre-wrap">
-                  {section
-                    .replace(/\*\*(.*?)\*\*/g, "$1")
-                    .replace(/`([^`]+)`/g, "$1")
-                    .replace(/^#{1,6}\s+/gm, "")}
-                </p>
-              )
-            })}
-          </div>
-        )
-      }
-
     if (selectedTraceIndex < 0 || selectedTraceIndex >= tracedAssistantMessageIds.length - 1) return
     setSelectedAssistantMessageId(tracedAssistantMessageIds[selectedTraceIndex + 1])
+  }
+
+  const openTraceCenter = (mode: "desktop" | "mobile") => {
+    if (tracedAssistantMessageIds.length === 0) {
+      toast.info("No trace data available for this thread yet")
+      return
+    }
+
+    const hasSelectedTrace = selectedAssistantMessageId && tracesByMessage[selectedAssistantMessageId]
+    if (!hasSelectedTrace) {
+      setSelectedAssistantMessageId(tracedAssistantMessageIds[tracedAssistantMessageIds.length - 1])
+    }
+
+    if (mode === "mobile") {
+      setMobileTraceOpen(true)
+      return
+    }
+
+    setDesktopTraceOpen(true)
+  }
+
+  const renderAssistantContent = (content: string) => {
+    const normalized = normalizeAssistantContent(content)
+    const sections = normalized.split(/\n{2,}/).map((s) => s.trim()).filter(Boolean)
+
+    return (
+      <div dir="auto" className="text-sm text-foreground leading-relaxed space-y-3">
+        {sections.map((section, index) => {
+          const heading = section.match(/^#{1,6}\s+(.+)$/)
+          if (heading) {
+            return <h4 key={`sec-${index}`} className="text-base font-semibold text-foreground">{heading[1]}</h4>
+          }
+
+          const lines = section.split("\n").map((line) => line.trim()).filter(Boolean)
+          const bullets = lines.filter((line) => /^[-*]\s+/.test(line))
+          if (bullets.length === lines.length && bullets.length > 0) {
+            return (
+              <ul key={`sec-${index}`} className="list-disc pl-5 space-y-1 marker:text-primary">
+                {bullets.map((line, bulletIndex) => (
+                  <li key={`sec-${index}-bullet-${bulletIndex}`}>{line.replace(/^[-*]\s+/, "")}</li>
+                ))}
+              </ul>
+            )
+          }
+
+          return (
+            <p key={`sec-${index}`} className="whitespace-pre-wrap">
+              {section
+                .replace(/\*\*(.*?)\*\*/g, "$1")
+                .replace(/`([^`]+)`/g, "$1")
+                .replace(/^#{1,6}\s+/gm, "")}
+            </p>
+          )
+        })}
+      </div>
+    )
   }
 
   const renderChunkPreview = (chunk: Record<string, unknown>, index: number) => {
