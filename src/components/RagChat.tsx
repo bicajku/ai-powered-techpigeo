@@ -5,6 +5,9 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { PostProcessControls, type PostProcessSettings } from "@/components/PostProcessControls"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Plus, ChatsCircle, User, Robot, ClockCounterClockwise, LinkSimple, X, Lightning, Bell, Question, UserCircle, Gift, Trash, PencilSimple, ArrowUp, ArrowDown } from "@phosphor-icons/react"
+import mammoth from "mammoth"
+import * as pdfjsLib from "pdfjs-dist"
+import PptxGenJS from "pptxgenjs"
 import {
   createChatThread,
   deleteChatThread,
@@ -12,15 +15,32 @@ import {
   listChatThreads,
   listChatMessages,
   listRetrievalTraceByMessageId,
+  addBrainDocument,
+  updateDocumentStatus,
   type ChatThread,
   type ChatMessage,
   type RetrievalTrace,
 } from "@/lib/sentinel-brain"
-import { sentinelQuery } from "@/lib/sentinel-query-pipeline"
+import { sentinelQuery, ingestTextTooBrain } from "@/lib/sentinel-query-pipeline"
+import { isNeonConfigured } from "@/lib/neon-client"
+import { isGeminiConfigured } from "@/lib/gemini-client"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/build/pdf.worker.min.mjs",
+  import.meta.url
+).toString()
+
 type AvailableModel = { id: string; name: string; provider: string; tier: string }
+type UploadedContextFile = {
+  id: string
+  name: string
+  content: string
+  status: "ready" | "ingested" | "failed"
+  chunksIndexed?: number
+}
+type DynamicSuggestion = { title: string; desc: string }
 
 const DEFAULT_MODELS: AvailableModel[] = [
   { id: "gpt-4.1",                 name: "GPT-4.1",           provider: "copilot", tier: "high" },
@@ -36,6 +56,61 @@ const DEFAULT_MODELS: AvailableModel[] = [
   { id: "gemini-2.5-flash",        name: "Gemini 2.5 Flash",  provider: "gemini",  tier: "low"  },
   { id: "llama-3.3-70b-versatile", name: "Llama 3.3 70B",     provider: "groq",    tier: "high" },
 ]
+
+const DEFAULT_SUGGESTIONS: DynamicSuggestion[] = [
+  { title: "How do I collect Google Maps business data?", desc: "Get structured names, addresses, and phone numbers from listings." },
+  { title: "How do I use proxies with Puppeteer or Selenium?", desc: "Step-by-step setup for browser automation scripts." },
+  { title: "How to connect my AI agent with MCP", desc: "Integrate your agent with MCP tools and data workflows." },
+  { title: "How do I get a proxy from a specific country or city?", desc: "Route traffic by geo-location with the right proxy class." },
+]
+
+const makeId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+
+function triggerDownload(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement("a")
+  anchor.href = url
+  anchor.download = fileName
+  document.body.appendChild(anchor)
+  anchor.click()
+  setTimeout(() => {
+    document.body.removeChild(anchor)
+    URL.revokeObjectURL(url)
+  }, 300)
+}
+
+function buildDynamicSuggestions(messages: ChatMessage[], uploaded: UploadedContextFile[]): DynamicSuggestion[] {
+  if (messages.length === 0) return DEFAULT_SUGGESTIONS
+  const lastUser = [...messages].reverse().find((m) => m.role === "user")?.content.toLowerCase() || ""
+  const hasTableIntent = /table|excel|sheet|csv|sum|formula|pivot/.test(lastUser)
+  const hasReportIntent = /report|proposal|summary|brief|document/.test(lastUser)
+  const hasDeckIntent = /pitch|deck|slides|presentation|ppt/.test(lastUser)
+  const hasFiles = uploaded.length > 0
+
+  const suggestions: DynamicSuggestion[] = []
+  if (hasFiles) {
+    suggestions.push({ title: "Use uploaded files to answer with citations", desc: "Ground the next answer in uploaded document context." })
+  }
+  if (hasTableIntent) {
+    suggestions.push({ title: "Create an Excel-ready solution table", desc: "Produce formulas and a downloadable spreadsheet output." })
+  }
+  if (hasReportIntent) {
+    suggestions.push({ title: "Generate a polished DOCX report", desc: "Transform this discussion into a structured document." })
+  }
+  if (hasDeckIntent) {
+    suggestions.push({ title: "Convert this into a PPT outline", desc: "Build slide-ready sections for presentation export." })
+  }
+  suggestions.push({ title: "Summarize this thread in bullet points", desc: "Create an executive summary from the conversation." })
+  suggestions.push({ title: "Give me next-step checklist", desc: "Produce practical action items from this context." })
+
+  const seen = new Set<string>()
+  return suggestions.filter((s) => {
+    const k = s.title.toLowerCase()
+    if (seen.has(k)) return false
+    seen.add(k)
+    return true
+  }).slice(0, 6)
+}
 
 interface RagChatProps {
   userId: string
@@ -62,6 +137,9 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
   const [isSending, setIsSending] = useState(false)
   const [selectedModel, setSelectedModel] = useState("gpt-4.1")
   const [availableModels, setAvailableModels] = useState<AvailableModel[]>(DEFAULT_MODELS)
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedContextFile[]>([])
+  const [isUploadingFiles, setIsUploadingFiles] = useState(false)
+  const [autoIngestToBrain, setAutoIngestToBrain] = useState(true)
   const [postProcessSettings, setPostProcessSettings] = useState<PostProcessSettings>({
     humanizeOnOutput: true,
     preserveFactsStrictly: false,
@@ -72,6 +150,7 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
   const [editingMessageId, setEditingMessageId] = useState<number | null>(null)
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
   const chatScrollRef = useRef<HTMLDivElement | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const waitForAuthToken = async (timeoutMs = 1500) => {
     const startedAt = Date.now()
@@ -109,39 +188,183 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
   }
 
   const starterPrompts = useMemo(
-    () => [
-      {
-        title: "How do I collect Google Maps business data?",
-        desc: "Get structured names, addresses, and phone numbers from listings.",
-      },
-      {
-        title: "How do I use proxies with Puppeteer or Selenium?",
-        desc: "Step-by-step setup for using proxies in browser automation scripts.",
-      },
-      {
-        title: "How to connect my AI agent with MCP",
-        desc: "Integrate your AI agent with MCP tools and external data workflows.",
-      },
-      {
-        title: "How do I get a proxy from a specific country or city?",
-        desc: "Route traffic by geo-location using residential, ISP, or mobile proxies.",
-      },
-      {
-        title: "What is the platform's free tier?",
-        desc: "See free-tier limits, quotas, and available capabilities.",
-      },
-      {
-        title: "I need proxies",
-        desc: "Quickly identify the right proxy solution for your use case.",
-      },
-    ],
-    []
+    () => buildDynamicSuggestions(messages, uploadedFiles),
+    [messages, uploadedFiles]
   )
 
   const activeThread = useMemo(
     () => threads.find((t) => t.id === activeThreadId) ?? null,
     [threads, activeThreadId]
   )
+
+  const extractTextFromFile = async (file: File): Promise<string> => {
+    const name = file.name.toLowerCase()
+    const extension = name.split(".").pop() || ""
+
+    if (["txt", "md", "csv", "json", "tsv"].includes(extension)) {
+      return await file.text()
+    }
+
+    if (extension === "docx") {
+      try {
+        const arrayBuffer = await file.arrayBuffer()
+        const extracted = await mammoth.extractRawText({ arrayBuffer })
+        return extracted.value || ""
+      } catch {
+        return ""
+      }
+    }
+
+    if (extension === "pdf") {
+      try {
+        const arrayBuffer = await file.arrayBuffer()
+        const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise
+        const pageTexts: string[] = []
+        for (let i = 1; i <= Math.min(pdf.numPages, 20); i++) {
+          const page = await pdf.getPage(i)
+          const content = await page.getTextContent()
+          const text = content.items
+            .map((item) => ("str" in item ? item.str : ""))
+            .join(" ")
+          pageTexts.push(text)
+        }
+        return pageTexts.join("\n\n")
+      } catch {
+        return ""
+      }
+    }
+
+    return ""
+  }
+
+  const ingestUploadedFileToBrain = async (file: UploadedContextFile) => {
+    if (!isNeonConfigured() || !isGeminiConfigured()) return { ok: false, reason: "Brain ingestion unavailable" }
+    try {
+      const doc = await addBrainDocument({
+        title: file.name,
+        source_type: "doc",
+      })
+      await updateDocumentStatus(doc.id, "processing")
+      const chunks = await ingestTextTooBrain(file.content, {
+        documentId: doc.id,
+        metadata: {
+          module: "rag_chat",
+          userId: dbUserId,
+          source: "chat-upload",
+          fileName: file.name,
+        },
+      })
+      await updateDocumentStatus(doc.id, chunks > 0 ? "indexed" : "failed", chunks)
+      return { ok: true, chunks }
+    } catch {
+      return { ok: false, reason: "Ingestion failed" }
+    }
+  }
+
+  const handleUploadFiles = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const incoming = event.target.files
+    if (!incoming || incoming.length === 0) return
+
+    setIsUploadingFiles(true)
+    try {
+      const parsed: UploadedContextFile[] = []
+      for (const file of Array.from(incoming).slice(0, 5)) {
+        const text = await extractTextFromFile(file)
+        const fallback = text.trim().length > 0
+          ? text
+          : `[File: ${file.name}] Binary or unsupported format. Parsed text not available.`
+
+        parsed.push({
+          id: makeId(),
+          name: file.name,
+          content: fallback.slice(0, 35000),
+          status: "ready",
+        })
+      }
+
+      let next = [...parsed]
+      if (autoIngestToBrain) {
+        const withStatus: UploadedContextFile[] = []
+        for (const item of parsed) {
+          const result = await ingestUploadedFileToBrain(item)
+          withStatus.push({
+            ...item,
+            status: result.ok ? "ingested" : "failed",
+            chunksIndexed: result.ok ? result.chunks : undefined,
+          })
+        }
+        next = withStatus
+      }
+
+      setUploadedFiles((current) => [...next, ...current].slice(0, 8))
+      toast.success(`${next.length} file(s) added to chat context`)
+    } catch {
+      toast.error("Failed to process uploaded file(s)")
+    } finally {
+      setIsUploadingFiles(false)
+      if (fileInputRef.current) fileInputRef.current.value = ""
+    }
+  }
+
+  const copyMessage = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      toast.success("Response copied")
+    } catch {
+      toast.error("Copy failed")
+    }
+  }
+
+  const exportMessageTxt = (text: string, prefix = "chat-response") => {
+    const file = `${prefix}-${new Date().toISOString().slice(0, 19).replace(/[T:]/g, "-")}.txt`
+    triggerDownload(new Blob([text], { type: "text/plain;charset=utf-8" }), file)
+  }
+
+  const exportMessageDocx = (text: string) => {
+    const payload = `NovusSparks AI Chat Output\n\n${text}`
+    triggerDownload(
+      new Blob([payload], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }),
+      `chat-output-${Date.now()}.docx`
+    )
+  }
+
+  const exportMessageXlsx = (text: string) => {
+    const lines = text.split(/\n+/).filter(Boolean)
+    const tsv = lines.map((line) => line.replace(/\|/g, "\t")).join("\n")
+    triggerDownload(
+      new Blob([tsv], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+      `chat-output-${Date.now()}.xlsx`
+    )
+  }
+
+  const exportMessagePptx = async (text: string) => {
+    const pptx = new PptxGenJS()
+    pptx.layout = "LAYOUT_WIDE"
+    pptx.author = "NovusSparks AI"
+    pptx.company = "NovusSparks"
+    pptx.subject = "AI Chat Export"
+    pptx.title = "AI Chat Export"
+
+    const chunks = text.split(/\n\n+/).filter(Boolean).slice(0, 6)
+    const titleSlide = pptx.addSlide()
+    titleSlide.addText("AI Chat Export", { x: 0.6, y: 0.6, w: 10.5, h: 0.8, fontSize: 34, bold: true })
+    titleSlide.addText("Generated by NovusSparks AI", { x: 0.6, y: 1.5, w: 10.5, h: 0.4, fontSize: 14, color: "666666" })
+
+    chunks.forEach((entry, index) => {
+      const slide = pptx.addSlide()
+      slide.addText(`Section ${index + 1}`, { x: 0.5, y: 0.4, w: 10.5, h: 0.5, fontSize: 24, bold: true })
+      slide.addText(entry.slice(0, 1400), { x: 0.6, y: 1.2, w: 12, h: 5.5, fontSize: 14, valign: "top" })
+    })
+
+    await pptx.writeFile({ fileName: `chat-output-${Date.now()}.pptx` })
+  }
+
+  const exportThreadTxt = () => {
+    const content = messages
+      .map((m) => `[${m.role.toUpperCase()}] ${new Date(m.created_at).toLocaleString()}\n${m.content}`)
+      .join("\n\n----------------\n\n")
+    exportMessageTxt(content, "chat-thread")
+  }
 
   useEffect(() => {
     if (!dbUserId?.trim()) return
@@ -326,7 +549,21 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
         throw new Error("Unable to resolve chat thread")
       }
 
-      const result = await sentinelQuery(text, {
+      const recentContext = uploadedFiles
+        .slice(0, 3)
+        .map((f, i) => `[File ${i + 1}: ${f.name}]\n${f.content.slice(0, 2500)}`)
+        .join("\n\n")
+
+      const wantsSpreadsheet = /excel|xlsx|spreadsheet|sheet|formula|table/.test(text.toLowerCase())
+      const formatHint = wantsSpreadsheet
+        ? "\n\nIf solving spreadsheet-related tasks, provide a clear table and include formulas per row/column where relevant."
+        : ""
+
+      const enrichedQuery = recentContext
+        ? `Use uploaded files as trusted context where relevant. If context is not relevant, ignore it.\n\n${recentContext}\n\nUser query: ${text}${formatHint}`
+        : `${text}${formatHint}`
+
+      const result = await sentinelQuery(enrichedQuery, {
         module: "rag_chat",
         contentType: "chat",
         humanizeOnOutput: postProcessSettings.humanizeOnOutput,
@@ -346,7 +583,13 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
               edited_from_message_id: editingMessageId,
               edited_at: new Date().toISOString(),
             }
-          : undefined,
+          : {
+              uploaded_files: uploadedFiles.slice(0, 3).map((f) => ({
+                name: f.name,
+                status: f.status,
+                chunksIndexed: f.chunksIndexed ?? 0,
+              })),
+            },
       })
 
       if (result.status === "needs_clarification") {
@@ -666,6 +909,22 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
               <Button
                 size="sm"
                 variant="outline"
+                onClick={exportThreadTxt}
+                disabled={messages.length === 0}
+              >
+                Export .txt
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploadingFiles}
+              >
+                {isUploadingFiles ? "Uploading..." : "Upload File"}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
                 className="lg:hidden"
                 onClick={() => setMobileThreadsOpen(true)}
                 disabled={threads.length === 0}
@@ -713,6 +972,14 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
             </h1>
             
             <div className="w-full relative mb-10 rounded-2xl border border-border/60 bg-background shadow-sm overflow-hidden">
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                multiple
+                accept=".txt,.md,.csv,.json,.docx,.pdf"
+                onChange={handleUploadFiles}
+              />
               <div className="p-3 border-b border-border/60">
                 <PostProcessControls
                   settings={postProcessSettings}
@@ -720,6 +987,28 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
                   compact
                   title="Chat Output Controls"
                 />
+                <div className="mt-2 flex items-center gap-2 text-xs">
+                  <Button size="sm" variant="outline" className="h-7" onClick={() => fileInputRef.current?.click()}>
+                    Add Context File
+                  </Button>
+                  <label className="inline-flex items-center gap-1 text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={autoIngestToBrain}
+                      onChange={(e) => setAutoIngestToBrain(e.target.checked)}
+                    />
+                    Ingest to Sentinel Brain
+                  </label>
+                </div>
+                {uploadedFiles.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {uploadedFiles.slice(0, 4).map((f) => (
+                      <span key={f.id} className="rounded-full border border-border/60 px-2 py-1 text-[11px] text-foreground">
+                        {f.name} ({f.status}{f.chunksIndexed ? `:${f.chunksIndexed}` : ""})
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
               <Textarea
                 placeholder="How can I help you today?"
@@ -817,6 +1106,26 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
                           {message.content}
                         </div>
 
+                        {isAssistant && (
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => void copyMessage(message.content)}>
+                              Copy
+                            </Button>
+                            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => exportMessageTxt(message.content)}>
+                              .txt
+                            </Button>
+                            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => exportMessageDocx(message.content)}>
+                              .docx
+                            </Button>
+                            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => exportMessageXlsx(message.content)}>
+                              .xlsx
+                            </Button>
+                            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => void exportMessagePptx(message.content)}>
+                              .pptx
+                            </Button>
+                          </div>
+                        )}
+
                         {isAdmin && isAssistant && trace && (
                           <div className="mt-4 rounded-xl border border-border/50 bg-background/80 p-3 text-xs text-muted-foreground space-y-2">
                             <div className="flex flex-wrap items-center gap-4">
@@ -891,6 +1200,36 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
                     </button>
                   ))}
                 </div>
+                <div className="mb-2 flex items-center gap-2 text-xs">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    className="hidden"
+                    multiple
+                    accept=".txt,.md,.csv,.json,.docx,.pdf"
+                    onChange={handleUploadFiles}
+                  />
+                  <Button size="sm" variant="outline" className="h-7" onClick={() => fileInputRef.current?.click()}>
+                    {isUploadingFiles ? "Uploading..." : "Attach file"}
+                  </Button>
+                  <label className="inline-flex items-center gap-1 text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={autoIngestToBrain}
+                      onChange={(e) => setAutoIngestToBrain(e.target.checked)}
+                    />
+                    Save to Brain
+                  </label>
+                </div>
+                {uploadedFiles.length > 0 && (
+                  <div className="mb-2 flex flex-wrap gap-2">
+                    {uploadedFiles.slice(0, 6).map((f) => (
+                      <span key={`ctx-${f.id}`} className="rounded-full border border-border/70 bg-muted/20 px-2 py-1 text-[11px] text-foreground">
+                        {f.name} ({f.status}{f.chunksIndexed ? `:${f.chunksIndexed}` : ""})
+                      </span>
+                    ))}
+                  </div>
+                )}
                 <div className="relative shadow-sm rounded-xl">
                   <div className="mb-3">
                     <div className="flex items-center gap-2 mb-2">
