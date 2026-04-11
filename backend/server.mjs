@@ -4800,6 +4800,90 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // ── POST /api/proxy/embed ── (requires auth)
+  // Uses GitHub Copilot / Azure AI Inference text-embedding-3-small (768-dim) by default.
+  // Falls back to Gemini text-embedding-004 if GITHUB_COPILOT_TOKEN is not configured.
+  if (method === "POST" && reqPathname === "/api/proxy/embed") {
+    const auth = authorize(req)
+    if (!auth.authorized) {
+      return sendJson(res, 401, { ok: false, error: "Unauthorized" }, req)
+    }
+
+    try {
+      const parsed = await parseJsonBody(req)
+      if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+      const { text, texts } = parsed.data
+      const textsToEmbed = texts ? (Array.isArray(texts) ? texts : [texts]) : text ? [text] : []
+      if (textsToEmbed.length === 0) {
+        return sendJson(res, 400, { ok: false, error: "text or texts is required" }, req)
+      }
+
+      const githubToken = process.env.GITHUB_COPILOT_TOKEN || process.env.GITHUB_TOKEN
+      if (githubToken) {
+        // GitHub Models / Azure AI Inference — text-embedding-3-small at 768 dims
+        const endpoint = "https://models.inference.ai.azure.com/embeddings"
+        const embeddings = []
+        for (const t of textsToEmbed) {
+          const response = await fetch(endpoint, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${githubToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "text-embedding-3-small",
+              input: t,
+              dimensions: 768,
+            }),
+          })
+          if (!response.ok) {
+            const errText = await response.text().catch(() => "")
+            console.error("[proxy/embed] GitHub Models error:", response.status, errText)
+            return sendJson(res, 502, { ok: false, error: "GitHub Models embed API error" }, req)
+          }
+          const data = await response.json()
+          embeddings.push(data?.data?.[0]?.embedding || [])
+        }
+        return sendJson(res, 200, {
+          ok: true,
+          embeddings: textsToEmbed.length === 1 ? embeddings[0] : embeddings,
+          batch: textsToEmbed.length > 1,
+          provider: "github",
+        }, req)
+      }
+
+      // Fallback: Gemini text-embedding-004 (768-dim)
+      const geminiKey = process.env.GEMINI_API_KEY
+      if (!geminiKey) {
+        return sendJson(res, 503, { ok: false, error: "No embedding provider configured. Set GITHUB_COPILOT_TOKEN or GEMINI_API_KEY." }, req)
+      }
+      const embeddings = []
+      for (const t of textsToEmbed) {
+        const geminiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${encodeURIComponent(geminiKey)}`
+        const response = await fetch(geminiEndpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: { parts: [{ text: t }] } }),
+        })
+        if (!response.ok) {
+          console.error("[proxy/embed] Gemini fallback error:", response.status)
+          return sendJson(res, 502, { ok: false, error: "Gemini embed API error" }, req)
+        }
+        const data = await response.json()
+        embeddings.push(data?.embedding?.values || [])
+      }
+      return sendJson(res, 200, {
+        ok: true,
+        embeddings: textsToEmbed.length === 1 ? embeddings[0] : embeddings,
+        batch: textsToEmbed.length > 1,
+        provider: "gemini",
+      }, req)
+    } catch (err) {
+      console.error("[proxy/embed] error:", err)
+      return sendJson(res, 500, { ok: false, error: "Embedding failed" }, req)
+    }
+  }
+
   // ── POST /api/proxy/gemini/embed ── (requires auth)
   if (method === "POST" && reqPathname === "/api/proxy/gemini/embed") {
     const auth = authorize(req)

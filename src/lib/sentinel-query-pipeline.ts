@@ -1,4 +1,5 @@
-import { geminiGenerate, geminiEmbed, isGeminiConfigured } from "./gemini-client"
+import { geminiGenerate, isGeminiConfigured } from "./gemini-client"
+import { embedText } from "./embed-client"
 import { copilotGenerate, isCopilotConfigured } from "./copilot-client"
 import {
   searchBrain,
@@ -299,17 +300,14 @@ export async function sentinelQuery(
 
   // Step 2: Search Sentinel Brain for relevant knowledge
   let brainContextStr = ""
-  const shouldUseGeminiRetrieval =
-    geminiReady && (
-      // Always retrieve from brain for RAG chat — that is the point of the module.
-      options?.module === "rag_chat" ||
-      (useGeminiByPolicy && orderedProviders.indexOf("gemini") <= 1)
-    )
+  // Brain retrieval uses the provider-agnostic embedText (GitHub Copilot first, Gemini fallback).
+  // No longer gated on geminiReady — the embed-client handles provider selection.
+  const shouldRunBrainRetrieval = neonReady
 
-  if (neonReady && shouldUseGeminiRetrieval) {
+  if (shouldRunBrainRetrieval) {
     const retrievalStart = Date.now()
     try {
-      const queryEmbedding = await geminiEmbed(queryText)
+      const queryEmbedding = await embedText(queryText)
       const brainResults = await searchBrain(queryEmbedding, 5, options?.sector)
       totalCandidates = brainResults.length
       const relevant = brainResults.filter((r) => r.similarity > 0.65)
@@ -938,7 +936,7 @@ export async function ingestTextTooBrain(
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i]
     try {
-      const embedding = await geminiEmbed(chunk)
+      const embedding = await embedText(chunk)
       await addBrainChunk({
         content: chunk,
         embedding,
