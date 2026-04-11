@@ -526,9 +526,7 @@ function App() {
       allowedTabs.add("sentinel-brain")
       allowedTabs.add("admin")
       allowedTabs.add("enterprise")
-      if (authCapabilities.isSentinelCommander) {
-        allowedTabs.add("global-dashboard")
-      }
+      allowedTabs.add("global-dashboard")
     }
 
     if (canAccessNGOSaaS) {
@@ -3299,7 +3297,7 @@ ${JSON.stringify(candidate)}`
               </TabsContent>
             )}
 
-            {user.role === "admin" && authCapabilities.isSentinelCommander && (
+            {user.role === "admin" && (
               <TabsContent value="global-dashboard" className="space-y-6">
                 <Suspense fallback={<LoadingState />}>
                   <GlobalDashboard />

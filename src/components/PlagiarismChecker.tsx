@@ -788,19 +788,26 @@ function PlagiarismCheckerInner({ user, mode }: { user: UserProfile; mode: "revi
     const file = event.target.files?.[0]
     if (!file) return
 
-    if (file.type === "application/msword" || file.name.toLowerCase().endsWith(".doc")) {
+    const lowerName = file.name.toLowerCase()
+    const normalizedType = (file.type || "").toLowerCase()
+    const isPdf = normalizedType === "application/pdf"
+      || normalizedType === "application/x-pdf"
+      || normalizedType === "text/pdf"
+      || normalizedType === "application/acrobat"
+      || normalizedType === "applications/vnd.pdf"
+      || lowerName.endsWith(".pdf")
+    const isDocx = normalizedType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      || lowerName.endsWith(".docx")
+    const isTxt = normalizedType === "text/plain" || lowerName.endsWith(".txt")
+    const uploadKind: "pdf" | "docx" | "txt" | null = isPdf ? "pdf" : isDocx ? "docx" : isTxt ? "txt" : null
+
+    if (normalizedType === "application/msword" || lowerName.endsWith(".doc")) {
       toast.warning("Legacy .doc files are not supported for extraction. Please use PDF, DOCX, or TXT.")
       resetUploadInput()
       return
     }
 
-    const validTypes = [
-      'text/plain',
-      'application/pdf',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-    ]
-
-    if (!validTypes.includes(file.type)) {
+    if (!uploadKind) {
       toast.error("Please upload a valid document (PDF, DOCX, or TXT)")
       resetUploadInput()
       return
@@ -820,7 +827,7 @@ function PlagiarismCheckerInner({ user, mode }: { user: UserProfile; mode: "revi
     toast.info(`Processing "${file.name}"...`)
 
     try {
-      if (file.type === 'text/plain') {
+      if (uploadKind === "txt") {
         const content = await readTextFileWithProgress(file)
         setUploadProgress(95)
         if (content && content.trim().length > 0) {
@@ -839,7 +846,7 @@ function PlagiarismCheckerInner({ user, mode }: { user: UserProfile; mode: "revi
           setUploadStatus("Upload failed: file is empty.")
           setFileName(null)
         }
-      } else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+      } else if (uploadKind === "docx") {
         setUploadStatus("Reading DOCX file...")
         const arrayBuffer = await readArrayBufferWithProgress(file)
         setUploadStatus("Extracting text from DOCX...")
@@ -864,7 +871,7 @@ function PlagiarismCheckerInner({ user, mode }: { user: UserProfile; mode: "revi
           setText("")
           setFileName(null)
         }
-      } else if (file.type === 'application/pdf') {
+      } else if (uploadKind === "pdf") {
         setUploadStatus("Reading PDF file...")
         const arrayBuffer = await readArrayBufferWithProgress(file)
         setUploadStatus("Extracting text from PDF...")

@@ -73,13 +73,13 @@ export function AppSidebar({
   const roleNavItems = useMemo<SidebarNavItem[]>(() => {
     if (isAdmin) {
       return [
-        ...(isSentinelCommander ? [{
+        {
           id: "global-dashboard",
           label: "Global Dashboard",
           icon: ChartBar,
           onClick: () => onTabChange("global-dashboard"),
           active: activeTab === "global-dashboard",
-        }] : []),
+        },
         {
           id: "admin",
           label: "Admin Dashboard",
