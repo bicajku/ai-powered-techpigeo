@@ -1,4 +1,32 @@
-import { getNeonClient, isNeonConfigured } from "./neon-client"
+function getBackendBaseUrl(): string {
+  if (typeof import.meta !== "undefined" && import.meta.env?.VITE_BACKEND_API_BASE_URL) {
+    return import.meta.env.VITE_BACKEND_API_BASE_URL as string
+  }
+  return ""
+}
+
+function getAuthHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" }
+  const token =
+    typeof localStorage !== "undefined"
+      ? localStorage.getItem("sentinel-auth-token") || localStorage.getItem("sentinel_token")
+      : null
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`
+  }
+  try {
+    const csrfMatch = document.cookie
+      .split(";")
+      .map((c) => c.trim())
+      .find((c) => c.startsWith("__csrf="))
+    if (csrfMatch) {
+      headers["X-CSRF-Token"] = csrfMatch.slice("__csrf=".length)
+    }
+  } catch {
+    // SSR or cookie unavailable
+  }
+  return headers
+}
 
 export interface PlatformConnector {
   id: number
@@ -13,31 +41,13 @@ export interface PlatformConnector {
   sector: string | null
   health_status: "healthy" | "degraded" | "down" | "unknown"
   last_health_check: string | null
-  created_by: number | null
+  created_by: string | number | null
   created_at: string
 }
 
 export async function ensureConnectorsTable(): Promise<void> {
-  if (!isNeonConfigured()) return
-  const sql = await getNeonClient()
-  await sql`
-    CREATE TABLE IF NOT EXISTS platform_connectors (
-      id SERIAL PRIMARY KEY,
-      name TEXT NOT NULL,
-      platform_type TEXT NOT NULL DEFAULT 'rest_api',
-      base_url TEXT NOT NULL,
-      auth_type TEXT NOT NULL DEFAULT 'none',
-      auth_config JSONB NOT NULL DEFAULT '{}',
-      headers JSONB NOT NULL DEFAULT '{}',
-      enabled BOOLEAN NOT NULL DEFAULT true,
-      description TEXT NOT NULL DEFAULT '',
-      sector TEXT,
-      health_status TEXT NOT NULL DEFAULT 'unknown',
-      last_health_check TIMESTAMPTZ,
-      created_by INTEGER,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    )
-  `
+  // Connector schema is managed server-side.
+  return
 }
 
 export async function addConnector(connector: {
@@ -51,161 +61,76 @@ export async function addConnector(connector: {
   sector?: string
   created_by?: number
 }): Promise<PlatformConnector> {
-  const sql = await getNeonClient()
-  const rows = await sql`
-    INSERT INTO platform_connectors (name, platform_type, base_url, auth_type, auth_config, headers, description, sector, created_by)
-    VALUES (
-      ${connector.name},
-      ${connector.platform_type},
-      ${connector.base_url},
-      ${connector.auth_type},
-      ${JSON.stringify(connector.auth_config ?? {})}::jsonb,
-      ${JSON.stringify(connector.headers ?? {})}::jsonb,
-      ${connector.description ?? ""},
-      ${connector.sector ?? null},
-      ${connector.created_by ?? null}
-    )
-    RETURNING *
-  `
-  const rowsArray = Array.isArray(rows) ? rows : []
-  return parseConnectorRow(rowsArray[0] as Record<string, unknown>)
+  const res = await fetch(`${getBackendBaseUrl()}/api/connectors`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+    credentials: "include",
+    body: JSON.stringify(connector),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string }
+    throw new Error(body.error || `Failed to add connector (${res.status})`)
+  }
+  const data = await res.json() as { ok: boolean; connector: PlatformConnector }
+  return data.connector
 }
 
 export async function listConnectors(): Promise<PlatformConnector[]> {
-  const sql = await getNeonClient()
-  const rows = await sql`SELECT * FROM platform_connectors ORDER BY created_at DESC`
-  return (rows as Record<string, unknown>[]).map(parseConnectorRow)
+  const res = await fetch(`${getBackendBaseUrl()}/api/connectors`, {
+    method: "GET",
+    headers: getAuthHeaders(),
+    credentials: "include",
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string }
+    throw new Error(body.error || `Failed to load connectors (${res.status})`)
+  }
+  const data = await res.json() as { ok: boolean; connectors: PlatformConnector[] }
+  return data.connectors || []
 }
 
 export async function updateConnector(
-  id: number,
-  updates: Partial<Pick<PlatformConnector, "name" | "base_url" | "auth_type" | "auth_config" | "headers" | "enabled" | "description" | "sector">>
+  _id: number,
+  _updates: Partial<Pick<PlatformConnector, "name" | "base_url" | "auth_type" | "auth_config" | "headers" | "enabled" | "description" | "sector">>
 ): Promise<void> {
-  const sql = await getNeonClient()
-  const setClauses: string[] = []
-
-  if (updates.name !== undefined) setClauses.push("name")
-  if (updates.base_url !== undefined) setClauses.push("base_url")
-  if (updates.auth_type !== undefined) setClauses.push("auth_type")
-  if (updates.enabled !== undefined) setClauses.push("enabled")
-  if (updates.description !== undefined) setClauses.push("description")
-  if (updates.sector !== undefined) setClauses.push("sector")
-
-  // Use individual update queries for simplicity with neon's tagged template
-  if (updates.name !== undefined) await sql`UPDATE platform_connectors SET name = ${updates.name} WHERE id = ${id}`
-  if (updates.base_url !== undefined) await sql`UPDATE platform_connectors SET base_url = ${updates.base_url} WHERE id = ${id}`
-  if (updates.auth_type !== undefined) await sql`UPDATE platform_connectors SET auth_type = ${updates.auth_type} WHERE id = ${id}`
-  if (updates.enabled !== undefined) await sql`UPDATE platform_connectors SET enabled = ${updates.enabled} WHERE id = ${id}`
-  if (updates.description !== undefined) await sql`UPDATE platform_connectors SET description = ${updates.description} WHERE id = ${id}`
-  if (updates.sector !== undefined) await sql`UPDATE platform_connectors SET sector = ${updates.sector} WHERE id = ${id}`
-  if (updates.auth_config !== undefined) await sql`UPDATE platform_connectors SET auth_config = ${JSON.stringify(updates.auth_config)}::jsonb WHERE id = ${id}`
-  if (updates.headers !== undefined) await sql`UPDATE platform_connectors SET headers = ${JSON.stringify(updates.headers)}::jsonb WHERE id = ${id}`
+  void _id
+  void _updates
+  throw new Error("Connector update is not exposed client-side yet")
 }
 
 export async function deleteConnector(id: number): Promise<void> {
-  const sql = await getNeonClient()
-  await sql`DELETE FROM platform_connectors WHERE id = ${id}`
+  const res = await fetch(`${getBackendBaseUrl()}/api/connectors/${id}`, {
+    method: "DELETE",
+    headers: getAuthHeaders(),
+    credentials: "include",
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string }
+    throw new Error(body.error || `Failed to delete connector (${res.status})`)
+  }
 }
 
 export async function testConnectorHealth(connector: PlatformConnector): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
-  const start = performance.now()
-  try {
-    const headers: Record<string, string> = { ...connector.headers }
-
-    if (connector.auth_type === "bearer" && connector.auth_config.token) {
-      headers["Authorization"] = `Bearer ${connector.auth_config.token}`
-    } else if (connector.auth_type === "api_key" && connector.auth_config.key) {
-      const headerName = connector.auth_config.header_name || "X-API-Key"
-      headers[headerName] = connector.auth_config.key
-    } else if (connector.auth_type === "basic" && connector.auth_config.username) {
-      const encoded = btoa(`${connector.auth_config.username}:${connector.auth_config.password || ""}`)
-      headers["Authorization"] = `Basic ${encoded}`
-    }
-
-    const res = await fetch(connector.base_url, {
-      method: "HEAD",
-      headers,
-      signal: AbortSignal.timeout(10000),
-    })
-
-    const latencyMs = Math.round(performance.now() - start)
-
-    if (isNeonConfigured()) {
-      const sql = await getNeonClient()
-      const status = res.ok ? "healthy" : "degraded"
-      await sql`UPDATE platform_connectors SET health_status = ${status}, last_health_check = now() WHERE id = ${connector.id}`
-    }
-
-    return { ok: res.ok, latencyMs }
-  } catch (err) {
-    const latencyMs = Math.round(performance.now() - start)
-
-    if (isNeonConfigured()) {
-      const sql = await getNeonClient()
-      await sql`UPDATE platform_connectors SET health_status = 'down', last_health_check = now() WHERE id = ${connector.id}`
-    }
-
-    return { ok: false, latencyMs, error: err instanceof Error ? err.message : "Health check failed" }
+  const res = await fetch(`${getBackendBaseUrl()}/api/connectors/${connector.id}/health`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+    credentials: "include",
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string }
+    return { ok: false, latencyMs: 0, error: body.error || `Health check failed (${res.status})` }
   }
+  const data = await res.json() as { ok: boolean; latencyMs: number; error?: string }
+  return { ok: Boolean(data.ok), latencyMs: Number(data.latencyMs || 0), error: data.error }
 }
 
 export async function callConnector(
-  connector: PlatformConnector,
-  endpoint: string,
-  options?: { method?: string; body?: unknown; params?: Record<string, string> }
+  _connector: PlatformConnector,
+  _endpoint: string,
+  _options?: { method?: string; body?: unknown; params?: Record<string, string> }
 ): Promise<{ data: unknown; status: number }> {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...connector.headers,
-  }
-
-  if (connector.auth_type === "bearer" && connector.auth_config.token) {
-    headers["Authorization"] = `Bearer ${connector.auth_config.token}`
-  } else if (connector.auth_type === "api_key" && connector.auth_config.key) {
-    const headerName = connector.auth_config.header_name || "X-API-Key"
-    headers[headerName] = connector.auth_config.key
-  } else if (connector.auth_type === "basic" && connector.auth_config.username) {
-    const encoded = btoa(`${connector.auth_config.username}:${connector.auth_config.password || ""}`)
-    headers["Authorization"] = `Basic ${encoded}`
-  }
-
-  let url = `${connector.base_url.replace(/\/$/, "")}/${endpoint.replace(/^\//, "")}`
-  if (options?.params) {
-    const qs = new URLSearchParams(options.params).toString()
-    url += `?${qs}`
-  }
-
-  const res = await fetch(url, {
-    method: options?.method ?? "GET",
-    headers,
-    body: options?.body ? JSON.stringify(options.body) : undefined,
-    signal: AbortSignal.timeout(30000),
-  })
-
-  if (!res.ok) {
-    const errText = await res.text().catch(() => "Unknown error")
-    throw new Error(`Connector request failed (${res.status}): ${errText}`)
-  }
-
-  const data = await res.json()
-  return { data, status: res.status }
-}
-
-function parseConnectorRow(row: Record<string, unknown>): PlatformConnector {
-  return {
-    id: Number(row.id),
-    name: String(row.name),
-    platform_type: String(row.platform_type) as PlatformConnector["platform_type"],
-    base_url: String(row.base_url),
-    auth_type: String(row.auth_type) as PlatformConnector["auth_type"],
-    auth_config: (row.auth_config ?? {}) as Record<string, string>,
-    headers: (row.headers ?? {}) as Record<string, string>,
-    enabled: Boolean(row.enabled),
-    description: String(row.description ?? ""),
-    sector: row.sector ? String(row.sector) : null,
-    health_status: String(row.health_status ?? "unknown") as PlatformConnector["health_status"],
-    last_health_check: row.last_health_check ? String(row.last_health_check) : null,
-    created_by: row.created_by ? Number(row.created_by) : null,
-    created_at: String(row.created_at),
-  }
+  void _connector
+  void _endpoint
+  void _options
+  throw new Error("Connector direct call is disabled client-side. Use backend connector runtime routes.")
 }

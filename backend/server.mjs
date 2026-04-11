@@ -644,6 +644,92 @@ function enforceTesterEnvironment(req, authUser) {
   return { allowed: true }
 }
 
+function getConnectorCryptoKey() {
+  const source = process.env.CONNECTOR_ENCRYPTION_KEY || process.env.JWT_SECRET || "connector-dev-key"
+  return crypto.createHash("sha256").update(source).digest()
+}
+
+function encryptConnectorAuthConfig(authConfig) {
+  const payload = JSON.stringify(authConfig || {})
+  const iv = crypto.randomBytes(12)
+  const cipher = crypto.createCipheriv("aes-256-gcm", getConnectorCryptoKey(), iv)
+  const encrypted = Buffer.concat([cipher.update(payload, "utf8"), cipher.final()])
+  const tag = cipher.getAuthTag()
+  return {
+    enc_v: 1,
+    iv: iv.toString("base64"),
+    tag: tag.toString("base64"),
+    data: encrypted.toString("base64"),
+  }
+}
+
+function decryptConnectorAuthConfig(stored) {
+  if (!stored || typeof stored !== "object") return {}
+  if (!stored.enc_v || !stored.iv || !stored.tag || !stored.data) {
+    // Backward compatibility: previously plaintext JSON may exist.
+    return stored
+  }
+
+  const iv = Buffer.from(String(stored.iv), "base64")
+  const tag = Buffer.from(String(stored.tag), "base64")
+  const encrypted = Buffer.from(String(stored.data), "base64")
+  const decipher = crypto.createDecipheriv("aes-256-gcm", getConnectorCryptoKey(), iv)
+  decipher.setAuthTag(tag)
+  const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8")
+  const parsed = JSON.parse(decrypted)
+  return parsed && typeof parsed === "object" ? parsed : {}
+}
+
+function sanitizeConnectorForClient(row) {
+  const authConfig = row?.auth_config && typeof row.auth_config === "object" ? row.auth_config : {}
+  const hasSecret = Boolean(authConfig.enc_v || Object.keys(authConfig).length > 0)
+  return {
+    ...row,
+    auth_config: hasSecret ? { has_secret: true } : {},
+    headers: {},
+  }
+}
+
+function isPrivateOrLocalHostname(hostname) {
+  if (!hostname) return true
+  const h = hostname.toLowerCase()
+  if (h === "localhost" || h === "127.0.0.1" || h === "::1" || h.endsWith(".local")) return true
+  if (/^10\./.test(h)) return true
+  if (/^192\.168\./.test(h)) return true
+  if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(h)) return true
+  if (/^127\./.test(h)) return true
+  return false
+}
+
+function validateConnectorBaseUrl(rawUrl) {
+  try {
+    const parsed = new URL(rawUrl)
+    if (parsed.protocol !== "https:") {
+      return { ok: false, error: "Base URL must use https" }
+    }
+    if (isPrivateOrLocalHostname(parsed.hostname)) {
+      return { ok: false, error: "Private/local hostnames are not allowed" }
+    }
+    return { ok: true, normalized: parsed.toString().replace(/\/$/, "") }
+  } catch {
+    return { ok: false, error: "Invalid base URL" }
+  }
+}
+
+function buildConnectorHeaders(authType, authConfig, headers = {}) {
+  const out = { ...headers }
+  if (authType === "bearer" && authConfig?.token) {
+    out.Authorization = `Bearer ${authConfig.token}`
+  } else if (authType === "api_key" && authConfig?.key) {
+    const headerName = authConfig.header_name || "X-API-Key"
+    out[headerName] = authConfig.key
+  } else if (authType === "basic" && authConfig?.username) {
+    const encoded = Buffer.from(`${authConfig.username}:${authConfig.password || ""}`).toString("base64")
+    out.Authorization = `Basic ${encoded}`
+  }
+  return out
+}
+
 async function ensureTesterSubscription(userId, assignedBy) {
   try {
     const { getSql } = await import("./db.mjs")
@@ -4419,6 +4505,162 @@ const server = http.createServer(async (req, res) => {
     } catch (error) {
       console.error("[api/qr] error:", error instanceof Error ? error.message : error)
       return sendJson(res, 500, { ok: false, error: "Failed to generate QR image" }, req)
+    }
+  }
+
+  // ── Connector Management (backend-only secret handling) ──
+  if (method === "GET" && reqPathname === "/api/connectors") {
+    const auth = authorize(req)
+    if (!auth.authorized) return sendJson(res, 401, { ok: false, error: "Unauthorized" }, req)
+    if (!isDbConfigured()) return sendJson(res, 503, { ok: false, error: "Database not configured" }, req)
+
+    try {
+      const rows = await executeProxyQuery(
+        `SELECT id, name, platform_type, base_url, auth_type, auth_config, headers, enabled,
+                description, sector, health_status, last_health_check, created_by, created_at
+         FROM platform_connectors
+         ORDER BY created_at DESC`,
+        []
+      )
+      return sendJson(res, 200, { ok: true, connectors: rows.map(sanitizeConnectorForClient) }, req)
+    } catch (err) {
+      console.error("[connectors/list] error:", err)
+      return sendJson(res, 500, { ok: false, error: "Failed to list connectors" }, req)
+    }
+  }
+
+  if (method === "POST" && reqPathname === "/api/connectors") {
+    const auth = authorize(req)
+    if (!auth.authorized) return sendJson(res, 401, { ok: false, error: "Unauthorized" }, req)
+    if (!isDbConfigured()) return sendJson(res, 503, { ok: false, error: "Database not configured" }, req)
+
+    try {
+      const parsed = await parseJsonBody(req)
+      if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+
+      const name = typeof parsed.data.name === "string" ? parsed.data.name.trim() : ""
+      const platformType = typeof parsed.data.platform_type === "string" ? parsed.data.platform_type : "rest_api"
+      const baseUrlRaw = typeof parsed.data.base_url === "string" ? parsed.data.base_url.trim() : ""
+      const authType = typeof parsed.data.auth_type === "string" ? parsed.data.auth_type : "none"
+      const authConfigRaw = parsed.data.auth_config && typeof parsed.data.auth_config === "object" ? parsed.data.auth_config : {}
+      const headersRaw = parsed.data.headers && typeof parsed.data.headers === "object" ? parsed.data.headers : {}
+      const description = typeof parsed.data.description === "string" ? parsed.data.description.trim() : ""
+      const sector = typeof parsed.data.sector === "string" && parsed.data.sector.trim().length > 0 ? parsed.data.sector.trim() : null
+
+      if (!name || !baseUrlRaw) {
+        return sendJson(res, 400, { ok: false, error: "name and base_url are required" }, req)
+      }
+
+      const validUrl = validateConnectorBaseUrl(baseUrlRaw)
+      if (!validUrl.ok) {
+        return sendJson(res, 400, { ok: false, error: validUrl.error }, req)
+      }
+
+      const encryptedAuth = encryptConnectorAuthConfig(authConfigRaw)
+
+      const rows = await executeProxyQuery(
+        `INSERT INTO platform_connectors
+          (name, platform_type, base_url, auth_type, auth_config, headers, description, sector, created_by)
+         VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7,$8,$9)
+         RETURNING id, name, platform_type, base_url, auth_type, auth_config, headers, enabled,
+                   description, sector, health_status, last_health_check, created_by, created_at`,
+        [
+          name,
+          platformType,
+          validUrl.normalized,
+          authType,
+          JSON.stringify(encryptedAuth),
+          JSON.stringify(headersRaw),
+          description,
+          sector,
+          null,
+        ]
+      )
+
+      return sendJson(res, 201, { ok: true, connector: sanitizeConnectorForClient(rows[0]) }, req)
+    } catch (err) {
+      console.error("[connectors/create] error:", err)
+      return sendJson(res, 500, { ok: false, error: "Failed to create connector" }, req)
+    }
+  }
+
+  if (method === "DELETE" && reqPathname.match(/^\/api\/connectors\/\d+$/)) {
+    const auth = authorize(req)
+    if (!auth.authorized) return sendJson(res, 401, { ok: false, error: "Unauthorized" }, req)
+    if (!isDbConfigured()) return sendJson(res, 503, { ok: false, error: "Database not configured" }, req)
+
+    try {
+      const connectorId = parseInt(reqPathname.split("/")[3], 10)
+      const rows = await executeProxyQuery("DELETE FROM platform_connectors WHERE id = $1 RETURNING id", [connectorId])
+      if (!rows || rows.length === 0) {
+        return sendJson(res, 404, { ok: false, error: "Connector not found" }, req)
+      }
+      return sendJson(res, 200, { ok: true }, req)
+    } catch (err) {
+      console.error("[connectors/delete] error:", err)
+      return sendJson(res, 500, { ok: false, error: "Failed to delete connector" }, req)
+    }
+  }
+
+  if (method === "POST" && reqPathname.match(/^\/api\/connectors\/\d+\/health$/)) {
+    const auth = authorize(req)
+    if (!auth.authorized) return sendJson(res, 401, { ok: false, error: "Unauthorized" }, req)
+    if (!isDbConfigured()) return sendJson(res, 503, { ok: false, error: "Database not configured" }, req)
+
+    try {
+      const connectorId = parseInt(reqPathname.split("/")[3], 10)
+      const rows = await executeProxyQuery(
+        `SELECT id, name, base_url, auth_type, auth_config, headers
+         FROM platform_connectors
+         WHERE id = $1
+         LIMIT 1`,
+        [connectorId]
+      )
+      if (!rows || rows.length === 0) {
+        return sendJson(res, 404, { ok: false, error: "Connector not found" }, req)
+      }
+
+      const connector = rows[0]
+      const baseUrlCheck = validateConnectorBaseUrl(connector.base_url)
+      if (!baseUrlCheck.ok) {
+        await executeProxyQuery(
+          "UPDATE platform_connectors SET health_status = 'down', last_health_check = NOW() WHERE id = $1",
+          [connectorId]
+        )
+        return sendJson(res, 400, { ok: false, error: baseUrlCheck.error }, req)
+      }
+
+      const authConfig = decryptConnectorAuthConfig(connector.auth_config)
+      const headers = buildConnectorHeaders(connector.auth_type, authConfig, connector.headers || {})
+
+      const startedAt = Date.now()
+      const response = await fetch(baseUrlCheck.normalized, {
+        method: "HEAD",
+        headers,
+        signal: AbortSignal.timeout(10000),
+      })
+      const latencyMs = Date.now() - startedAt
+      const nextStatus = response.ok ? "healthy" : "degraded"
+
+      await executeProxyQuery(
+        "UPDATE platform_connectors SET health_status = $1, last_health_check = NOW() WHERE id = $2",
+        [nextStatus, connectorId]
+      )
+
+      return sendJson(res, 200, { ok: response.ok, latencyMs }, req)
+    } catch (err) {
+      try {
+        const connectorId = parseInt(reqPathname.split("/")[3], 10)
+        if (connectorId) {
+          await executeProxyQuery(
+            "UPDATE platform_connectors SET health_status = 'down', last_health_check = NOW() WHERE id = $1",
+            [connectorId]
+          )
+        }
+      } catch {
+        // ignore secondary update errors
+      }
+      return sendJson(res, 200, { ok: false, latencyMs: 0, error: err instanceof Error ? err.message : "Health check failed" }, req)
     }
   }
 
