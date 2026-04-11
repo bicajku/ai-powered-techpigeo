@@ -25,7 +25,7 @@ export async function indexWebResource(url: string, sector?: string, documentId?
     if (chunkText.trim().length < 20) continue
     
     try {
-      // 3. Generate 768-dim embeddings using Gemini
+      // 3. Generate 1536-dim embeddings (proxy default: text-embedding-3-small)
       const embedding = await geminiEmbed(chunkText)
       
       // 4. Persist to pgvector on Neon

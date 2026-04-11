@@ -45,6 +45,7 @@ export interface CachedGeneration {
 }
 
 let queryLogWritesDisabled = false
+const EMBEDDING_DIMENSIONS = 1536
 
 export interface ChatThread {
   id: number
@@ -110,7 +111,7 @@ export async function ensureBrainTables(): Promise<void> {
     CREATE TABLE IF NOT EXISTS sentinel_brain (
       id SERIAL PRIMARY KEY,
       content TEXT NOT NULL,
-      embedding vector(768),
+      embedding vector(${EMBEDDING_DIMENSIONS}),
       sector TEXT,
       metadata JSONB,
       document_id INTEGER REFERENCES brain_documents(id) ON DELETE CASCADE,
@@ -124,7 +125,7 @@ export async function ensureBrainTables(): Promise<void> {
       id SERIAL PRIMARY KEY,
       user_id TEXT,
       query_text TEXT NOT NULL,
-      query_embedding vector(768),
+      query_embedding vector(${EMBEDDING_DIMENSIONS}),
       module TEXT,
       response_json JSONB,
       providers_used TEXT[],
@@ -145,6 +146,74 @@ export async function ensureBrainTables(): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + interval '30 days')
     )
+  `
+
+  /*
+   * Normalize legacy vector dimensions to 1536 so runtime schema
+   * matches embed-client and sql/neon-schema.sql.
+   */
+  await sql`
+    DO $$
+    BEGIN
+      CREATE OR REPLACE FUNCTION sentinel_resize_vector(vec vector, target_dims INTEGER)
+      RETURNS vector AS $fn$
+      DECLARE
+        vals REAL[];
+        curr INTEGER;
+        padded REAL[];
+      BEGIN
+        IF vec IS NULL THEN
+          RETURN NULL;
+        END IF;
+
+        vals := string_to_array(trim(both '[]' from vec::text), ',')::REAL[];
+        curr := COALESCE(array_length(vals, 1), 0);
+
+        IF curr >= target_dims THEN
+          RETURN ('[' || array_to_string(vals[1:target_dims], ',') || ']')::vector;
+        END IF;
+
+        padded := vals || array_fill(0::REAL, ARRAY[target_dims - curr]);
+        RETURN ('[' || array_to_string(padded, ',') || ']')::vector;
+      END;
+      $fn$ LANGUAGE plpgsql IMMUTABLE;
+
+      IF EXISTS (
+        SELECT 1
+        FROM pg_attribute a
+        JOIN pg_class c ON c.oid = a.attrelid
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public'
+          AND c.relname = 'sentinel_brain'
+          AND a.attname = 'embedding'
+          AND a.attnum > 0
+          AND NOT a.attisdropped
+          AND format_type(a.atttypid, a.atttypmod) <> 'vector(${EMBEDDING_DIMENSIONS})'
+      ) THEN
+        ALTER TABLE sentinel_brain
+          ALTER COLUMN embedding TYPE vector(${EMBEDDING_DIMENSIONS})
+          USING sentinel_resize_vector(embedding, ${EMBEDDING_DIMENSIONS})::vector(${EMBEDDING_DIMENSIONS});
+      END IF;
+
+      IF EXISTS (
+        SELECT 1
+        FROM pg_attribute a
+        JOIN pg_class c ON c.oid = a.attrelid
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public'
+          AND c.relname = 'query_log'
+          AND a.attname = 'query_embedding'
+          AND a.attnum > 0
+          AND NOT a.attisdropped
+          AND format_type(a.atttypid, a.atttypmod) <> 'vector(${EMBEDDING_DIMENSIONS})'
+      ) THEN
+        ALTER TABLE query_log
+          ALTER COLUMN query_embedding TYPE vector(${EMBEDDING_DIMENSIONS})
+          USING sentinel_resize_vector(query_embedding, ${EMBEDDING_DIMENSIONS})::vector(${EMBEDDING_DIMENSIONS});
+      END IF;
+
+      DROP FUNCTION IF EXISTS sentinel_resize_vector(vector, INTEGER);
+    END $$
   `
 
   /* Migrate existing INTEGER query_log.user_id column to TEXT for UUID support */

@@ -164,6 +164,8 @@ const TRUSTED_PROXIES = new Set(
 /** In-memory token blocklist. In production, use Redis or a DB table. */
 const _revokedTokens = new Map() // jti/tokenHash -> expiryTimestamp
 const TOKEN_BLOCKLIST_MAX = 10000
+const DB_PROXY_MAX_QUERY_CHARS = Math.max(5000, Number(process.env.DB_PROXY_MAX_QUERY_CHARS || 200000))
+const DB_PROXY_MAX_PARAMS = Math.max(1, Number(process.env.DB_PROXY_MAX_PARAMS || 200))
 
 // ─────────────────────── Skills Registry (Shadow Mode) ──────────────────────
 
@@ -253,14 +255,9 @@ function createHumanizedPreview(text = "") {
 }
 
 function revokeToken(tokenHash, expiresAt) {
-  // Evict expired entries if list is getting large
-  if (_revokedTokens.size > TOKEN_BLOCKLIST_MAX) {
-    const now = Math.floor(Date.now() / 1000)
-    for (const [key, exp] of _revokedTokens) {
-      if (exp < now) _revokedTokens.delete(key)
-    }
-  }
+  pruneRevokedTokenStore(Math.floor(Date.now() / 1000))
   _revokedTokens.set(tokenHash, expiresAt)
+  pruneRevokedTokenStore(Math.floor(Date.now() / 1000))
 }
 
 function isTokenRevoked(tokenHash) {
@@ -273,10 +270,31 @@ function isTokenRevoked(tokenHash) {
   return true
 }
 
+function pruneRevokedTokenStore(nowEpochSeconds) {
+  for (const [key, exp] of _revokedTokens) {
+    if (exp < nowEpochSeconds) _revokedTokens.delete(key)
+  }
+
+  if (_revokedTokens.size <= TOKEN_BLOCKLIST_MAX) return
+
+  const overflow = _revokedTokens.size - TOKEN_BLOCKLIST_MAX
+  let removed = 0
+  for (const [key] of _revokedTokens) {
+    _revokedTokens.delete(key)
+    removed += 1
+    if (removed >= overflow) break
+  }
+}
+
 /** Hash a JWT string to use as blocklist key (avoids storing full tokens) */
 function hashToken(token) {
   return crypto.createHash("sha256").update(token).digest("hex").slice(0, 32)
 }
+
+// Keep the revocation store bounded and purge expired entries over time.
+setInterval(() => {
+  pruneRevokedTokenStore(Math.floor(Date.now() / 1000))
+}, 300000).unref()
 
 // ─────────────────────── Rate Limiter ────────────────────────────
 
@@ -584,6 +602,40 @@ async function parseJsonBody(req, maxBytes = 1000000) {
     }
     return { ok: false, error: "Invalid JSON in request body", statusCode: 400 }
   }
+}
+
+function validateProxySqlQuery(queryText) {
+  const query = String(queryText || "").trim()
+  if (!query) return { ok: false, error: "query is required" }
+  if (query.length > DB_PROXY_MAX_QUERY_CHARS) {
+    return { ok: false, error: `query too large (max ${DB_PROXY_MAX_QUERY_CHARS} chars)` }
+  }
+  if (query.includes("\0")) {
+    return { ok: false, error: "query contains invalid characters" }
+  }
+
+  const isDoBlock = /^DO\s+\$\$/i.test(query)
+  if (!isDoBlock) {
+    const withoutTrailingSemicolon = query.replace(/;\s*$/, "")
+    if (withoutTrailingSemicolon.includes(";")) {
+      return { ok: false, error: "multiple SQL statements are not allowed" }
+    }
+  }
+
+  const blockedPatterns = [
+    /\b(?:pg_read_file|pg_read_binary_file|pg_ls_dir|pg_stat_file)\b/i,
+    /\bCOPY\b[\s\S]*\bPROGRAM\b/i,
+    /\bALTER\s+SYSTEM\b/i,
+    /\b(?:CREATE|ALTER|DROP)\s+(?:ROLE|USER|DATABASE)\b/i,
+  ]
+
+  for (const pattern of blockedPatterns) {
+    if (pattern.test(query)) {
+      return { ok: false, error: "query contains blocked SQL operation" }
+    }
+  }
+
+  return { ok: true, normalized: query }
 }
 
 /** Legacy API-key check (backward compatible with existing routes) */
@@ -5357,6 +5409,9 @@ const server = http.createServer(async (req, res) => {
     if (!auth.authorized) {
       return sendJson(res, 401, { ok: false, error: "Unauthorized" }, req)
     }
+    if (!auth.user?.userId) {
+      return sendJson(res, 403, { ok: false, error: "JWT user context required for database proxy" }, req)
+    }
 
     if (!isDbConfigured()) {
       return sendJson(res, 503, { ok: false, error: "Database not configured" }, req)
@@ -5373,8 +5428,16 @@ const server = http.createServer(async (req, res) => {
       if (params !== undefined && !Array.isArray(params)) {
         return sendJson(res, 400, { ok: false, error: "params must be an array" }, req)
       }
+      if ((params || []).length > DB_PROXY_MAX_PARAMS) {
+        return sendJson(res, 400, { ok: false, error: `params exceeds max length (${DB_PROXY_MAX_PARAMS})` }, req)
+      }
 
-      const rows = await executeProxyQuery(query, params || [])
+      const sqlValidation = validateProxySqlQuery(query)
+      if (!sqlValidation.ok) {
+        return sendJson(res, 400, { ok: false, error: sqlValidation.error }, req)
+      }
+
+      const rows = await executeProxyQuery(sqlValidation.normalized, params || [])
       return sendJson(res, 200, { ok: true, rows }, req)
     } catch (err) {
       console.error("[proxy/db/query] error:", err)
@@ -5387,6 +5450,9 @@ const server = http.createServer(async (req, res) => {
     const auth = authorize(req)
     if (!auth.authorized) {
       return sendJson(res, 401, { ok: false, error: "Unauthorized" }, req)
+    }
+    if (!auth.user?.userId) {
+      return sendJson(res, 403, { ok: false, error: "JWT user context required for database proxy" }, req)
     }
 
     if (!isDbConfigured()) {
