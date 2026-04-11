@@ -4883,6 +4883,257 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // ════════════════════════════════════════════════════════════════
+  //  Dedicated Chat API Routes
+  //  All routes enforce JWT auth + user ownership server-side.
+  // ════════════════════════════════════════════════════════════════
+
+  // ── GET /api/chat/threads ── list threads for the authenticated user
+  if (method === "GET" && reqPathname === "/api/chat/threads") {
+    const auth = authorize(req)
+    if (!auth.authorized) return sendJson(res, 401, { ok: false, error: "Unauthorized" }, req)
+    if (!isDbConfigured()) return sendJson(res, 503, { ok: false, error: "Database not configured" }, req)
+    try {
+      const userId = auth.user?.userId
+      if (!userId) return sendJson(res, 403, { ok: false, error: "No user context" }, req)
+      const rawSearch = req.url?.split("?")[1] || ""
+      const params = new URLSearchParams(rawSearch)
+      const module_ = params.get("module") || null
+      const status = params.get("status") || null
+      const limit = Math.min(parseInt(params.get("limit") || "50", 10) || 50, 200)
+      const rows = await executeProxyQuery(
+        `SELECT * FROM chat_threads WHERE user_id = $1 ${module_ ? "AND module = $2" : ""} ${status ? `AND status = $${module_ ? 3 : 2}` : ""} ORDER BY updated_at DESC LIMIT $${module_ && status ? 4 : module_ || status ? 3 : 2}`,
+        [userId, ...(module_ ? [module_] : []), ...(status ? [status] : []), limit]
+      )
+      return sendJson(res, 200, { ok: true, threads: rows }, req)
+    } catch (err) {
+      console.error("[chat/threads GET] error:", err)
+      return sendJson(res, 500, { ok: false, error: "Failed to list threads" }, req)
+    }
+  }
+
+  // ── POST /api/chat/threads ── create a new thread
+  if (method === "POST" && reqPathname === "/api/chat/threads") {
+    const auth = authorize(req)
+    if (!auth.authorized) return sendJson(res, 401, { ok: false, error: "Unauthorized" }, req)
+    if (!isDbConfigured()) return sendJson(res, 503, { ok: false, error: "Database not configured" }, req)
+    try {
+      const userId = auth.user?.userId
+      if (!userId) return sendJson(res, 403, { ok: false, error: "No user context" }, req)
+      const parsed = await parseJsonBody(req)
+      if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+      const { module: mod = "general", title = "New Chat", status = "active" } = parsed.data
+      const rows = await executeProxyQuery(
+        "INSERT INTO chat_threads (user_id, module, title, status) VALUES ($1, $2, $3, $4) RETURNING *",
+        [userId, mod, title, status]
+      )
+      return sendJson(res, 201, { ok: true, thread: rows[0] }, req)
+    } catch (err) {
+      console.error("[chat/threads POST] error:", err)
+      return sendJson(res, 500, { ok: false, error: "Failed to create thread" }, req)
+    }
+  }
+
+  // ── PATCH /api/chat/threads/:id ── update title / status / module
+  if (method === "PATCH" && reqPathname.match(/^\/api\/chat\/threads\/\d+$/)) {
+    const auth = authorize(req)
+    if (!auth.authorized) return sendJson(res, 401, { ok: false, error: "Unauthorized" }, req)
+    if (!isDbConfigured()) return sendJson(res, 503, { ok: false, error: "Database not configured" }, req)
+    try {
+      const userId = auth.user?.userId
+      if (!userId) return sendJson(res, 403, { ok: false, error: "No user context" }, req)
+      const threadId = parseInt(reqPathname.split("/")[4], 10)
+      const parsed = await parseJsonBody(req)
+      if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+      const { title, status, module: mod } = parsed.data
+      const rows = await executeProxyQuery(
+        `UPDATE chat_threads SET title = COALESCE($1, title), status = COALESCE($2, status), module = COALESCE($3, module), updated_at = NOW() WHERE id = $4 AND user_id = $5 RETURNING *`,
+        [title ?? null, status ?? null, mod ?? null, threadId, userId]
+      )
+      if (!rows || rows.length === 0) return sendJson(res, 404, { ok: false, error: "Thread not found" }, req)
+      return sendJson(res, 200, { ok: true, thread: rows[0] }, req)
+    } catch (err) {
+      console.error("[chat/threads PATCH] error:", err)
+      return sendJson(res, 500, { ok: false, error: "Failed to update thread" }, req)
+    }
+  }
+
+  // ── DELETE /api/chat/threads/:id ── delete a thread (must be owner)
+  if (method === "DELETE" && reqPathname.match(/^\/api\/chat\/threads\/\d+$/)) {
+    const auth = authorize(req)
+    if (!auth.authorized) return sendJson(res, 401, { ok: false, error: "Unauthorized" }, req)
+    if (!isDbConfigured()) return sendJson(res, 503, { ok: false, error: "Database not configured" }, req)
+    try {
+      const userId = auth.user?.userId
+      if (!userId) return sendJson(res, 403, { ok: false, error: "No user context" }, req)
+      const threadId = parseInt(reqPathname.split("/")[4], 10)
+      const rows = await executeProxyQuery(
+        "DELETE FROM chat_threads WHERE id = $1 AND user_id = $2 RETURNING id",
+        [threadId, userId]
+      )
+      if (!rows || rows.length === 0) return sendJson(res, 404, { ok: false, error: "Thread not found" }, req)
+      return sendJson(res, 200, { ok: true, deleted: true }, req)
+    } catch (err) {
+      console.error("[chat/threads DELETE] error:", err)
+      return sendJson(res, 500, { ok: false, error: "Failed to delete thread" }, req)
+    }
+  }
+
+  // ── PATCH /api/chat/threads/:id/auto-title ── auto-title from first message
+  if (method === "PATCH" && reqPathname.match(/^\/api\/chat\/threads\/\d+\/auto-title$/)) {
+    const auth = authorize(req)
+    if (!auth.authorized) return sendJson(res, 401, { ok: false, error: "Unauthorized" }, req)
+    if (!isDbConfigured()) return sendJson(res, 503, { ok: false, error: "Database not configured" }, req)
+    try {
+      const userId = auth.user?.userId
+      if (!userId) return sendJson(res, 403, { ok: false, error: "No user context" }, req)
+      const threadId = parseInt(reqPathname.split("/")[4], 10)
+      const parsed = await parseJsonBody(req)
+      if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+      const { firstMessage } = parsed.data
+      if (typeof firstMessage !== "string" || !firstMessage.trim()) {
+        return sendJson(res, 400, { ok: false, error: "firstMessage is required" }, req)
+      }
+      const normalized = firstMessage.trim().replace(/\s+/g, " ")
+      const maxLen = 72
+      const title = normalized.length > maxLen ? `${normalized.slice(0, maxLen - 3)}...` : normalized
+      await executeProxyQuery(
+        "UPDATE chat_threads SET title = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3 AND title = 'New Chat'",
+        [title, threadId, userId]
+      )
+      return sendJson(res, 200, { ok: true }, req)
+    } catch (err) {
+      console.error("[chat/threads auto-title] error:", err)
+      return sendJson(res, 500, { ok: false, error: "Failed to auto-title thread" }, req)
+    }
+  }
+
+  // ── GET /api/chat/threads/:id/messages ── list messages in a thread
+  if (method === "GET" && reqPathname.match(/^\/api\/chat\/threads\/\d+\/messages$/)) {
+    const auth = authorize(req)
+    if (!auth.authorized) return sendJson(res, 401, { ok: false, error: "Unauthorized" }, req)
+    if (!isDbConfigured()) return sendJson(res, 503, { ok: false, error: "Database not configured" }, req)
+    try {
+      const userId = auth.user?.userId
+      if (!userId) return sendJson(res, 403, { ok: false, error: "No user context" }, req)
+      const threadId = parseInt(reqPathname.split("/")[4], 10)
+      const rawSearch = req.url?.split("?")[1] || ""
+      const params = new URLSearchParams(rawSearch)
+      const limit = Math.min(parseInt(params.get("limit") || "200", 10) || 200, 500)
+      // Verify thread ownership before returning messages
+      const ownerCheck = await executeProxyQuery(
+        "SELECT id FROM chat_threads WHERE id = $1 AND user_id = $2",
+        [threadId, userId]
+      )
+      if (!ownerCheck || ownerCheck.length === 0) {
+        return sendJson(res, 404, { ok: false, error: "Thread not found" }, req)
+      }
+      const rows = await executeProxyQuery(
+        "SELECT * FROM chat_messages WHERE thread_id = $1 ORDER BY created_at ASC LIMIT $2",
+        [threadId, limit]
+      )
+      return sendJson(res, 200, { ok: true, messages: rows }, req)
+    } catch (err) {
+      console.error("[chat/threads messages GET] error:", err)
+      return sendJson(res, 500, { ok: false, error: "Failed to list messages" }, req)
+    }
+  }
+
+  // ── POST /api/chat/threads/:id/messages ── append a message
+  if (method === "POST" && reqPathname.match(/^\/api\/chat\/threads\/\d+\/messages$/)) {
+    const auth = authorize(req)
+    if (!auth.authorized) return sendJson(res, 401, { ok: false, error: "Unauthorized" }, req)
+    if (!isDbConfigured()) return sendJson(res, 503, { ok: false, error: "Database not configured" }, req)
+    try {
+      const userId = auth.user?.userId
+      if (!userId) return sendJson(res, 403, { ok: false, error: "No user context" }, req)
+      const threadId = parseInt(reqPathname.split("/")[4], 10)
+      const parsed = await parseJsonBody(req)
+      if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+      const { role, content, provider, model_used, providers_used, brain_hits, metadata } = parsed.data
+      if (!role || !content) return sendJson(res, 400, { ok: false, error: "role and content are required" }, req)
+      // Verify thread ownership
+      const ownerCheck = await executeProxyQuery(
+        "SELECT id FROM chat_threads WHERE id = $1 AND user_id = $2",
+        [threadId, userId]
+      )
+      if (!ownerCheck || ownerCheck.length === 0) {
+        return sendJson(res, 404, { ok: false, error: "Thread not found" }, req)
+      }
+      const rows = await executeProxyQuery(
+        `INSERT INTO chat_messages (thread_id, role, content, provider, model_used, providers_used, brain_hits, metadata)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb) RETURNING *`,
+        [
+          threadId,
+          role,
+          content,
+          provider ?? null,
+          model_used ?? null,
+          providers_used ?? null,
+          brain_hits ?? 0,
+          metadata ? JSON.stringify(metadata) : null,
+        ]
+      )
+      await executeProxyQuery(
+        "UPDATE chat_threads SET updated_at = NOW() WHERE id = $1",
+        [threadId]
+      )
+      return sendJson(res, 201, { ok: true, message: rows[0] }, req)
+    } catch (err) {
+      console.error("[chat/threads messages POST] error:", err)
+      return sendJson(res, 500, { ok: false, error: "Failed to append message" }, req)
+    }
+  }
+
+  // ── GET /api/chat/threads/:id/traces ── list retrieval traces for a thread
+  if (method === "GET" && reqPathname.match(/^\/api\/chat\/threads\/\d+\/traces$/)) {
+    const auth = authorize(req)
+    if (!auth.authorized) return sendJson(res, 401, { ok: false, error: "Unauthorized" }, req)
+    if (!isDbConfigured()) return sendJson(res, 503, { ok: false, error: "Database not configured" }, req)
+    try {
+      const userId = auth.user?.userId
+      if (!userId) return sendJson(res, 403, { ok: false, error: "No user context" }, req)
+      const threadId = parseInt(reqPathname.split("/")[4], 10)
+      const rawSearch = req.url?.split("?")[1] || ""
+      const params = new URLSearchParams(rawSearch)
+      const limit = Math.min(parseInt(params.get("limit") || "100", 10) || 100, 500)
+      // Verify thread ownership
+      const ownerCheck = await executeProxyQuery(
+        "SELECT id FROM chat_threads WHERE id = $1 AND user_id = $2",
+        [threadId, userId]
+      )
+      if (!ownerCheck || ownerCheck.length === 0) {
+        return sendJson(res, 404, { ok: false, error: "Thread not found" }, req)
+      }
+      const rows = await executeProxyQuery(
+        "SELECT * FROM retrieval_traces WHERE thread_id = $1 ORDER BY created_at DESC LIMIT $2",
+        [threadId, limit]
+      )
+      return sendJson(res, 200, { ok: true, traces: rows }, req)
+    } catch (err) {
+      console.error("[chat/threads traces GET] error:", err)
+      return sendJson(res, 500, { ok: false, error: "Failed to list traces" }, req)
+    }
+  }
+
+  // ── GET /api/chat/traces/by-message/:messageId ── trace for a specific message
+  if (method === "GET" && reqPathname.match(/^\/api\/chat\/traces\/by-message\/\d+$/)) {
+    const auth = authorize(req)
+    if (!auth.authorized) return sendJson(res, 401, { ok: false, error: "Unauthorized" }, req)
+    if (!isDbConfigured()) return sendJson(res, 503, { ok: false, error: "Database not configured" }, req)
+    try {
+      const messageId = parseInt(reqPathname.split("/")[5], 10)
+      const rows = await executeProxyQuery(
+        "SELECT * FROM retrieval_traces WHERE message_id = $1 ORDER BY created_at DESC LIMIT 1",
+        [messageId]
+      )
+      return sendJson(res, 200, { ok: true, trace: rows[0] ?? null }, req)
+    } catch (err) {
+      console.error("[chat/traces by-message GET] error:", err)
+      return sendJson(res, 500, { ok: false, error: "Failed to get trace" }, req)
+    }
+  }
+
   // ── Static Files (SPA Fallback) ──
   if (method === "GET" && !reqPathname.startsWith("/api") && reqPathname !== "/health") {
     const distPath = path.resolve(__dirname, "../dist")

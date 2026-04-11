@@ -15,11 +15,13 @@ import {
   listChatThreads,
   listChatMessages,
   listRetrievalTraceByMessageId,
-  addBrainDocument,
-  updateDocumentStatus,
   type ChatThread,
   type ChatMessage,
   type RetrievalTrace,
+} from "@/lib/chat-api"
+import {
+  addBrainDocument,
+  updateDocumentStatus,
 } from "@/lib/sentinel-brain"
 import { sentinelQuery, ingestTextTooBrain } from "@/lib/sentinel-query-pipeline"
 import { isNeonConfigured } from "@/lib/neon-client"
@@ -688,7 +690,7 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
     if (!confirmed) return
 
     try {
-      const deleted = await deleteChatThread(threadId, dbUserId)
+      const deleted = await deleteChatThread(threadId)
       if (!deleted) {
         toast.error("Failed to delete thread")
         return

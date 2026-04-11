@@ -5,10 +5,12 @@ import {
   getCachedGeneration,
   cacheGeneration,
   logQuery,
-  appendChatMessage,
   storeRetrievalTrace,
-  autoTitleThreadFromFirstMessage,
 } from "./sentinel-brain"
+import {
+  appendChatMessage,
+  autoTitleThreadFromFirstMessage,
+} from "./chat-api"
 import { isNeonConfigured } from "./neon-client"
 import { getEnvConfig } from "./env-config"
 import { platformLlm } from "./platform-client"
