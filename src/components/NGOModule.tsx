@@ -52,11 +52,9 @@ import { getNGOAccessLevel, canWrite, canDelete, canManageTeam, getTeamMembers, 
 import { UserProfile, NGOAccessLevel, NGOTeamMember } from "@/types"
 import mammoth from "mammoth"
 import * as pdfjsLib from "pdfjs-dist"
+import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url"
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/build/pdf.worker.min.mjs",
-  import.meta.url
-).toString()
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
 // --- Types ---
 

@@ -8,6 +8,7 @@ import { Progress } from "@/components/ui/progress"
 import { Plus, ChatsCircle, User, Robot, ClockCounterClockwise, X, Lightning, Bell, Question, UserCircle, Gift, Trash, PencilSimple, ArrowUp, ArrowDown } from "@phosphor-icons/react"
 import mammoth from "mammoth"
 import * as pdfjsLib from "pdfjs-dist"
+import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url"
 import PptxGenJS from "pptxgenjs"
 import {
   createChatThread,
@@ -29,10 +30,7 @@ import { isNeonConfigured } from "@/lib/neon-client"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/build/pdf.worker.min.mjs",
-  import.meta.url
-).toString()
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
 type AvailableModel = { id: string; name: string; provider: string; tier: string }
 type UploadedContextFile = {

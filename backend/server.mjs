@@ -4021,6 +4021,7 @@ async function handleRecordStyleFeedback(req, res, user) {
 const extToMime = {
   ".html": "text/html",
   ".js": "text/javascript",
+  ".mjs": "text/javascript",
   ".css": "text/css",
   ".json": "application/json",
   ".png": "image/png",
