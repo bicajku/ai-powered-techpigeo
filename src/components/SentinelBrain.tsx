@@ -55,7 +55,6 @@ import {
 import { toast } from "sonner"
 
 import { isNeonConfigured } from "@/lib/neon-client"
-import { isGeminiConfigured } from "@/lib/gemini-client"
 import {
   pushLocalToNeon,
   pullNeonToLocal,
@@ -612,7 +611,6 @@ function KnowledgeBasePanel() {
       toast.error("Please provide a GitHub URL or content manually")
       return
     }
-    if (!isGeminiConfigured()) { toast.error("Configure Gemini API key in Settings first (needed for embeddings)"); return }
 
     setIngesting(true)
     let finalContent = docContent

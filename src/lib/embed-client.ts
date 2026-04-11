@@ -2,10 +2,9 @@
  * embed-client.ts — Provider-agnostic text embedding
  *
  * Calls POST /api/proxy/embed on the backend which uses:
- *   1. GitHub Models text-embedding-3-small (768-dim) — when GITHUB_COPILOT_TOKEN is set
- *   2. Gemini text-embedding-004 (768-dim) — fallback
+ *   1. GitHub Models text-embedding-3-small (1536-dim)
  *
- * Both produce 768-dim vectors, matching the sentinel_brain vector(768) column.
+ * Produces 1536-dim vectors, matching the production sentinel_brain vector schema.
  */
 
 function getBackendBaseUrl(): string {
@@ -39,8 +38,8 @@ function getAuthHeaders(): Record<string, string> {
 }
 
 /**
- * Embed a single text string into a 768-dimensional vector.
- * Uses GitHub Copilot token on the backend; falls back to Gemini.
+ * Embed a single text string into a 1536-dimensional vector.
+ * Uses GitHub Models token on the backend.
  */
 export async function embedText(text: string): Promise<number[]> {
   const res = await fetch(`${getBackendBaseUrl()}/api/proxy/embed`, {
@@ -63,7 +62,7 @@ export async function embedText(text: string): Promise<number[]> {
 
 /**
  * Embed multiple texts in one round-trip.
- * Returns an array of 768-dim vectors in the same order as input.
+ * Returns an array of 1536-dim vectors in the same order as input.
  */
 export async function embedTextBatch(texts: string[]): Promise<number[][]> {
   if (texts.length === 0) return []

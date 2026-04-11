@@ -4804,8 +4804,8 @@ const server = http.createServer(async (req, res) => {
   }
 
   // ── POST /api/proxy/embed ── (requires auth)
-  // Uses GitHub Copilot / Azure AI Inference text-embedding-3-small (768-dim) by default.
-  // Falls back to Gemini text-embedding-004 if GITHUB_COPILOT_TOKEN is not configured.
+  // Uses GitHub Copilot / Azure AI Inference text-embedding-3-small (1536-dim) by default.
+  // Production sentinel_brain currently expects 1536-dim vectors.
   if (method === "POST" && reqPathname === "/api/proxy/embed") {
     const auth = authorize(req)
     if (!auth.authorized) {
@@ -4826,7 +4826,7 @@ const server = http.createServer(async (req, res) => {
         || process.env.GITHUB_MODELS_TOKEN
         || process.env.GITHUB_TOKEN
       if (githubToken) {
-        // GitHub Models / Azure AI Inference — text-embedding-3-small at 768 dims
+        // GitHub Models / Azure AI Inference — text-embedding-3-small at 1536 dims
         const endpoint = "https://models.inference.ai.azure.com/embeddings"
         const embeddings = []
         for (const t of textsToEmbed) {
@@ -4839,7 +4839,7 @@ const server = http.createServer(async (req, res) => {
             body: JSON.stringify({
               model: "text-embedding-3-small",
               input: t,
-              dimensions: 768,
+              dimensions: 1536,
             }),
           })
           if (!response.ok) {
@@ -4858,32 +4858,12 @@ const server = http.createServer(async (req, res) => {
         }, req)
       }
 
-      // Fallback: Gemini text-embedding-004 (768-dim)
-      const geminiKey = process.env.GEMINI_API_KEY
-      if (!geminiKey) {
-        return sendJson(res, 503, { ok: false, error: "No embedding provider configured. Set GITHUB_COPILOT_TOKEN or GEMINI_API_KEY." }, req)
-      }
-      const embeddings = []
-      for (const t of textsToEmbed) {
-        const geminiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${encodeURIComponent(geminiKey)}`
-        const response = await fetch(geminiEndpoint, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content: { parts: [{ text: t }] } }),
-        })
-        if (!response.ok) {
-          console.error("[proxy/embed] Gemini fallback error:", response.status)
-          return sendJson(res, 502, { ok: false, error: "Gemini embed API error" }, req)
-        }
-        const data = await response.json()
-        embeddings.push(data?.embedding?.values || [])
-      }
-      return sendJson(res, 200, {
-        ok: true,
-        embeddings: textsToEmbed.length === 1 ? embeddings[0] : embeddings,
-        batch: textsToEmbed.length > 1,
-        provider: "gemini",
-      }, req)
+      return sendJson(
+        res,
+        503,
+        { ok: false, error: "Embedding provider not configured. Set GITHUB_COPILOT_TOKEN / GitHub_Models_token." },
+        req
+      )
     } catch (err) {
       console.error("[proxy/embed] error:", err)
       return sendJson(res, 500, { ok: false, error: "Embedding failed" }, req)

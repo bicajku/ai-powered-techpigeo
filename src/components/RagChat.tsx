@@ -25,7 +25,6 @@ import {
 } from "@/lib/sentinel-brain"
 import { sentinelQuery, ingestTextTooBrain } from "@/lib/sentinel-query-pipeline"
 import { isNeonConfigured } from "@/lib/neon-client"
-import { isGeminiConfigured } from "@/lib/gemini-client"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 
@@ -281,7 +280,7 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
   }
 
   const ingestUploadedFileToBrain = async (file: UploadedContextFile) => {
-    if (!isNeonConfigured() || !isGeminiConfigured()) return { ok: false, reason: "Brain ingestion unavailable" }
+    if (!isNeonConfigured()) return { ok: false, reason: "Brain ingestion unavailable" }
     try {
       const doc = await addBrainDocument({
         title: file.name,
