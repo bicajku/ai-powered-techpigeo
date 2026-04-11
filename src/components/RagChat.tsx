@@ -471,6 +471,18 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
             console.error("Retry failed to load chat threads:", retryErr)
           }
         }
+
+        if (!tokenReady) {
+          try {
+            localStorage.removeItem("sentinel-auth-token")
+            localStorage.removeItem("sentinel_token")
+          } catch {
+            // Ignore storage cleanup failures.
+          }
+          toast.error("Session expired. Please sign in again.")
+          window.location.reload()
+          return
+        }
       }
 
       toast.error("Failed to load chat threads")
