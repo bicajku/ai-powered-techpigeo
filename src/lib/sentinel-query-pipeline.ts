@@ -300,13 +300,11 @@ export async function sentinelQuery(
   // Step 2: Search Sentinel Brain for relevant knowledge
   let brainContextStr = ""
   const shouldUseGeminiRetrieval =
-    geminiReady &&
-    useGeminiByPolicy &&
-    orderedProviders.includes("gemini") &&
-    orderedProviders.indexOf("gemini") <= 1 &&
-    // Prefer Copilot-first chat reliability: avoid retrieval embedding dependency
-    // for RAG chat when Copilot is configured.
-    !(options?.module === "rag_chat" && orderedProviders.includes("copilot"))
+    geminiReady && (
+      // Always retrieve from brain for RAG chat — that is the point of the module.
+      options?.module === "rag_chat" ||
+      (useGeminiByPolicy && orderedProviders.indexOf("gemini") <= 1)
+    )
 
   if (neonReady && shouldUseGeminiRetrieval) {
     const retrievalStart = Date.now()
