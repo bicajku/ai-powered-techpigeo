@@ -1555,65 +1555,144 @@ function PlagiarismCheckerInner({ user, mode }: { user: UserProfile; mode: "revi
   const parseHumanizerResponse = (response: unknown): {
     candidates: HumanizerCandidatePayload[]
   } => {
-    let parsed: Record<string, unknown>
+    const toCandidates = (value: unknown): HumanizerCandidatePayload[] => {
+      const parsed = typeof value === "object" && value !== null
+        ? value as Record<string, unknown>
+        : null
 
-    if (typeof response === "object" && response !== null) {
-      parsed = response as Record<string, unknown>
-    } else {
-      let cleaned = String(response || "").trim()
-      if (cleaned.startsWith("```json")) {
-        cleaned = cleaned.replace(/^```json\s*/, "").replace(/```\s*$/, "")
-      } else if (cleaned.startsWith("```")) {
-        cleaned = cleaned.replace(/^```\s*/, "").replace(/```\s*$/, "")
-      }
+      const rawCandidates = Array.isArray(value)
+        ? value
+        : parsed && Array.isArray(parsed.candidates)
+          ? parsed.candidates
+          : parsed && typeof parsed.humanizedText === "string"
+            ? [{ humanizedText: parsed.humanizedText, changes: parsed.changes, strategy: parsed.strategy }]
+            : []
 
-      cleaned = cleaned.trim()
-      const firstBrace = cleaned.indexOf("{")
-      const lastBrace = cleaned.lastIndexOf("}")
-      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-        cleaned = cleaned.substring(firstBrace, lastBrace + 1)
-      }
+      return rawCandidates.reduce<HumanizerCandidatePayload[]>((acc, candidate) => {
+        if (!candidate || typeof candidate !== "object") {
+          return acc
+        }
 
-      parsed = JSON.parse(cleaned)
+        const record = candidate as Record<string, unknown>
+        const humanizedText = typeof record.humanizedText === "string" ? record.humanizedText.trim() : ""
+        if (!humanizedText) {
+          return acc
+        }
+
+        const changes = Array.isArray(record.changes)
+          ? record.changes.filter((change): change is { original: string; humanized: string } => {
+            if (!change || typeof change !== "object") {
+              return false
+            }
+            const item = change as Record<string, unknown>
+            return typeof item.original === "string" && typeof item.humanized === "string"
+          })
+          : []
+
+        acc.push({
+          humanizedText,
+          strategy: typeof record.strategy === "string" ? record.strategy : undefined,
+          changes,
+        })
+        return acc
+      }, [])
     }
 
-    const rawCandidates = Array.isArray(parsed.candidates)
-      ? parsed.candidates
-      : typeof parsed.humanizedText === "string"
-        ? [{ humanizedText: parsed.humanizedText, changes: parsed.changes, strategy: parsed.strategy }]
-        : []
-
-    const candidates = rawCandidates.reduce<HumanizerCandidatePayload[]>((acc, candidate) => {
-      if (!candidate || typeof candidate !== "object") {
-        return acc
+    if (typeof response === "object" && response !== null) {
+      const candidates = toCandidates(response)
+      if (candidates.length > 0) {
+        return { candidates }
       }
+    }
 
-      const record = candidate as Record<string, unknown>
-      const humanizedText = typeof record.humanizedText === "string" ? record.humanizedText.trim() : ""
-      if (!humanizedText) {
-        return acc
+    let cleaned = String(response || "").trim()
+    if (cleaned.startsWith("```json")) {
+      cleaned = cleaned.replace(/^```json\s*/, "").replace(/```\s*$/, "")
+    } else if (cleaned.startsWith("```")) {
+      cleaned = cleaned.replace(/^```\s*/, "").replace(/```\s*$/, "")
+    }
+
+    cleaned = cleaned
+      .trim()
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/[\u201C\u201D]/g, '"')
+
+    const firstBrace = cleaned.indexOf("{")
+    const lastBrace = cleaned.lastIndexOf("}")
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      cleaned = cleaned.substring(firstBrace, lastBrace + 1)
+    }
+
+    const sanitizeControlChars = (input: string) => {
+      let output = ""
+      for (const ch of input) {
+        const code = ch.charCodeAt(0)
+        const isControl = code < 32 || code === 127
+        if (isControl && ch !== "\n" && ch !== "\r" && ch !== "\t") {
+          continue
+        }
+        output += ch
       }
+      return output
+    }
 
-      const changes = Array.isArray(record.changes)
-        ? record.changes.filter((change): change is { original: string; humanized: string } => {
-          if (!change || typeof change !== "object") {
-            return false
-          }
-          const item = change as Record<string, unknown>
-          return typeof item.original === "string" && typeof item.humanized === "string"
-        })
-        : []
+    const repairedBase = sanitizeControlChars(cleaned)
+      .replace(/,\s*}/g, "}")
+      .replace(/,\s*]/g, "]")
 
-      acc.push({
-        humanizedText,
-        strategy: typeof record.strategy === "string" ? record.strategy : undefined,
-        changes,
-      })
-      return acc
-    }, [])
+    const repairAttempts: string[] = [repairedBase]
 
+    const quoteCount = (repairedBase.match(/(?<!\\)"/g) || []).length
+    const openBrackets = (repairedBase.match(/\[/g) || []).length
+    const closeBrackets = (repairedBase.match(/\]/g) || []).length
+    const openBraces = (repairedBase.match(/{/g) || []).length
+    const closeBraces = (repairedBase.match(/}/g) || []).length
+
+    if (quoteCount % 2 !== 0 || openBrackets > closeBrackets || openBraces > closeBraces) {
+      let closed = repairedBase
+      if (quoteCount % 2 !== 0) {
+        closed += '"'
+      }
+      for (let i = 0; i < openBrackets - closeBrackets; i++) {
+        closed += "]"
+      }
+      for (let i = 0; i < openBraces - closeBraces; i++) {
+        closed += "}"
+      }
+      repairAttempts.push(closed)
+    }
+
+    const lastCompleteField = repairedBase.lastIndexOf(',"')
+    if (lastCompleteField > 0) {
+      let trimmed = repairedBase.substring(0, lastCompleteField)
+      const tOpenBrackets = (trimmed.match(/\[/g) || []).length
+      const tCloseBrackets = (trimmed.match(/\]/g) || []).length
+      for (let i = 0; i < tOpenBrackets - tCloseBrackets; i++) {
+        trimmed += "]"
+      }
+      const tOpenBraces = (trimmed.match(/{/g) || []).length
+      const tCloseBraces = (trimmed.match(/}/g) || []).length
+      for (let i = 0; i < tOpenBraces - tCloseBraces; i++) {
+        trimmed += "}"
+      }
+      repairAttempts.push(trimmed)
+    }
+
+    for (const attempt of repairAttempts) {
+      try {
+        const parsed = JSON.parse(attempt)
+        const candidates = toCandidates(parsed)
+        if (candidates.length > 0) {
+          return { candidates }
+        }
+      } catch {
+        // Try next repair strategy.
+      }
+    }
+
+    const candidates = toCandidates(cleaned)
     if (candidates.length === 0) {
-      throw new Error("No valid humanizer candidates returned")
+      throw new Error("Humanizer returned malformed JSON. Please try again.")
     }
 
     return { candidates }
