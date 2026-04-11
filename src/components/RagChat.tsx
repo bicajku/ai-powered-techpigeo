@@ -4,6 +4,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { PostProcessControls, type PostProcessSettings } from "@/components/PostProcessControls"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
+import { Progress } from "@/components/ui/progress"
 import { Plus, ChatsCircle, User, Robot, ClockCounterClockwise, X, Lightning, Bell, Question, UserCircle, Gift, Trash, PencilSimple, ArrowUp, ArrowDown } from "@phosphor-icons/react"
 import mammoth from "mammoth"
 import * as pdfjsLib from "pdfjs-dist"
@@ -115,6 +116,7 @@ function buildDynamicSuggestions(messages: ChatMessage[], uploaded: UploadedCont
 
 interface RagChatProps {
   userId: string
+  userName?: string
   isAdmin?: boolean
 }
 
@@ -160,7 +162,7 @@ function toCsvFromText(text: string): string {
   return rows.map((line) => `"${line.replace(/"/g, '""')}"`).join("\n")
 }
 
-export function RagChat({ userId, isAdmin = false }: RagChatProps) {
+export function RagChat({ userId, userName, isAdmin = false }: RagChatProps) {
   // Use the raw string userId directly — the chat_threads.user_id column
   // is now TEXT to properly support UUID-based user IDs from the backend.
   const dbUserId = userId
@@ -177,6 +179,9 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
   const [isLoadingThreads, setIsLoadingThreads] = useState(true)
   const [isCreatingThread, setIsCreatingThread] = useState(false)
   const [isSending, setIsSending] = useState(false)
+  const [sendProgress, setSendProgress] = useState(0)
+  const [sendStage, setSendStage] = useState<"idle" | "preparing" | "retrieving" | "generating" | "finalizing">("idle")
+  const [sendElapsedSec, setSendElapsedSec] = useState(0)
   const [selectedModel, setSelectedModel] = useState("gpt-4.1")
   const [availableModels, setAvailableModels] = useState<AvailableModel[]>(DEFAULT_MODELS)
   const [uploadedFiles, setUploadedFiles] = useState<UploadedContextFile[]>([])
@@ -193,6 +198,30 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
   const chatScrollRef = useRef<HTMLDivElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+
+  useEffect(() => {
+    if (!isSending) {
+      setSendElapsedSec(0)
+      return
+    }
+    const started = Date.now()
+    const id = window.setInterval(() => {
+      setSendElapsedSec(Math.max(1, Math.floor((Date.now() - started) / 1000)))
+      setSendProgress((current) => Math.min(92, current + 2))
+    }, 900)
+    return () => window.clearInterval(id)
+  }, [isSending])
+
+  const sendStageLabel =
+    sendStage === "preparing"
+      ? "Preparing request"
+      : sendStage === "retrieving"
+        ? "Searching knowledge"
+        : sendStage === "generating"
+          ? "Generating response"
+          : sendStage === "finalizing"
+            ? "Finalizing output"
+            : ""
 
   const waitForAuthToken = async (timeoutMs = 1500) => {
     const startedAt = Date.now()
@@ -597,9 +626,13 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
     }
 
     setIsSending(true)
+    setSendStage("preparing")
+    setSendProgress(8)
     setInput("")
 
     const sendOnce = async () => {
+      setSendStage("preparing")
+      setSendProgress((p) => Math.max(p, 12))
       const threadId = await ensureActiveThread()
       if (!threadId) {
         throw new Error("Unable to resolve chat thread")
@@ -620,6 +653,11 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
         ? `Use uploaded files as trusted context where relevant. If context is not relevant, ignore it.\n\n${recentContext}\n\nUser query: ${text}${formatHint}${readabilityHint}`
         : `${text}${formatHint}${readabilityHint}`
 
+      setSendStage("retrieving")
+      setSendProgress((p) => Math.max(p, 28))
+
+      setSendStage("generating")
+      setSendProgress((p) => Math.max(p, 52))
       const result = await sentinelQuery(enrichedQuery, {
         module: "rag_chat",
         contentType: "chat",
@@ -639,8 +677,10 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
           ? {
               edited_from_message_id: editingMessageId,
               edited_at: new Date().toISOString(),
+              user_name: userName ?? null,
             }
           : {
+              user_name: userName ?? null,
               uploaded_files: uploadedFiles.slice(0, 3).map((f) => ({
                 name: f.name,
                 status: f.status,
@@ -653,9 +693,12 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
         toast.info("More details needed for best response")
       }
 
+      setSendStage("finalizing")
+      setSendProgress((p) => Math.max(p, 80))
       await loadThreadData(threadId)
-      await loadThreads()
+      void loadThreads()
       setEditingMessageId(null)
+      setSendProgress(100)
       setTimeout(scrollToBottom, 100)
     }
 
@@ -681,6 +724,8 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
       setInput(text)
     } finally {
       setIsSending(false)
+      setSendStage("idle")
+      setSendProgress(0)
     }
   }
 
@@ -1088,7 +1133,7 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
             </div>
 
             <h1 className="text-4xl md:text-5xl font-semibold tracking-tight text-foreground mb-8 text-center">
-              Welcome, how can NovusSparks AI help you?
+              Welcome{userName ? `, ${userName}` : ""}, how can NovusSparks AI help you?
             </h1>
             
             <div className="w-full relative mb-10 rounded-2xl border border-border/60 bg-background shadow-sm overflow-hidden">
@@ -1359,6 +1404,15 @@ export function RagChat({ userId, isAdmin = false }: RagChatProps) {
                     onKeyDown={handleKeyDown}
                     className="min-h-[60px] max-h-[200px] pr-14 resize-none rounded-xl border-border/60 bg-background/80 focus-visible:ring-primary focus-visible:bg-background transition-colors"
                   />
+                  {isSending && (
+                    <div className="px-2 pt-2 pb-1">
+                      <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
+                        <span>{sendStageLabel}</span>
+                        <span>{sendElapsedSec}s</span>
+                      </div>
+                      <Progress value={sendProgress} className="h-1.5" />
+                    </div>
+                  )}
                   <Button
                     onClick={handleSend}
                     disabled={!input.trim() || isSending || isCreatingThread}

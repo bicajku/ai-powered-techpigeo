@@ -3027,7 +3027,11 @@ ${JSON.stringify(candidate)}`
             {ragChatEnabled && (
               <TabsContent value="rag-chat" className="space-y-6">
                 <Suspense fallback={<LoadingState />}>
-                  <RagChat userId={user.id} isAdmin={user.role === "admin"} />
+                  <RagChat
+                    userId={user.id}
+                    userName={user.fullName || user.email || ""}
+                    isAdmin={user.role === "admin"}
+                  />
                 </Suspense>
               </TabsContent>
             )}
