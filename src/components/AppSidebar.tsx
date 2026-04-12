@@ -6,7 +6,7 @@ import {
   CaretDoubleRight,
   ChartBar,
   EnvelopeSimple,
-  GithubLogo,
+  LinkedinLogo,
   Globe,
   List,
   ShieldCheck,
@@ -131,9 +131,9 @@ export function AppSidebar({
   ]
 
   const socialItems = [
-    { href: "https://novussparks.com", label: "Website", icon: Globe },
+    { href: "https://www.novussparks.com", label: "Website", icon: Globe },
     { href: "mailto:info@novussparks.com", label: "Email", icon: EnvelopeSimple },
-    { href: "https://github.com/bicajku", label: "GitHub", icon: GithubLogo },
+    { href: "https://linkedin.com/company/novussparks", label: "LinkedIn", icon: LinkedinLogo },
   ]
 
   return (
