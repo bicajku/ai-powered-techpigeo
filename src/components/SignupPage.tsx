@@ -4,7 +4,7 @@ import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
-import { Envelope, LockKey, User, CheckCircle, Sparkle, ShieldCheck, Lightning, Brain, ArrowRight } from "@phosphor-icons/react"
+import { GithubLogo, Envelope, LockKey, User, CheckCircle, Sparkle, ShieldCheck, Lightning, Brain, ArrowRight } from "@phosphor-icons/react"
 import { motion } from "framer-motion"
 import { authService } from "@/lib/auth"
 import { inviteService } from "@/lib/invite-system"
@@ -52,6 +52,11 @@ export function SignupPage({ onAuthSuccess }: SignupPageProps) {
       validateInvite()
     }
   }, [])
+
+  const handleGitHubLogin = () => {
+    setIsLoading(true)
+    window.location.href = "/api/auth/github"
+  }
 
   const handleGoogleLogin = () => {
     setIsLoading(true)
@@ -203,6 +208,18 @@ export function SignupPage({ onAuthSuccess }: SignupPageProps) {
                   <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
                 </svg>
                 Sign up with Google
+              </Button>
+
+              <Button
+                type="button"
+                onClick={handleGitHubLogin}
+                variant="outline"
+                className="w-full gap-2.5 bg-white/[0.04] border-white/10 text-white hover:bg-white/[0.08] hover:border-white/20"
+                disabled={isLoading}
+                size="lg"
+              >
+                <GithubLogo size={22} weight="bold" />
+                Sign up with GitHub
               </Button>
             </div>
 
