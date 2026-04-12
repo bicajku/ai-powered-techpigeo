@@ -472,6 +472,9 @@ function validateCsrf(req, method, reqPathname) {
   // Exempt paths (login/register/health)
   if (CSRF_EXEMPT_PATHS.has(reqPathname)) return true
 
+  // Exempt chat API endpoints - they use JWT authentication instead
+  if (reqPathname.startsWith("/api/chat/")) return true
+
   const cookieToken = parseCsrfCookie(req)
   const headerToken = req.headers[CSRF_HEADER_NAME]
 

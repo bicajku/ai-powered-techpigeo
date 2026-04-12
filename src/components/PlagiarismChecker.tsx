@@ -1195,7 +1195,7 @@ function PlagiarismCheckerInner({ user, mode }: { user: UserProfile; mode: "revi
       for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
         setUploadStatus(`Running OCR on page ${pageNumber} of ${pdf.numPages}...`)
         const page = await pdf.getPage(pageNumber)
-        const viewport = page.getViewport({ scale: 3 })
+        const viewport = page.getViewport({ scale: 4.17 })
         const canvas = document.createElement("canvas")
         const context = canvas.getContext("2d")
 
