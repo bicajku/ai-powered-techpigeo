@@ -422,6 +422,8 @@ const CSRF_EXEMPT_PATHS = new Set([
   "/api/proxy/db/query", // Database proxy - relies on JWT authentication instead
   "/api/proxy/db/test",
   "/api/proxy/gemini/generate", // LLM proxy - relies on JWT authentication instead
+  "/api/llm/generate", // LLM generation - relies on JWT authentication instead
+  "/api/llm/generate/stream", // LLM stream generation - relies on JWT authentication instead
 ])
 
 function generateCsrfToken() {
