@@ -1,4 +1,4 @@
-import { MapPin, Phone, EnvelopeSimple, Globe } from "@phosphor-icons/react"
+import { MapPin, Phone, EnvelopeSimple, Globe, FilePdf } from "@phosphor-icons/react"
 import novussparksLogo from "@/assets/images/novussparks-icon.svg"
 import techpigeonLogo from "@/assets/images/techpigeon-logo.png"
 
@@ -85,6 +85,16 @@ export function Footer() {
           >
             <EnvelopeSimple size={18} weight="duotone" className="group-hover:scale-110 transition-transform" />
             <span>info@novussparks.com</span>
+          </a>
+          <a
+            href="/NovusSparks-AI-Slide-Deck.pdf"
+            target="_blank"
+            rel="noopener noreferrer"
+            download
+            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors group"
+          >
+            <FilePdf size={18} weight="duotone" className="group-hover:scale-110 transition-transform" />
+            <span>Open / View / Download, NovusSparks-AI Slide Deck</span>
           </a>
         </div>
         
