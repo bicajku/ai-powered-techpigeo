@@ -22,9 +22,9 @@ export type QueryProvider = "gemini" | "copilot" | "spark" | "backend" | "brain"
 
 const DEFAULT_ROUTING: ProviderRoutingConfig = {
   moduleName: "global",
-  providerOrder: ["copilot", "spark", "groq", "gemini", "sentinel"],
+  providerOrder: ["copilot", "spark", "groq", "deepseek", "gemini", "sentinel"],
   webProviderOrder: ["searchcans", "serpapi", "duckduckgo", "sentinel"],
-  enabledProviders: { copilot: true, groq: true, spark: true, gemini: true, sentinel: true },
+  enabledProviders: { copilot: true, groq: true, spark: true, deepseek: true, gemini: true, sentinel: true },
   enabledWebProviders: { searchcans: true, serpapi: true, duckduckgo: true, sentinel: true },
   dailyBudgetUsd: 25,
   monthlyBudgetUsd: 300,

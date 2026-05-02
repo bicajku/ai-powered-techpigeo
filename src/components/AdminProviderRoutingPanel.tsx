@@ -23,7 +23,7 @@ const MODULES = [
   { value: "humanizer", label: "Humanizer" },
 ]
 
-const GEN_PROVIDERS = ["copilot", "groq", "spark", "gemini", "sentinel"]
+const GEN_PROVIDERS = ["copilot", "groq", "deepseek", "spark", "gemini", "sentinel"]
 const WEB_PROVIDERS = ["searchcans", "serpapi", "duckduckgo", "sentinel"]
 
 function parseOrder(value: string, allowed: string[]) {
@@ -47,7 +47,7 @@ export function AdminProviderRoutingPanel({ canManageProviderRouting = false }: 
   const [saving, setSaving] = useState(false)
   const [usage, setUsage] = useState<{ cost: number; requests: number; errors: number } | null>(null)
 
-  const [providerOrderInput, setProviderOrderInput] = useState("copilot, groq, spark, gemini, sentinel")
+  const [providerOrderInput, setProviderOrderInput] = useState("copilot, groq, deepseek, spark, gemini, sentinel")
   const [webOrderInput, setWebOrderInput] = useState("searchcans, serpapi, duckduckgo, sentinel")
 
   const canSave = useMemo(() => {
@@ -61,9 +61,9 @@ export function AdminProviderRoutingPanel({ canManageProviderRouting = false }: 
       const configs = await fetchProviderRouting(moduleName)
       const loaded = configs[0] || {
         moduleName,
-        providerOrder: ["copilot", "groq", "spark", "gemini", "sentinel"],
+        providerOrder: ["copilot", "groq", "deepseek", "spark", "gemini", "sentinel"],
         webProviderOrder: ["searchcans", "serpapi", "duckduckgo", "sentinel"],
-        enabledProviders: { copilot: true, groq: true, spark: true, gemini: true, sentinel: true },
+        enabledProviders: { copilot: true, groq: true, deepseek: true, spark: true, gemini: true, sentinel: true },
         enabledWebProviders: { searchcans: true, serpapi: true, duckduckgo: true, sentinel: true },
         dailyBudgetUsd: 25,
         monthlyBudgetUsd: 300,
@@ -229,7 +229,7 @@ export function AdminProviderRoutingPanel({ canManageProviderRouting = false }: 
           <Input
             value={providerOrderInput}
             onChange={(e) => setProviderOrderInput(e.target.value)}
-            placeholder="copilot, groq, spark, gemini, sentinel"
+            placeholder="copilot, groq, deepseek, spark, gemini, sentinel"
           />
         </div>
 

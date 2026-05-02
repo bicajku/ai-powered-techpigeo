@@ -55,6 +55,8 @@ const DEFAULT_MODELS: AvailableModel[] = [
   { id: "grok-3",                  name: "Grok-3",            provider: "copilot", tier: "high" },
   { id: "gemini-2.5-flash",        name: "Gemini 2.5 Flash",  provider: "gemini",  tier: "low"  },
   { id: "llama-3.3-70b-versatile", name: "Llama 3.3 70B",     provider: "groq",    tier: "high" },
+  { id: "deepseek-chat",           name: "DeepSeek V3",       provider: "deepseek", tier: "high" },
+  { id: "deepseek-reasoner",       name: "DeepSeek R1",       provider: "deepseek", tier: "high" },
 ]
 
 const DEFAULT_SUGGESTIONS: DynamicSuggestion[] = [

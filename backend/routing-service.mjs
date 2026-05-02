@@ -4,7 +4,7 @@ import {
   writeProviderUsage,
 } from "./db.mjs"
 
-const GENERATION_PROVIDERS = ["copilot", "groq", "spark", "gemini", "sentinel"]
+const GENERATION_PROVIDERS = ["copilot", "groq", "deepseek", "spark", "gemini", "sentinel"]
 const WEB_PROVIDERS = ["searchcans", "serpapi", "duckduckgo", "sentinel"]
 
 function sanitizeOrder(order, allowed, fallback) {
@@ -33,7 +33,7 @@ export async function getResolvedRouting(moduleName = "global") {
   const generationOrder = sanitizeOrder(
     cfg.providerOrder,
     GENERATION_PROVIDERS,
-    ["copilot", "groq", "spark", "gemini", "sentinel"]
+    ["copilot", "groq", "deepseek", "spark", "gemini", "sentinel"]
   )
   const webOrder = sanitizeOrder(
     cfg.webProviderOrder,
