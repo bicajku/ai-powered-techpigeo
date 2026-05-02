@@ -330,7 +330,7 @@ function renderSignatureBlock() {
 function renderEmailShell({ preheader, headline, tagline, body, unsubscribeUrl, logoUrl, brandName }) {
   // Full-width branded banner. Override per-call via `logoUrl` if needed.
   // The ?v= query string busts client caches when the banner is replaced.
-  const bannerSrc = logoUrl || `${APP_BASE_URL}/icons/email-header.jpg?v=3`
+  const bannerSrc = logoUrl || `${APP_BASE_URL}/icons/email-header.png?v=4`
   const brandLine = brandName || "Novus Sparks · AI"
   const unsubFooter = unsubscribeUrl
     ? `<br/><a href="${escapeHtml(unsubscribeUrl)}" style="color:#7dd3fc; text-decoration:underline;">Unsubscribe</a> from marketing emails.`
