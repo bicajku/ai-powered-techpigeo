@@ -670,15 +670,33 @@ export function resolveEffectiveTier({ role, subTier, subStatus, subAssignedAt, 
         reason: `Welcome trial active — ${daysLeft} day(s) remaining`,
       }
     }
+
+    // Trial window passed but the BASIC subscription row is still active —
+    // honor any admin-granted credits so the balance survives a refresh.
+    const remaining = typeof proCredits === "number" ? proCredits : 0
+    if (remaining > 0) {
+      return {
+        effectivePlan: "basic",
+        status: "active",
+        credits: remaining,
+        trialDaysRemaining: 0,
+        source: "credits",
+        reason: "BASIC plan with admin-granted credits",
+      }
+    }
   }
 
-  // Expired subscription or no subscription → free BASIC
+  // Expired subscription or no subscription → free BASIC.
+  // Still surface any leftover admin-granted credits if the row exists.
+  const fallbackCredits = typeof proCredits === "number" && proCredits > 0 ? proCredits : 0
   return {
     effectivePlan: "basic",
-    status: "free",
-    credits: 0,
+    status: fallbackCredits > 0 ? "active" : "free",
+    credits: fallbackCredits,
     trialDaysRemaining: 0,
-    source: "default",
-    reason: "No active subscription — BASIC (free)",
+    source: fallbackCredits > 0 ? "credits" : "default",
+    reason: fallbackCredits > 0
+      ? "BASIC plan with admin-granted credits"
+      : "No active subscription — BASIC (free)",
   }
 }

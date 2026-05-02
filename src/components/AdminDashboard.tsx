@@ -1007,7 +1007,7 @@ export function AdminDashboard() {
                                 </Badge>
                               </TableCell>
                               <TableCell className="text-sm text-muted-foreground">
-                                {user.subscription?.plan === "pro" || user.subscription?.plan === "team" ? user.subscription.proCredits : "-"}
+                                {Number(user.subscription?.proCredits ?? 0)}
                               </TableCell>
                               <TableCell className="text-sm text-muted-foreground">
                                 {formatDate(user.createdAt)}
