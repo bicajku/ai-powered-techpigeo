@@ -4559,6 +4559,14 @@ const server = http.createServer(async (req, res) => {
               campaign: { subject, bodyHtml, intent: intent || "marketing" },
               toEmail: recipient,
             })
+            // Surface the real send outcome — don't pretend success when the
+            // mail provider is missing or the send threw.
+            if (!result?.ok) {
+              const reason = result?.skipped
+                ? "No mail provider is configured (Email Settings tab → Save SMTP/Graph)."
+                : result?.error || "Mail provider rejected the send."
+              return sendJson(res, 502, { ok: false, error: reason, sentTo: recipient, result }, req)
+            }
             return sendJson(res, 200, { ok: true, result, sentTo: recipient }, req)
           }
           // GET templates
