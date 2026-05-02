@@ -300,12 +300,14 @@ export const adminService = {
       const backendRes = await postBackend("/api/sentinel/admin/users/delete", { email })
 
       if (backendRes.status !== 0) {
-        if (backendRes.ok && backendRes.data?.success) {
+        // Backend uses { ok: true } convention; tolerate { success: true } too.
+        const payload = backendRes.data as { ok?: boolean; success?: boolean; error?: string } | undefined
+        if (backendRes.ok && (payload?.ok || payload?.success)) {
           return { success: true }
         }
         return {
           success: false,
-          error: (backendRes.data?.error as string) || "Failed to delete user",
+          error: payload?.error || "Failed to delete user",
         }
       }
 
