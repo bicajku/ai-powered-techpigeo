@@ -110,6 +110,7 @@ import {
   isMailConfigured,
   getActiveMailStatus,
   sendWelcomeEmail,
+  sendBonusClaimEmail,
   sendPasswordResetEmail,
   sendInviteEmail,
   sendNewUserAdminNotification,
@@ -1678,6 +1679,7 @@ async function handleRegister(req, res) {
     // Mail service handles provider resolution (DB Graph, DB SMTP, or env Graph) and
     // logs a single warning when nothing is configured. Both sends are non-blocking.
     sendWelcomeEmail({ to: newUser.email, fullName }).catch(() => {})
+    sendBonusClaimEmail({ to: newUser.email, fullName }).catch(() => {})
     sendNewUserAdminNotification({
       adminEmail: ADMIN_NOTIFICATION_EMAIL,
       newUserEmail: newUser.email,
@@ -2299,6 +2301,7 @@ async function handleCreateOrgMember(req, res, actor) {
     // mail-service silently no-ops when no provider is configured).
     if (isNewUser) {
       sendWelcomeEmail({ to: email, fullName }).catch(() => {})
+      sendBonusClaimEmail({ to: email, fullName }).catch(() => {})
     }
     sendNewUserAdminNotification({
       adminEmail: ADMIN_NOTIFICATION_EMAIL,

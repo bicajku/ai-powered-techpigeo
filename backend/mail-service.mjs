@@ -219,39 +219,269 @@ export async function safeSend(label, args) {
 // ─────────────────────────── Templates ──────────────────────────────────
 
 const APP_BASE_URL = process.env.APP_PUBLIC_URL || "https://novussparks.com"
+const FOUNDER_NAME = "Umer Lone"
+const FOUNDER_TITLE = "Founder — Novus Sparks AI"
+const SUPPORT_EMAIL = process.env.SUPPORT_EMAIL || "agentic@novussparks.com"
+const BRAND_PRIMARY = "#0f766e"
+const BRAND_PRIMARY_DARK = "#115e59"
+const BRAND_ACCENT = "#f59e0b"
 
 /**
- * Welcome email — also announces the 10-credit / 7-day BASIC trial bonus.
+ * Inline SVG signature for Umer Lone — renders in most modern mail clients
+ * (Apple Mail, Gmail web, iOS Mail, Outlook 365 web). Outlook desktop falls
+ * back to the cursive text below it.
+ */
+const SIGNATURE_SVG = `
+  <svg xmlns="http://www.w3.org/2000/svg" width="220" height="60" viewBox="0 0 220 60" aria-label="Umer Lone signature">
+    <text x="0" y="42"
+          font-family="'Brush Script MT','Lucida Handwriting','Segoe Script',cursive"
+          font-size="38" fill="#0f766e" font-style="italic">Umer Lone</text>
+  </svg>
+`
+
+/**
+ * Branded signature block — used at the bottom of every transactional email.
+ * Combines an SVG signature, founder name, title, and a subtle brand stripe.
+ */
+function renderSignatureBlock() {
+  return `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+           style="margin-top: 28px; border-top: 1px solid #e2e8f0; padding-top: 20px;">
+      <tr>
+        <td style="font-family: Arial, Helvetica, sans-serif; color: #0f172a;">
+          <div style="font-family: 'Brush Script MT','Lucida Handwriting','Segoe Script',cursive;
+                      font-size: 30px; color: ${BRAND_PRIMARY}; line-height: 1; margin-bottom: 4px;">
+            ${SIGNATURE_SVG}
+          </div>
+          <div style="font-size: 15px; font-weight: 700; color: #0f172a; margin-top: 6px;">
+            ${escapeHtml(FOUNDER_NAME)}
+          </div>
+          <div style="font-size: 13px; color: #475569; margin-top: 2px;">
+            ${escapeHtml(FOUNDER_TITLE)}
+          </div>
+          <div style="font-size: 12px; color: #64748b; margin-top: 10px;">
+            ${escapeHtml(SUPPORT_EMAIL)} &nbsp;·&nbsp;
+            <a href="${escapeHtml(APP_BASE_URL)}" style="color: ${BRAND_PRIMARY}; text-decoration: none;">novussparks.com</a>
+          </div>
+        </td>
+      </tr>
+    </table>
+  `
+}
+
+/**
+ * Common HTML wrapper — gradient header, white card, footer. Compatible with
+ * Gmail, Apple Mail, Outlook 365, and most webmail clients.
+ */
+function renderEmailShell({ preheader, headline, tagline, body }) {
+  return `<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${escapeHtml(headline)}</title>
+  </head>
+  <body style="margin:0; padding:0; background:#f1f5f9; font-family: Arial, Helvetica, sans-serif; color:#0f172a;">
+    <span style="display:none; visibility:hidden; opacity:0; height:0; width:0; overflow:hidden;">
+      ${escapeHtml(preheader || "")}
+    </span>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f1f5f9; padding:24px 0;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0"
+                 style="max-width:600px; width:100%; background:#ffffff; border-radius:14px; overflow:hidden;
+                        box-shadow:0 4px 14px rgba(15,23,42,0.06);">
+            <!-- Header / brand band -->
+            <tr>
+              <td style="background:linear-gradient(135deg, ${BRAND_PRIMARY} 0%, ${BRAND_PRIMARY_DARK} 60%, #0b3d3a 100%);
+                         padding:32px 36px; color:#ffffff;">
+                <div style="font-size:13px; letter-spacing:3px; text-transform:uppercase; opacity:0.85; margin-bottom:8px;">
+                  Novus Sparks · AI
+                </div>
+                <div style="font-size:26px; font-weight:700; line-height:1.2;">
+                  ${escapeHtml(headline)}
+                </div>
+                ${tagline ? `<div style="font-size:14px; opacity:0.9; margin-top:8px;">${escapeHtml(tagline)}</div>` : ""}
+              </td>
+            </tr>
+            <!-- Body -->
+            <tr>
+              <td style="padding:32px 36px 12px; color:#0f172a; font-size:15px; line-height:1.65;">
+                ${body}
+                ${renderSignatureBlock()}
+              </td>
+            </tr>
+            <!-- Footer -->
+            <tr>
+              <td style="background:#0b3d3a; color:#cbd5e1; padding:18px 36px; font-size:11px; line-height:1.5;">
+                © ${new Date().getFullYear()} Novus Sparks AI · Crafted by humans &amp; agents.<br/>
+                You received this because you created an account at novussparks.com.
+                If this wasn't you, please contact
+                <a href="mailto:${escapeHtml(SUPPORT_EMAIL)}" style="color:#7dd3fc; text-decoration:none;">
+                  ${escapeHtml(SUPPORT_EMAIL)}
+                </a>.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`
+}
+
+function renderCtaButton(label, href) {
+  const safeLabel = escapeHtml(label)
+  const safeHref = escapeHtml(href)
+  return `
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin: 22px 0;">
+      <tr>
+        <td bgcolor="${BRAND_PRIMARY}" style="border-radius:8px;">
+          <a href="${safeHref}"
+             style="display:inline-block; padding:13px 26px; font-family:Arial,Helvetica,sans-serif;
+                    font-size:15px; font-weight:600; color:#ffffff; text-decoration:none; border-radius:8px;">
+            ${safeLabel} →
+          </a>
+        </td>
+      </tr>
+    </table>
+  `
+}
+
+/**
+ * Welcome email — beautifully branded, founder-signed.
  */
 export async function sendWelcomeEmail({ to, fullName }) {
   const safeName = escapeHtml(fullName || "there")
   const dashLink = `${APP_BASE_URL}/dashboard`
+
   const text =
     `Hi ${fullName || "there"},\n\n` +
-    `Welcome to NovusSparks. As a thank-you for joining, we've added 10 free Pro credits ` +
-    `and a 7-day BASIC trial to your account — they're already active.\n\n` +
-    `Open your dashboard to start: ${dashLink}\n\n— NovusSparks Team`
+    `Welcome to Novus Sparks AI — I'm thrilled you're here.\n\n` +
+    `Novus Sparks is an enterprise-grade agentic AI platform that brings together ` +
+    `multi-LLM intelligence (Copilot, DeepSeek, Gemini, Groq, Spark) under one secure roof. ` +
+    `You can chat, build agents, run sentinel queries, and orchestrate workflows in minutes.\n\n` +
+    `Open your workspace: ${dashLink}\n\n` +
+    `A separate email with your welcome bonus is on its way.\n\n` +
+    `Warmly,\n${FOUNDER_NAME}\n${FOUNDER_TITLE}\n${SUPPORT_EMAIL}`
 
-  const html = `
-    <div style="font-family: Arial, sans-serif; color: #1c1414; line-height: 1.55;">
-      <h2 style="margin: 0 0 12px; color: #0f766e;">Welcome to NovusSparks</h2>
-      <p>Hi ${safeName},</p>
-      <p>Your account is active and we've added a welcome bonus:</p>
-      <ul style="padding-left: 20px;">
-        <li><strong>10 free Pro credits</strong> ready to spend</li>
-        <li><strong>7-day BASIC trial</strong> — full access to premium modules</li>
-      </ul>
-      <p style="margin: 20px 0;">
-        <a href="${escapeHtml(dashLink)}"
-           style="display: inline-block; background: #0f766e; color: #fff; text-decoration: none; padding: 10px 16px; border-radius: 6px;">
-          Claim my bonus &amp; open dashboard
-        </a>
-      </p>
-      <p>Thanks for joining us.</p>
-      <p style="margin-top: 20px;">— NovusSparks Team</p>
-    </div>
+  const body = `
+    <p style="margin:0 0 14px; font-size:17px;">Hi ${safeName},</p>
+    <p style="margin:0 0 14px;">
+      Welcome to <strong>Novus Sparks AI</strong> — I'm genuinely thrilled you're here.
+    </p>
+    <p style="margin:0 0 14px;">
+      Novus Sparks is an enterprise-grade <strong>agentic AI platform</strong> that brings
+      together best-in-class language models — <em>Copilot, DeepSeek, Gemini, Groq, and Spark</em> —
+      under one secure, governable roof. In minutes you can:
+    </p>
+    <ul style="margin:0 0 18px 0; padding-left:22px;">
+      <li style="margin-bottom:6px;">Chat with the model that fits the task — automatic fallback across providers.</li>
+      <li style="margin-bottom:6px;">Spin up <strong>autonomous agents</strong> with memory, tools, and policies.</li>
+      <li style="margin-bottom:6px;">Run <strong>Sentinel</strong> queries with full audit, routing, and budget controls.</li>
+      <li style="margin-bottom:6px;">Invite your team and govern access with enterprise RBAC.</li>
+    </ul>
+    ${renderCtaButton("Open my workspace", dashLink)}
+    <p style="margin:0 0 8px;">
+      A second email is on its way with your <strong>welcome bonus</strong> — keep an eye on your inbox.
+    </p>
+    <p style="margin:18px 0 0;">If you ever need anything, just reply to this email — it lands directly with our team.</p>
   `
-  return safeSend("welcome", { to, subject: "Welcome to NovusSparks — your bonus credits are ready", html, text })
+
+  const html = renderEmailShell({
+    preheader: "Welcome to Novus Sparks AI — your workspace is ready.",
+    headline: `Welcome to Novus Sparks, ${fullName ? fullName.split(" ")[0] : "founder"} 👋`,
+    tagline: "Your enterprise agentic AI workspace is now live.",
+    body,
+  })
+
+  return safeSend("welcome", {
+    to,
+    subject: "Welcome to Novus Sparks AI — your workspace is ready",
+    html,
+    text,
+  })
+}
+
+/**
+ * Bonus claim email — sent right after the welcome email on signup.
+ * Highlights the 10 Pro credits + 7-day BASIC trial and links to the claim flow.
+ */
+export async function sendBonusClaimEmail({ to, fullName }) {
+  const safeName = escapeHtml(fullName || "there")
+  const claimLink = `${APP_BASE_URL}/dashboard?claim=welcome-bonus`
+
+  const text =
+    `Hi ${fullName || "there"},\n\n` +
+    `As a thank-you for joining Novus Sparks AI, your account has been credited with:\n` +
+    `• 10 free Pro credits — ready to spend on any model\n` +
+    `• 7-day BASIC trial — full access to premium agentic modules\n\n` +
+    `Claim now: ${claimLink}\n\n` +
+    `These bonuses are already attached to your account — clicking the button above ` +
+    `simply opens the bonus tray inside your dashboard.\n\n` +
+    `Warmly,\n${FOUNDER_NAME}\n${FOUNDER_TITLE}\n${SUPPORT_EMAIL}`
+
+  const body = `
+    <p style="margin:0 0 14px; font-size:17px;">Hi ${safeName},</p>
+    <p style="margin:0 0 14px;">
+      As a small thank-you for joining <strong>Novus Sparks AI</strong>, I've personally
+      attached a welcome bonus to your account. Consider it our handshake.
+    </p>
+
+    <!-- Bonus card -->
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+           style="margin:18px 0; border:1px solid #99f6e4; background:#f0fdfa; border-radius:12px;">
+      <tr>
+        <td style="padding:22px 24px;">
+          <div style="font-size:12px; letter-spacing:2px; text-transform:uppercase; color:${BRAND_PRIMARY}; font-weight:700;">
+            Your Welcome Bonus
+          </div>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:14px;">
+            <tr>
+              <td style="padding:10px 0; border-bottom:1px solid #ccfbf1;">
+                <span style="display:inline-block; width:34px; height:34px; line-height:34px; text-align:center;
+                             background:${BRAND_ACCENT}; color:#fff; border-radius:50%; font-weight:700;">10</span>
+                <span style="margin-left:12px; font-weight:600;">Pro credits</span>
+                <span style="color:#475569;"> — spend on any model (Copilot, DeepSeek, Gemini, Groq).</span>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:12px 0;">
+                <span style="display:inline-block; width:34px; height:34px; line-height:34px; text-align:center;
+                             background:${BRAND_PRIMARY}; color:#fff; border-radius:50%; font-weight:700;">7d</span>
+                <span style="margin-left:12px; font-weight:600;">BASIC trial</span>
+                <span style="color:#475569;"> — unlock premium agents, Sentinel routing, and team workspaces.</span>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+
+    ${renderCtaButton("Claim my bonus", claimLink)}
+
+    <p style="margin:14px 0 0; color:#475569; font-size:13px;">
+      Already credited — the button just opens the bonus tray. No coupon code needed.
+    </p>
+
+    <p style="margin:18px 0 0;">
+      I'd love to hear what you build first. Reply to this email anytime.
+    </p>
+  `
+
+  const html = renderEmailShell({
+    preheader: "Your 10 Pro credits + 7-day BASIC trial are ready to claim.",
+    headline: "Your welcome bonus is ready 🎁",
+    tagline: "10 Pro credits · 7-day BASIC trial · already attached to your account.",
+    body,
+  })
+
+  return safeSend("bonus-claim", {
+    to,
+    subject: "🎁 Your Novus Sparks welcome bonus — claim 10 Pro credits + 7-day trial",
+    html,
+    text,
+  })
 }
 
 export async function sendPasswordResetEmail({ to, fullName, resetCode, expiresMinutes = 15 }) {
