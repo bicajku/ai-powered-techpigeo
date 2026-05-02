@@ -287,6 +287,20 @@ export async function ensureSentinelTables() {
         AND provider_order = ARRAY['copilot','groq','spark','gemini','sentinel']
     `
 
+    // Append DeepSeek to existing routing rows (idempotent — no-op if already present)
+    await sql`
+      UPDATE sentinel_provider_routing
+      SET provider_order = provider_order || ARRAY['deepseek']::TEXT[],
+          updated_at = now()
+      WHERE NOT ('deepseek' = ANY(provider_order))
+    `
+    await sql`
+      UPDATE sentinel_provider_routing
+      SET enabled_providers = enabled_providers || jsonb_build_object('deepseek', true),
+          updated_at = now()
+      WHERE NOT (enabled_providers ? 'deepseek')
+    `
+
     // Skills registry (shadow-mode capable)
     await sql`
       CREATE TABLE IF NOT EXISTS sentinel_skills_registry (
