@@ -62,6 +62,10 @@ export async function ensureSentinelTables() {
           IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'sentinel_users' AND column_name = 'github_id') THEN
             ALTER TABLE sentinel_users ADD COLUMN github_id TEXT UNIQUE;
           END IF;
+
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'sentinel_users' AND column_name = 'microsoft_id') THEN
+            ALTER TABLE sentinel_users ADD COLUMN microsoft_id TEXT UNIQUE;
+          END IF;
         END IF;
       END $$
     `

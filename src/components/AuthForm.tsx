@@ -68,6 +68,11 @@ export function AuthForm({ onAuthSuccess, initialMode }: AuthFormProps) {
     window.location.href = "/api/auth/google"
   }
 
+  const handleMicrosoftLogin = () => {
+    setIsLoading(true)
+    window.location.href = "/api/auth/microsoft"
+  }
+
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault()
     
@@ -289,6 +294,23 @@ export function AuthForm({ onAuthSuccess, initialMode }: AuthFormProps) {
             >
               <GithubLogo size={24} weight="bold" />
               Continue with GitHub
+            </Button>
+
+            <Button
+              type="button"
+              onClick={handleMicrosoftLogin}
+              variant="outline"
+              className="w-full gap-2"
+              disabled={isLoading}
+              size="lg"
+            >
+              <svg className="w-5 h-5" viewBox="0 0 23 23" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <rect x="1" y="1" width="10" height="10" fill="#F25022"/>
+                <rect x="12" y="1" width="10" height="10" fill="#7FBA00"/>
+                <rect x="1" y="12" width="10" height="10" fill="#00A4EF"/>
+                <rect x="12" y="12" width="10" height="10" fill="#FFB900"/>
+              </svg>
+              Continue with Microsoft
             </Button>
           </div>
 

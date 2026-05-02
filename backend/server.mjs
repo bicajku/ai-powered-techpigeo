@@ -4221,6 +4221,31 @@ const server = http.createServer(async (req, res) => {
         return res.end();
       }
     }
+    if (method === "GET" && reqPathname === "/api/auth/microsoft") {
+      try {
+        const { getMicrosoftAuthUrl } = await import('./oauth.mjs');
+        const url = await getMicrosoftAuthUrl();
+        res.writeHead(302, { Location: url });
+        return res.end();
+      } catch (err) {
+        console.error("Microsoft Auth URL error:", err);
+        return sendJson(res, 500, { ok: false, error: err?.message || "Microsoft OAuth is unavailable" }, req);
+      }
+    }
+    if (method === "GET" && reqPathname === "/api/auth/microsoft/callback") {
+      try {
+        const { handleMicrosoftCallback, generateOAuthCallbackHtml } = await import('./oauth.mjs');
+        const code = url.searchParams.get("code");
+        const { user, token } = await handleMicrosoftCallback(code);
+        res.writeHead(200, { "Content-Type": "text/html" });
+        return res.end(generateOAuthCallbackHtml(token, user));
+      } catch (err) {
+        console.error("Microsoft OAuth error:", err);
+        const msg = encodeURIComponent(err?.message || "Microsoft sign-in failed")
+        res.writeHead(302, { Location: `/?error=oauth_failed&reason=${msg}` });
+        return res.end();
+      }
+    }
 
     // ── POST /api/auth/refresh ──
     if (method === "POST" && reqPathname === "/api/auth/refresh") {

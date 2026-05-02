@@ -150,6 +150,120 @@ export async function handleGithubCallback(code) {
 }
 
 // ============================================================================
+// Microsoft (Office / Work / Personal account) OAuth — Entra ID v2.0
+// ============================================================================
+//
+// Required env vars:
+//   MS_CLIENT_ID            — App registration Application (client) ID
+//   MS_CLIENT_SECRET        — App registration secret value
+//   MS_TENANT_ID            — "common" (work + personal), "organizations" (work only),
+//                              "consumers" (personal only), or your tenant GUID/domain.
+//                              Default: "common".
+//   MS_REDIRECT_URI         — Optional override (defaults to <baseUrl>/api/auth/microsoft/callback)
+//
+// In Entra: register an app, add a Web platform redirect URI matching MS_REDIRECT_URI,
+// add delegated permissions: openid, profile, email, User.Read.
+function getMicrosoftTenant() {
+  return process.env.MS_TENANT_ID || "common"
+}
+
+export async function getMicrosoftAuthUrl() {
+  const clientId = process.env.MS_CLIENT_ID;
+  const redirectUri = process.env.MS_REDIRECT_URI || `${getBaseUrl()}/api/auth/microsoft/callback`;
+
+  if (!clientId) throw new Error("MS_CLIENT_ID is not configured");
+
+  const tenant = getMicrosoftTenant();
+  const url = new URL(`https://login.microsoftonline.com/${tenant}/oauth2/v2.0/authorize`);
+  url.searchParams.append("client_id", clientId);
+  url.searchParams.append("response_type", "code");
+  url.searchParams.append("redirect_uri", redirectUri);
+  url.searchParams.append("response_mode", "query");
+  url.searchParams.append("scope", "openid profile email User.Read offline_access");
+  url.searchParams.append("prompt", "select_account");
+
+  return url.toString();
+}
+
+export async function handleMicrosoftCallback(code) {
+  const clientId = process.env.MS_CLIENT_ID;
+  const clientSecret = process.env.MS_CLIENT_SECRET;
+  const redirectUri = process.env.MS_REDIRECT_URI || `${getBaseUrl()}/api/auth/microsoft/callback`;
+
+  if (!clientId || !clientSecret) {
+    throw new Error("Microsoft OAuth is not configured (MS_CLIENT_ID / MS_CLIENT_SECRET missing)");
+  }
+
+  const tenant = getMicrosoftTenant();
+
+  // 1. Exchange code for token
+  const tokenRes = await fetch(`https://login.microsoftonline.com/${tenant}/oauth2/v2.0/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      code,
+      redirect_uri: redirectUri,
+      grant_type: "authorization_code",
+      scope: "openid profile email User.Read offline_access",
+    }),
+  });
+
+  if (!tokenRes.ok) {
+    const detail = await tokenRes.text().catch(() => "");
+    throw new Error(`Failed to get Microsoft token: ${detail}`);
+  }
+  const tokenData = await tokenRes.json();
+
+  // 2. Get profile from Microsoft Graph (/me)
+  const userRes = await fetch("https://graph.microsoft.com/v1.0/me", {
+    headers: { Authorization: `Bearer ${tokenData.access_token}` },
+  });
+
+  if (!userRes.ok) {
+    const detail = await userRes.text().catch(() => "");
+    throw new Error(`Failed to get Microsoft user info: ${detail}`);
+  }
+  const userData = await userRes.json();
+
+  // 3. Resolve email — work accounts often only expose `mail` or `userPrincipalName`
+  const email = (
+    userData.mail ||
+    userData.userPrincipalName ||
+    userData.preferred_username ||
+    ""
+  ).toLowerCase();
+  if (!email) throw new Error("Could not retrieve email from Microsoft account");
+
+  // 4. Best-effort profile photo from Graph (some tenants/accounts disallow it)
+  let avatarUrl = null;
+  try {
+    const photoRes = await fetch("https://graph.microsoft.com/v1.0/me/photo/$value", {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` },
+    });
+    if (photoRes.ok) {
+      const buf = Buffer.from(await photoRes.arrayBuffer());
+      const contentType = photoRes.headers.get("content-type") || "image/jpeg";
+      // Inline as data URL — small enough for avatars; skip if > 200 KB
+      if (buf.length <= 200 * 1024) {
+        avatarUrl = `data:${contentType};base64,${buf.toString("base64")}`;
+      }
+    }
+  } catch {
+    // ignore photo fetch errors
+  }
+
+  return await processOAuthUser({
+    providerId: userData.id,
+    provider: "microsoft",
+    email,
+    fullName: userData.displayName || userData.givenName || "Microsoft User",
+    avatarUrl,
+  });
+}
+
+// ============================================================================
 // Common OAuth User Processing
 // ============================================================================
 async function processOAuthUser(profile) {
@@ -162,16 +276,20 @@ async function processOAuthUser(profile) {
     user = await sql`SELECT * FROM sentinel_users WHERE google_id = ${profile.providerId} OR email = ${profile.email} LIMIT 1`;
   } else if (profile.provider === "github") {
     user = await sql`SELECT * FROM sentinel_users WHERE github_id = ${profile.providerId} OR email = ${profile.email} LIMIT 1`;
+  } else if (profile.provider === "microsoft") {
+    user = await sql`SELECT * FROM sentinel_users WHERE microsoft_id = ${profile.providerId} OR email = ${profile.email} LIMIT 1`;
   }
-  
+
   if (user && user.length > 0) {
     user = user[0];
-    
+
     // Update existing user with provider ID if missing
     if (profile.provider === "google" && !user.google_id) {
       await sql`UPDATE sentinel_users SET google_id = ${profile.providerId} WHERE id = ${user.id}`;
     } else if (profile.provider === "github" && !user.github_id) {
       await sql`UPDATE sentinel_users SET github_id = ${profile.providerId} WHERE id = ${user.id}`;
+    } else if (profile.provider === "microsoft" && !user.microsoft_id) {
+      await sql`UPDATE sentinel_users SET microsoft_id = ${profile.providerId} WHERE id = ${user.id}`;
     }
     
     // Update last login
@@ -187,7 +305,8 @@ async function processOAuthUser(profile) {
         is_active, 
         avatar_url,
         google_id,
-        github_id
+        github_id,
+        microsoft_id
       ) VALUES (
         ${crypto.randomUUID()},
         ${profile.email}, 
@@ -196,7 +315,8 @@ async function processOAuthUser(profile) {
         true, 
         ${profile.avatarUrl || null},
         ${profile.provider === 'google' ? profile.providerId : null},
-        ${profile.provider === 'github' ? profile.providerId : null}
+        ${profile.provider === 'github' ? profile.providerId : null},
+        ${profile.provider === 'microsoft' ? profile.providerId : null}
       )
       RETURNING *
     `;
@@ -228,6 +348,25 @@ async function processOAuthUser(profile) {
     `;
 
     console.log(`[oauth] New user provisioned: ${profile.email} | org: ${orgId} | trial expires: ${trialExpiresAt}`);
+
+    // Fire welcome + bonus claim emails for newly provisioned OAuth users
+    // (non-blocking, mail-service no-ops gracefully when nothing is configured).
+    try {
+      const { sendWelcomeEmail, sendBonusClaimEmail, sendNewUserAdminNotification } = await import("./mail-service.mjs");
+      sendWelcomeEmail({ to: profile.email, fullName: profile.fullName }).catch(() => {});
+      sendBonusClaimEmail({ to: profile.email, fullName: profile.fullName }).catch(() => {});
+      const adminEmail = process.env.ADMIN_NOTIFICATION_EMAIL || process.env.M365_SENDER_EMAIL;
+      if (adminEmail) {
+        sendNewUserAdminNotification({
+          adminEmail,
+          newUserEmail: profile.email,
+          newUserName: profile.fullName,
+          source: `oauth-${profile.provider}`,
+        }).catch(() => {});
+      }
+    } catch (err) {
+      console.warn("[oauth] welcome email dispatch skipped:", err?.message);
+    }
   }
 
   // Get subscription for token
