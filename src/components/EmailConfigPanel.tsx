@@ -60,13 +60,13 @@ interface FormState {
 
 const EMPTY_FORM: FormState = {
   provider: "graph",
-  fromEmail: "info@novussparks.com",
+  fromEmail: "agentic@novussparks.com",
   fromName: "NovusSparks",
   replyTo: "",
   adminNotificationEmail: "",
   smtp: { host: "", port: "587", secure: true, user: "", password: "", passwordTouched: false },
   imap: { host: "", port: "993", secure: true, user: "", password: "", passwordTouched: false },
-  graph: { tenantId: "", clientId: "", clientSecret: "", clientSecretTouched: false, senderEmail: "info@novussparks.com", senderName: "NovusSparks" },
+  graph: { tenantId: "", clientId: "", clientSecret: "", clientSecretTouched: false, senderEmail: "agentic@novussparks.com", senderName: "NovusSparks" },
 }
 
 function viewToForm(view: EmailConfigView | null): FormState {
@@ -295,7 +295,7 @@ export function EmailConfigPanel({ canManage = false }: EmailConfigPanelProps) {
             <div className="space-y-1">
               <Label>Default From address</Label>
               <Input
-                placeholder="info@novussparks.com"
+                placeholder="agentic@novussparks.com"
                 value={form.fromEmail}
                 onChange={(e) => setForm({ ...form, fromEmail: e.target.value })}
               />
@@ -364,7 +364,7 @@ export function EmailConfigPanel({ canManage = false }: EmailConfigPanelProps) {
                   <Input
                     value={form.graph.senderEmail}
                     onChange={(e) => setForm({ ...form, graph: { ...form.graph, senderEmail: e.target.value } })}
-                    placeholder="info@novussparks.com"
+                    placeholder="agentic@novussparks.com"
                   />
                 </div>
                 <div className="space-y-1">
