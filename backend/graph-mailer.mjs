@@ -88,9 +88,13 @@ export async function sendGraphMail({ to, subject, html, text, replyTo, headers 
   }
 
   if (headers && typeof headers === "object") {
-    payload.message.internetMessageHeaders = Object.entries(headers)
-      .filter(([name, value]) => name && value != null)
+    // Microsoft Graph requires custom internet headers to start with "x-".
+    // Standard headers (List-Unsubscribe, Auto-Submitted, etc.) trigger
+    // InvalidInternetMessageHeader 400 — strip them here.
+    const safeEntries = Object.entries(headers)
+      .filter(([name, value]) => name && value != null && /^x-/i.test(name))
       .map(([name, value]) => ({ name, value: String(value) }))
+    if (safeEntries.length) payload.message.internetMessageHeaders = safeEntries
   }
 
   if (text && text.trim()) {

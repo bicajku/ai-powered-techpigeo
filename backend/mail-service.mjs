@@ -90,11 +90,15 @@ async function sendDbGraphMail(graph, { to, subject, html, text, fromName, reply
     payload.message.replyTo = [{ emailAddress: { address: replyTo } }]
   }
   if (headers && typeof headers === "object") {
-    payload.message.internetMessageHeaders = Object.entries(headers)
-      .filter(([name, value]) => name && value != null)
-      // Microsoft Graph requires custom internet headers to start with "x-" OR be a small whitelist.
-      // List-Unsubscribe + List-Unsubscribe-Post are explicitly allowed by Graph since 2022.
+    // Microsoft Graph rejects standard internet headers (List-Unsubscribe,
+    // Auto-Submitted, etc.) with InvalidInternetMessageHeader unless the name
+    // starts with "x-". Standard deliverability headers can only be set via
+    // SMTP. For Graph sends we keep just the x-prefixed headers and rely on
+    // the in-email <a href> unsubscribe link as the user-facing opt-out path.
+    const safeEntries = Object.entries(headers)
+      .filter(([name, value]) => name && value != null && /^x-/i.test(name))
       .map(([name, value]) => ({ name, value: String(value) }))
+    if (safeEntries.length) payload.message.internetMessageHeaders = safeEntries
   }
   if (text && text.trim()) payload.message.bodyPreview = text.slice(0, 255)
 
