@@ -67,7 +67,7 @@ async function getDbGraphAccessToken(graph) {
   return data.access_token
 }
 
-async function sendDbGraphMail(graph, { to, subject, html, text, fromName }) {
+async function sendDbGraphMail(graph, { to, subject, html, text, fromName, replyTo, headers }) {
   const token = await getDbGraphAccessToken(graph)
   const senderEmail = graph.senderEmail
   const endpoint = `${GRAPH_BASE_URL}/users/${encodeURIComponent(senderEmail)}/sendMail`
@@ -80,11 +80,21 @@ async function sendDbGraphMail(graph, { to, subject, html, text, fromName }) {
       from: {
         emailAddress: {
           address: senderEmail,
-          name: fromName || graph.senderName || "NovusSparks",
+          name: fromName || graph.senderName || "Novus Sparks AI",
         },
       },
     },
     saveToSentItems: true,
+  }
+  if (replyTo) {
+    payload.message.replyTo = [{ emailAddress: { address: replyTo } }]
+  }
+  if (headers && typeof headers === "object") {
+    payload.message.internetMessageHeaders = Object.entries(headers)
+      .filter(([name, value]) => name && value != null)
+      // Microsoft Graph requires custom internet headers to start with "x-" OR be a small whitelist.
+      // List-Unsubscribe + List-Unsubscribe-Post are explicitly allowed by Graph since 2022.
+      .map(([name, value]) => ({ name, value: String(value) }))
   }
   if (text && text.trim()) payload.message.bodyPreview = text.slice(0, 255)
 
@@ -115,7 +125,7 @@ function buildSmtpTransport(smtp) {
   })
 }
 
-async function sendSmtpMail(cfg, { to, subject, html, text }) {
+async function sendSmtpMail(cfg, { to, subject, html, text, replyTo, headers }) {
   const transporter = buildSmtpTransport(cfg.smtp)
   const fromEmail = cfg.fromEmail || cfg.smtp.user || ""
   if (!fromEmail) throw new Error("SMTP fromEmail is not configured")
@@ -126,7 +136,8 @@ async function sendSmtpMail(cfg, { to, subject, html, text }) {
     subject,
     text: text || undefined,
     html,
-    replyTo: cfg.replyTo || undefined,
+    replyTo: replyTo || cfg.replyTo || undefined,
+    headers: headers || undefined,
   })
 }
 
@@ -181,20 +192,49 @@ export async function getActiveMailStatus() {
  * Send an arbitrary message through the active provider.
  * Throws when no provider is configured or the underlying transport fails.
  */
-export async function sendMail({ to, subject, html, text }) {
+export async function sendMail({ to, subject, html, text, replyTo, headers }) {
   const active = await resolveActiveProvider()
   if (!active) throw new Error("No mail provider is configured")
 
-  const fromName = active.cfg?.fromName || active.cfg?.graph?.senderName || "NovusSparks"
+  const fromName = active.cfg?.fromName || active.cfg?.graph?.senderName || "Novus Sparks AI"
+
+  // Always attach deliverability headers so transactional mail clears Gmail/Yahoo
+  // bulk-sender requirements (RFC 8058 one-click unsubscribe + reputation hints).
+  const mergedHeaders = buildDeliverabilityHeaders(headers)
+  const resolvedReplyTo = replyTo || active.cfg?.replyTo || SUPPORT_EMAIL
 
   if (active.kind === "smtp-db") {
-    return sendSmtpMail(active.cfg, { to, subject, html, text })
+    return sendSmtpMail(active.cfg, { to, subject, html, text, replyTo: resolvedReplyTo, headers: mergedHeaders })
   }
   if (active.kind === "graph-db") {
-    return sendDbGraphMail(active.cfg.graph, { to, subject, html, text, fromName })
+    return sendDbGraphMail(active.cfg.graph, { to, subject, html, text, fromName, replyTo: resolvedReplyTo, headers: mergedHeaders })
   }
   // env Graph fallback uses graph-mailer.mjs directly
-  return sendEnvGraphMail({ to, subject, html, text })
+  return sendEnvGraphMail({ to, subject, html, text, replyTo: resolvedReplyTo, headers: mergedHeaders })
+}
+
+/**
+ * Build the standard set of deliverability headers attached to every send.
+ * - List-Unsubscribe + List-Unsubscribe-Post: required by Gmail/Yahoo bulk sender
+ *   policy (Feb 2024) for one-click unsubscribe (RFC 8058).
+ * - X-Entity-Ref-ID: random per-message ID prevents Gmail threading-as-promo.
+ * - Auto-Submitted: marks transactional mail; reduces auto-reply loops.
+ */
+function buildDeliverabilityHeaders(extra) {
+  const unsubMailto = `mailto:${SUPPORT_EMAIL}?subject=unsubscribe`
+  const unsubUrl = `${APP_BASE_URL}/unsubscribe?email=`
+  const baseHeaders = {
+    "List-Unsubscribe": `<${unsubMailto}>, <${unsubUrl}>`,
+    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    "Auto-Submitted": "auto-generated",
+    "X-Entity-Ref-ID": cryptoRandomId(),
+  }
+  return { ...baseHeaders, ...(extra || {}) }
+}
+
+function cryptoRandomId() {
+  // Lightweight per-message ID without pulling crypto module at top level.
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 }
 
 /**
@@ -530,7 +570,7 @@ export async function sendBonusClaimEmail({ to, fullName }) {
 
   return safeSend("bonus-claim", {
     to,
-    subject: "🎁 Your Novus Sparks welcome bonus — claim 10 Pro credits + 7-day trial",
+    subject: "Your Novus Sparks account is ready — getting started",
     html,
     text,
   })

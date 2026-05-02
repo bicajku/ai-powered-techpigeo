@@ -57,7 +57,7 @@ async function getGraphAccessToken() {
   return cachedAccessToken
 }
 
-export async function sendGraphMail({ to, subject, html, text }) {
+export async function sendGraphMail({ to, subject, html, text, replyTo, headers }) {
   if (!isGraphMailConfigured()) {
     throw new Error("Microsoft Graph mail is not configured")
   }
@@ -81,6 +81,16 @@ export async function sendGraphMail({ to, subject, html, text }) {
       },
     },
     saveToSentItems: true,
+  }
+
+  if (replyTo) {
+    payload.message.replyTo = [{ emailAddress: { address: replyTo } }]
+  }
+
+  if (headers && typeof headers === "object") {
+    payload.message.internetMessageHeaders = Object.entries(headers)
+      .filter(([name, value]) => name && value != null)
+      .map(([name, value]) => ({ name, value: String(value) }))
   }
 
   if (text && text.trim()) {
