@@ -404,6 +404,58 @@ export async function sendWelcomeEmail({ to, fullName }) {
 }
 
 /**
+ * Welcome-back email — sent when a previously-deleted account re-signs up.
+ * Acknowledges the return without offering the welcome bonus (one-time bonus only).
+ */
+export async function sendWelcomeBackEmail({ to, fullName }) {
+  const safeName = escapeHtml(fullName || "there")
+  const dashLink = `${APP_BASE_URL}/dashboard`
+
+  const text =
+    `Hi ${fullName || "there"},\n\n` +
+    `Welcome back to Novus Sparks AI — it's wonderful to see you again.\n\n` +
+    `Your new workspace is ready and your account has been fully restored. ` +
+    `Note: the one-time welcome bonus only applies to first-time signups, so ` +
+    `it isn't included this round — but everything else is exactly where you left it.\n\n` +
+    `Open your workspace: ${dashLink}\n\n` +
+    `If there's anything we can do to make your return smoother, just reply to this email.\n\n` +
+    `Warmly,\n${FOUNDER_NAME}\n${FOUNDER_TITLE}\n${SUPPORT_EMAIL}`
+
+  const body = `
+    <p style="margin:0 0 14px; font-size:17px;">Hi ${safeName},</p>
+    <p style="margin:0 0 14px;">
+      Welcome back to <strong>Novus Sparks AI</strong> — it's wonderful to see you again.
+    </p>
+    <p style="margin:0 0 14px;">
+      Your new workspace is ready and your account has been fully restored. You can pick up
+      right where you left off across <em>Copilot, DeepSeek, Gemini, Groq, and Spark</em>.
+    </p>
+    <p style="margin:0 0 14px; padding:12px 14px; background:#f8fafc; border-left:3px solid ${BRAND_PRIMARY}; border-radius:4px; color:#475569; font-size:14px;">
+      <strong>Heads up:</strong> the one-time welcome bonus is reserved for first-time
+      signups, so it isn't attached to this returning account. Everything else is unchanged.
+    </p>
+    ${renderCtaButton("Open my workspace", dashLink)}
+    <p style="margin:18px 0 0;">
+      If there's anything we can do to make your return smoother, just reply to this email.
+    </p>
+  `
+
+  const html = renderEmailShell({
+    preheader: "Welcome back to Novus Sparks AI — your workspace is ready.",
+    headline: `Welcome back, ${fullName ? fullName.split(" ")[0] : "founder"} 👋`,
+    tagline: "Your enterprise agentic AI workspace is ready again.",
+    body,
+  })
+
+  return safeSend("welcome-back", {
+    to,
+    subject: "Welcome back to Novus Sparks AI",
+    html,
+    text,
+  })
+}
+
+/**
  * Bonus claim email — sent right after the welcome email on signup.
  * Highlights the 10 Pro credits + 7-day BASIC trial and links to the claim flow.
  */

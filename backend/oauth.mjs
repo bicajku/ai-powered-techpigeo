@@ -351,17 +351,33 @@ async function processOAuthUser(profile) {
 
     // Fire welcome + bonus claim emails for newly provisioned OAuth users
     // (non-blocking, mail-service no-ops gracefully when nothing is configured).
+    // Returning users (previously deleted) get a "welcome back" email and skip the bonus.
     try {
-      const { sendWelcomeEmail, sendBonusClaimEmail, sendNewUserAdminNotification } = await import("./mail-service.mjs");
-      sendWelcomeEmail({ to: profile.email, fullName: profile.fullName }).catch(() => {});
-      sendBonusClaimEmail({ to: profile.email, fullName: profile.fullName }).catch(() => {});
+      const { sendWelcomeEmail, sendWelcomeBackEmail, sendBonusClaimEmail, sendNewUserAdminNotification } = await import("./mail-service.mjs");
+      const { wasEmailDeleted, markEmailRejoined } = await import("./db.mjs");
+      let isReturningUser = false;
+      try {
+        isReturningUser = await wasEmailDeleted(profile.email);
+        if (isReturningUser) {
+          markEmailRejoined(profile.email).catch(() => {});
+        }
+      } catch (err) {
+        console.warn("[oauth] returning-user check failed (treating as new):", err?.message);
+      }
+
+      if (isReturningUser) {
+        sendWelcomeBackEmail({ to: profile.email, fullName: profile.fullName }).catch(() => {});
+      } else {
+        sendWelcomeEmail({ to: profile.email, fullName: profile.fullName }).catch(() => {});
+        sendBonusClaimEmail({ to: profile.email, fullName: profile.fullName }).catch(() => {});
+      }
       const adminEmail = process.env.ADMIN_NOTIFICATION_EMAIL || process.env.M365_SENDER_EMAIL;
       if (adminEmail) {
         sendNewUserAdminNotification({
           adminEmail,
           newUserEmail: profile.email,
           newUserName: profile.fullName,
-          source: `oauth-${profile.provider}`,
+          source: `oauth-${profile.provider}${isReturningUser ? "-returning" : ""}`,
         }).catch(() => {});
       }
     } catch (err) {

@@ -110,6 +110,7 @@ import {
   isMailConfigured,
   getActiveMailStatus,
   sendWelcomeEmail,
+  sendWelcomeBackEmail,
   sendBonusClaimEmail,
   sendPasswordResetEmail,
   sendInviteEmail,
@@ -1678,13 +1679,30 @@ async function handleRegister(req, res) {
 
     // Mail service handles provider resolution (DB Graph, DB SMTP, or env Graph) and
     // logs a single warning when nothing is configured. Both sends are non-blocking.
-    sendWelcomeEmail({ to: newUser.email, fullName }).catch(() => {})
-    sendBonusClaimEmail({ to: newUser.email, fullName }).catch(() => {})
+    // If this email previously belonged to a deleted account, send a "welcome back" mail
+    // and skip the bonus-claim email (one-time bonus only).
+    let isReturningUser = false
+    try {
+      const { wasEmailDeleted, markEmailRejoined } = await import("./db.mjs")
+      isReturningUser = await wasEmailDeleted(newUser.email)
+      if (isReturningUser) {
+        markEmailRejoined(newUser.email).catch(() => {})
+      }
+    } catch (err) {
+      console.warn("[register] returning-user check failed (treating as new):", err?.message)
+    }
+
+    if (isReturningUser) {
+      sendWelcomeBackEmail({ to: newUser.email, fullName }).catch(() => {})
+    } else {
+      sendWelcomeEmail({ to: newUser.email, fullName }).catch(() => {})
+      sendBonusClaimEmail({ to: newUser.email, fullName }).catch(() => {})
+    }
     sendNewUserAdminNotification({
       adminEmail: ADMIN_NOTIFICATION_EMAIL,
       newUserEmail: newUser.email,
       newUserName: fullName,
-      source: "signup",
+      source: isReturningUser ? "signup-returning" : "signup",
     }).catch(() => {})
 
     return sendJson(res, 201, {
@@ -2664,7 +2682,7 @@ async function handleAdminDeleteUser(req, res, user) {
     }
 
     // Delete the user from Neon (auto-falls-back to anonymized soft delete on FK conflicts)
-    const deletedUser = await deleteUserById(userIdToDelete)
+    const deletedUser = await deleteUserById(userIdToDelete, { deletedBy: "admin", reason: `admin:${user.email}` })
     if (!deletedUser) {
       return sendJson(res, 404, { ok: false, error: "User not found" }, req)
     }

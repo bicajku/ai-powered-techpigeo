@@ -70,6 +70,19 @@ export async function ensureSentinelTables() {
       END $$
     `
 
+    // Track emails of deleted accounts so we can detect re-signups and skip the welcome bonus email.
+    await sql`
+      CREATE TABLE IF NOT EXISTS sentinel_deleted_emails (
+        email TEXT PRIMARY KEY,
+        original_user_id TEXT,
+        deleted_by TEXT NOT NULL DEFAULT 'admin',
+        reason TEXT,
+        deleted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        rejoined_at TIMESTAMPTZ,
+        rejoin_count INTEGER NOT NULL DEFAULT 0
+      )
+    `
+
     // Ensure RAG chat tables exist for threaded conversations.
     await sql`
       CREATE TABLE IF NOT EXISTS chat_threads (
@@ -1064,8 +1077,19 @@ export async function deactivateUserById(userId) {
  *
  * Returns: { id, email, fullName, mode: "hard" | "soft" }
  */
-export async function deleteUserById(userId) {
+export async function deleteUserById(userId, options = {}) {
   const sql = getSql()
+  const deletedBy = options.deletedBy === "self" ? "self" : "admin"
+  const reason = typeof options.reason === "string" ? options.reason : null
+
+  // Capture the email BEFORE any cleanup so we can record it for re-signup detection.
+  let preservedEmail = null
+  try {
+    const pre = await sql`SELECT email FROM sentinel_users WHERE id = ${userId} LIMIT 1`
+    if (pre[0]?.email) preservedEmail = String(pre[0].email).toLowerCase()
+  } catch {
+    // ignore — best effort
+  }
 
   // Best-effort cleanup of dependent rows. Each table is wrapped in its own
   // try/catch so a missing table (different deploy stage) never aborts the rest.
@@ -1119,7 +1143,10 @@ export async function deleteUserById(userId) {
       WHERE id = ${userId}
       RETURNING id, email, full_name AS "fullName"
     `
-    if (rows[0]) return { ...rows[0], mode: "hard" }
+    if (rows[0]) {
+      await recordDeletedEmail(preservedEmail, userId, deletedBy, reason).catch(() => {})
+      return { ...rows[0], mode: "hard", originalEmail: preservedEmail }
+    }
     return null
   } catch (err) {
     // Postgres FK violation = code 23503. Fall back to anonymized soft delete.
@@ -1142,11 +1169,69 @@ export async function deleteUserById(userId) {
         WHERE id = ${userId}
         RETURNING id, email, full_name AS "fullName"
       `
-      if (rows[0]) return { ...rows[0], mode: "soft" }
+      if (rows[0]) {
+        await recordDeletedEmail(preservedEmail, userId, deletedBy, reason).catch(() => {})
+        return { ...rows[0], mode: "soft", originalEmail: preservedEmail }
+      }
       return null
     }
     console.error(`[db.deleteUserById] error deleting user ${userId}:`, err)
     throw err
+  }
+}
+
+// After hard delete success, also record (the success path is above — splice in here):
+async function recordDeletedEmail(email, userId, deletedBy, reason) {
+  if (!email) return
+  const sql = getSql()
+  try {
+    await sql`
+      INSERT INTO sentinel_deleted_emails (email, original_user_id, deleted_by, reason)
+      VALUES (${email}, ${userId}, ${deletedBy}, ${reason})
+      ON CONFLICT (email) DO UPDATE
+        SET original_user_id = EXCLUDED.original_user_id,
+            deleted_by = EXCLUDED.deleted_by,
+            reason = EXCLUDED.reason,
+            deleted_at = now()
+    `
+  } catch (err) {
+    console.warn("[db.recordDeletedEmail] failed:", err?.message)
+  }
+}
+
+/**
+ * Returns true if this email belongs to a previously-deleted account.
+ * Used by signup flows to suppress the welcome-bonus email on re-signup.
+ */
+export async function wasEmailDeleted(email) {
+  if (!email) return false
+  try {
+    const sql = getSql()
+    const rows = await sql`
+      SELECT 1 FROM sentinel_deleted_emails WHERE email = ${String(email).toLowerCase()} LIMIT 1
+    `
+    return rows.length > 0
+  } catch (err) {
+    console.warn("[db.wasEmailDeleted] check failed (defaulting to false):", err?.message)
+    return false
+  }
+}
+
+/**
+ * Marks a previously-deleted email as rejoined (increments rejoin_count and stamps rejoined_at).
+ * Idempotent — safe to call on every re-signup of a known deleted email.
+ */
+export async function markEmailRejoined(email) {
+  if (!email) return
+  try {
+    const sql = getSql()
+    await sql`
+      UPDATE sentinel_deleted_emails
+      SET rejoined_at = now(), rejoin_count = rejoin_count + 1
+      WHERE email = ${String(email).toLowerCase()}
+    `
+  } catch (err) {
+    console.warn("[db.markEmailRejoined] failed:", err?.message)
   }
 }
 
