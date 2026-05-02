@@ -328,7 +328,9 @@ function renderSignatureBlock() {
  * @param {string} [args.brandName]       Header brand line (defaults to "Novus Sparks · AI").
  */
 function renderEmailShell({ preheader, headline, tagline, body, unsubscribeUrl, logoUrl, brandName }) {
-  const logoSrc = logoUrl || `${APP_BASE_URL}/icons/icon-128.png`
+  // Full-width branded banner (the dark "NOVUS SPARKS AI · Build Fast. Scale
+  // Smart." image). Override per-call via `logoUrl` if needed.
+  const bannerSrc = logoUrl || `${APP_BASE_URL}/icons/email-header.png`
   const brandLine = brandName || "Novus Sparks · AI"
   const unsubFooter = unsubscribeUrl
     ? `<br/><a href="${escapeHtml(unsubscribeUrl)}" style="color:#7dd3fc; text-decoration:underline;">Unsubscribe</a> from marketing emails.`
@@ -350,34 +352,28 @@ function renderEmailShell({ preheader, headline, tagline, body, unsubscribeUrl, 
           <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0"
                  style="max-width:600px; width:100%; background:#ffffff; border-radius:14px; overflow:hidden;
                         box-shadow:0 4px 14px rgba(15,23,42,0.06);">
-            <!-- Header / brand band -->
+            <!-- Header / brand banner image (full-width, edge-to-edge) -->
             <tr>
-              <td style="background:linear-gradient(135deg, ${BRAND_PRIMARY} 0%, ${BRAND_PRIMARY_DARK} 60%, #0b3d3a 100%);
-                         padding:28px 36px; color:#ffffff;">
-                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-                  <tr>
-                    <td valign="middle" width="56" style="padding-right:14px;">
-                      <img src="${escapeHtml(logoSrc)}" alt="${escapeHtml(brandLine)}"
-                           width="48" height="48"
-                           style="display:block; border:0; border-radius:10px; background:rgba(255,255,255,0.08); padding:4px;" />
-                    </td>
-                    <td valign="middle">
-                      <div style="font-size:12px; letter-spacing:3px; text-transform:uppercase; opacity:0.85;">
-                        ${escapeHtml(brandLine)}
-                      </div>
-                      <div style="font-size:11px; opacity:0.7; margin-top:2px;">novussparks.com</div>
-                    </td>
-                  </tr>
-                </table>
-                <div style="font-size:24px; font-weight:700; line-height:1.25; margin-top:18px;">
+              <td style="padding:0; background:#0b1830;">
+                <a href="${escapeHtml(APP_BASE_URL)}" style="display:block; line-height:0; text-decoration:none;">
+                  <img src="${escapeHtml(bannerSrc)}" alt="${escapeHtml(brandLine)}"
+                       width="600"
+                       style="display:block; width:100%; max-width:600px; height:auto; border:0; outline:none; text-decoration:none;" />
+                </a>
+              </td>
+            </tr>
+            <!-- Headline strip under the banner -->
+            <tr>
+              <td style="background:#ffffff; padding:24px 36px 0; color:#0f172a;">
+                <div style="font-size:22px; font-weight:700; line-height:1.25; color:#0f172a;">
                   ${escapeHtml(headline)}
                 </div>
-                ${tagline ? `<div style="font-size:14px; opacity:0.9; margin-top:8px;">${escapeHtml(tagline)}</div>` : ""}
+                ${tagline ? `<div style="font-size:14px; color:#475569; margin-top:6px;">${escapeHtml(tagline)}</div>` : ""}
               </td>
             </tr>
             <!-- Body -->
             <tr>
-              <td style="padding:32px 36px 12px; color:#0f172a; font-size:15px; line-height:1.65;">
+              <td style="padding:18px 36px 12px; color:#0f172a; font-size:15px; line-height:1.65;">
                 ${body}
                 ${renderSignatureBlock()}
               </td>
