@@ -330,7 +330,8 @@ function renderSignatureBlock() {
 function renderEmailShell({ preheader, headline, tagline, body, unsubscribeUrl, logoUrl, brandName }) {
   // Full-width branded banner. Override per-call via `logoUrl` if needed.
   // The ?v= query string busts client caches when the banner is replaced.
-  const bannerSrc = logoUrl || `${APP_BASE_URL}/icons/email-header.png?v=4`
+  const bannerSrc = logoUrl || `${APP_BASE_URL}/icons/email-header.jpg?v=5`
+  const footerLogoSrc = `${APP_BASE_URL}/icons/novussparks-logo-1200.png?v=1`
   const brandLine = brandName || "Novus Sparks · AI"
   const unsubFooter = unsubscribeUrl
     ? `<br/><a href="${escapeHtml(unsubscribeUrl)}" style="color:#7dd3fc; text-decoration:underline;">Unsubscribe</a> from marketing emails.`
@@ -380,13 +381,18 @@ function renderEmailShell({ preheader, headline, tagline, body, unsubscribeUrl, 
             </tr>
             <!-- Footer -->
             <tr>
-              <td style="background:#0b3d3a; color:#cbd5e1; padding:18px 36px; font-size:11px; line-height:1.5;">
+              <td style="background:#0b3d3a; color:#cbd5e1; padding:22px 36px 18px; font-size:11px; line-height:1.5; text-align:center;">
+                <img src="${escapeHtml(footerLogoSrc)}" alt="${escapeHtml(brandLine)}"
+                  width="160"
+                  style="display:inline-block; width:160px; max-width:60%; height:auto; margin:0 0 12px; border:0; outline:none; text-decoration:none;" />
+                <div style="text-align:left;">
                 © ${new Date().getFullYear()} Novus Sparks AI · Crafted by humans &amp; agents.<br/>
                 You received this because you created an account at novussparks.com.
                 If this wasn't you, please contact
                 <a href="mailto:${escapeHtml(SUPPORT_EMAIL)}" style="color:#7dd3fc; text-decoration:none;">
                   ${escapeHtml(SUPPORT_EMAIL)}
                 </a>.${unsubFooter}
+                </div>
               </td>
             </tr>
           </table>
