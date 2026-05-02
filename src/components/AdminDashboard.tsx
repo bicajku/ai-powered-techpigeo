@@ -62,6 +62,7 @@ import { InviteManager } from "@/components/InviteManager"
 import { BudgetConfigManager } from "@/components/BudgetConfigManager"
 import { AdminSubscriptionPanel } from "@/components/AdminSubscriptionPanel"
 import { AdminProviderRoutingPanel } from "@/components/AdminProviderRoutingPanel"
+import { EmailConfigPanel } from "@/components/EmailConfigPanel"
 import { getSafeKVClient } from "@/lib/spark-shim"
 import { fetchBackendProviderStatus, type BackendProviderStatus } from "@/lib/platform-client"
 import { fetchAuthCapabilities, type AuthCapabilities } from "@/lib/auth-capabilities"
@@ -868,7 +869,7 @@ export function AdminDashboard() {
         >
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <div className="mb-4 overflow-x-auto pb-1">
-              <TabsList className="grid min-w-[1320px] grid-cols-9">
+              <TabsList className="grid min-w-[1460px] grid-cols-10">
                 <TabsTrigger value="users" className="gap-2">
                   <Users size={18} weight="bold" />
                   User Management
@@ -904,6 +905,10 @@ export function AdminDashboard() {
                 <TabsTrigger value="routing" className="gap-2" disabled={!authCapabilities.canManageProviderRouting}>
                   <Key size={18} weight="bold" />
                   Provider Routing
+                </TabsTrigger>
+                <TabsTrigger value="email" className="gap-2" disabled={!authCapabilities.isSentinelCommander}>
+                  <Key size={18} weight="bold" />
+                  Email Settings
                 </TabsTrigger>
               </TabsList>
             </div>
@@ -1446,6 +1451,10 @@ export function AdminDashboard() {
 
             <TabsContent value="routing">
               <AdminProviderRoutingPanel canManageProviderRouting={authCapabilities.canManageProviderRouting} />
+            </TabsContent>
+
+            <TabsContent value="email">
+              <EmailConfigPanel canManage={authCapabilities.isSentinelCommander} />
             </TabsContent>
           </Tabs>
         </motion.div>

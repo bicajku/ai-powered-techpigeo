@@ -107,12 +107,22 @@ import {
   logProviderUsage,
 } from "./routing-service.mjs"
 import {
-  isGraphMailConfigured,
+  isMailConfigured,
+  getActiveMailStatus,
   sendWelcomeEmail,
   sendPasswordResetEmail,
   sendInviteEmail,
   sendNewUserAdminNotification,
-} from "./graph-mailer.mjs"
+  sendTestEmail,
+  testSmtpConfig,
+  testGraphConfig,
+  testImapConfig,
+} from "./mail-service.mjs"
+import { isGraphMailConfigured } from "./graph-mailer.mjs"
+import {
+  getEmailConfigPublic,
+  saveEmailConfig,
+} from "./db.mjs"
 
 // ─────────────────────────── Config ──────────────────────────────
 
@@ -1665,29 +1675,15 @@ async function handleRegister(req, res) {
       success: true,
     }).catch(() => {})
 
-    if (isGraphMailConfigured()) {
-      sendWelcomeEmail({
-        to: newUser.email,
-        fullName,
-      }).then(() => {
-        console.log(`[mail/welcome] sent to ${newUser.email}`)
-      }).catch((err) => {
-        console.error("[mail/welcome] send FAILED:", err.message, err.stack)
-      })
-
-      sendNewUserAdminNotification({
-        adminEmail: ADMIN_NOTIFICATION_EMAIL,
-        newUserEmail: newUser.email,
-        newUserName: fullName,
-        source: "signup",
-      }).then(() => {
-        console.log(`[mail/admin-notify] sent to ${ADMIN_NOTIFICATION_EMAIL} for ${newUser.email}`)
-      }).catch((err) => {
-        console.error("[mail/admin-notify] send FAILED:", err.message, err.stack)
-      })
-    } else {
-      console.warn("[mail] Graph Mail not configured — skipping welcome email for", newUser.email)
-    }
+    // Mail service handles provider resolution (DB Graph, DB SMTP, or env Graph) and
+    // logs a single warning when nothing is configured. Both sends are non-blocking.
+    sendWelcomeEmail({ to: newUser.email, fullName }).catch(() => {})
+    sendNewUserAdminNotification({
+      adminEmail: ADMIN_NOTIFICATION_EMAIL,
+      newUserEmail: newUser.email,
+      newUserName: fullName,
+      source: "signup",
+    }).catch(() => {})
 
     return sendJson(res, 201, {
       ok: true,
@@ -1735,16 +1731,14 @@ async function handlePasswordResetRequest(req, res) {
     const resetCode = generateResetCode()
     setResetCode(email, resetCode)
 
-    if (isGraphMailConfigured()) {
-      await sendPasswordResetEmail({
-        to: email,
-        fullName: user.fullName,
-        resetCode,
-        expiresMinutes: Math.round(PASSWORD_RESET_TTL_MS / 60000),
-      })
-    } else {
-      console.warn("[mail/reset] Graph mail not configured; reset email skipped")
-    }
+    await sendPasswordResetEmail({
+      to: email,
+      fullName: user.fullName,
+      resetCode,
+      expiresMinutes: Math.round(PASSWORD_RESET_TTL_MS / 60000),
+    }).catch((err) => {
+      console.error("[mail/reset] send error:", err?.message)
+    })
 
     await writeAuditLog({
       userId: user.id,
@@ -1898,8 +1892,8 @@ async function handleSendInviteEmail(req, res, user) {
     return sendJson(res, 403, { ok: false, error: "Insufficient permissions" }, req)
   }
 
-  if (!isGraphMailConfigured()) {
-    return sendJson(res, 503, { ok: false, error: "Microsoft Graph email is not configured" }, req)
+  if (!(await isMailConfigured())) {
+    return sendJson(res, 503, { ok: false, error: "Email is not configured. Set up SMTP or Microsoft Graph in Admin → Email Settings." }, req)
   }
 
   const parsed = await parseJsonBody(req)
@@ -2301,32 +2295,19 @@ async function handleCreateOrgMember(req, res, actor) {
       success: true,
     }).catch(() => {})
 
-    // Send welcome email to newly created members and notify admin
-    if (isGraphMailConfigured()) {
-      if (isNewUser) {
-        sendWelcomeEmail({
-          to: email,
-          fullName,
-        }).then(() => {
-          console.log(`[mail/welcome:org-member] sent to ${email}`)
-        }).catch((err) => {
-          console.error("[mail/welcome:org-member] send FAILED:", err.message, err.stack)
-        })
-      }
-
-      sendNewUserAdminNotification({
-        adminEmail: ADMIN_NOTIFICATION_EMAIL,
-        newUserEmail: email,
-        newUserName: fullName,
-        source: isNewUser ? "enterprise-member-created" : "enterprise-member-added",
-      }).then(() => {
-        console.log(`[mail/admin-notify:org-member] sent to ${ADMIN_NOTIFICATION_EMAIL} for ${email}`)
-      }).catch((err) => {
-        console.error("[mail/admin-notify:org-member] send FAILED:", err.message, err.stack)
-      })
-    } else {
-      console.warn("[mail] Graph Mail not configured — skipping emails for org member", email)
+    // Send welcome email to newly created members and notify admin (non-blocking;
+    // mail-service silently no-ops when no provider is configured).
+    if (isNewUser) {
+      sendWelcomeEmail({ to: email, fullName }).catch(() => {})
     }
+    sendNewUserAdminNotification({
+      adminEmail: ADMIN_NOTIFICATION_EMAIL,
+      newUserEmail: email,
+      newUserName: fullName,
+      source: isNewUser ? "enterprise-member-created" : "enterprise-member-added",
+    }).catch((err) => {
+      console.error("[mail/admin-notify:org-member] send FAILED:", err.message, err.stack)
+    })
 
     return sendJson(res, 201, { ok: true, member: assignedUser }, req)
   } catch (err) {
@@ -4310,10 +4291,10 @@ const server = http.createServer(async (req, res) => {
           return sendJson(res, 403, { ok: false, error: "Insufficient permissions" }, req)
         }
 
-        if (!isGraphMailConfigured()) {
+        if (!(await isMailConfigured())) {
           return sendJson(res, 503, {
             ok: false,
-            error: "Graph Mail is not configured. Set M365_TENANT_ID, M365_CLIENT_ID, M365_CLIENT_SECRET, and M365_SENDER_EMAIL.",
+            error: "Email is not configured. Configure SMTP or Microsoft Graph in Admin → Email Settings.",
           }, req)
         }
 
@@ -4332,6 +4313,85 @@ const server = http.createServer(async (req, res) => {
         } catch (err) {
           console.error("[mail/test] Test email failed:", err)
           return sendJson(res, 500, { ok: false, error: err?.message || "Failed to send test email" }, req)
+        }
+      }
+
+      // ── Admin: Email Configuration ──────────────────────────────────
+      // GET /api/sentinel/admin/email-config — returns sanitized config (no secrets)
+      if (method === "GET" && reqPathname === "/api/sentinel/admin/email-config") {
+        if (!hasMinimumRole(user.role, "SENTINEL_COMMANDER")) {
+          return sendJson(res, 403, { ok: false, error: "Insufficient permissions" }, req)
+        }
+        try {
+          const [config, status] = await Promise.all([
+            getEmailConfigPublic(),
+            getActiveMailStatus(),
+          ])
+          return sendJson(res, 200, { ok: true, config, status }, req)
+        } catch (err) {
+          console.error("[admin/email-config:get] error:", err)
+          return sendJson(res, 500, { ok: false, error: "Failed to load email config" }, req)
+        }
+      }
+
+      // PUT/POST /api/sentinel/admin/email-config — upsert
+      if ((method === "PUT" || method === "POST") && reqPathname === "/api/sentinel/admin/email-config") {
+        if (!hasMinimumRole(user.role, "SENTINEL_COMMANDER")) {
+          return sendJson(res, 403, { ok: false, error: "Insufficient permissions" }, req)
+        }
+        const parsed = await parseJsonBody(req)
+        if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+        try {
+          const saved = await saveEmailConfig(parsed.data || {}, user.userId)
+          await writeAuditLog({
+            userId: user.userId,
+            action: "UPDATE",
+            resource: "email-config",
+            resourceId: "default",
+            metadata: { provider: saved?.provider || null },
+            ipAddress: getClientIp(req),
+            success: true,
+          }).catch(() => {})
+          const status = await getActiveMailStatus()
+          return sendJson(res, 200, { ok: true, config: saved, status }, req)
+        } catch (err) {
+          console.error("[admin/email-config:save] error:", err)
+          return sendJson(res, 500, { ok: false, error: err?.message || "Failed to save email config" }, req)
+        }
+      }
+
+      // POST /api/sentinel/admin/email-config/test — verify connectivity
+      // Body: { mode: "smtp" | "imap" | "graph" | "send", config?: {...}, to?: "..." }
+      if (method === "POST" && reqPathname === "/api/sentinel/admin/email-config/test") {
+        if (!hasMinimumRole(user.role, "SENTINEL_COMMANDER")) {
+          return sendJson(res, 403, { ok: false, error: "Insufficient permissions" }, req)
+        }
+        const parsed = await parseJsonBody(req)
+        if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+        const { mode, config: overrideConfig, to } = parsed.data || {}
+        try {
+          if (mode === "smtp") {
+            const result = await testSmtpConfig(overrideConfig?.smtp || {})
+            return sendJson(res, 200, { ok: true, result }, req)
+          }
+          if (mode === "imap") {
+            const result = await testImapConfig(overrideConfig?.imap || {})
+            return sendJson(res, 200, { ok: true, result }, req)
+          }
+          if (mode === "graph") {
+            const result = await testGraphConfig(overrideConfig?.graph || {})
+            return sendJson(res, 200, { ok: true, result }, req)
+          }
+          if (mode === "send") {
+            const recipient = (typeof to === "string" && to.trim()) ? to.trim() : user.email
+            // When `config` is provided, send via the override; otherwise via active provider
+            const result = await sendTestEmail({ to: recipient, override: overrideConfig || null })
+            return sendJson(res, 200, { ok: true, result, sentTo: recipient }, req)
+          }
+          return sendJson(res, 400, { ok: false, error: "Unknown test mode (use smtp|imap|graph|send)" }, req)
+        } catch (err) {
+          console.error(`[admin/email-config:test:${mode}] error:`, err)
+          return sendJson(res, 500, { ok: false, error: err?.message || "Test failed" }, req)
         }
       }
 

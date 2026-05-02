@@ -351,6 +351,37 @@ export async function ensureSentinelTables() {
       ON sentinel_skills_execution_logs (module_name, created_at DESC)
     `
 
+    // App-wide email configuration (singleton row keyed by id='default').
+    // Sensitive secrets (smtp_password_enc, imap_password_enc, graph_client_secret_enc)
+    // are stored as base64(AES-256-GCM(JWT_SECRET-derived key)) — see encryptSecret/decryptSecret.
+    await sql`
+      CREATE TABLE IF NOT EXISTS app_email_config (
+        id TEXT PRIMARY KEY DEFAULT 'default',
+        provider TEXT NOT NULL DEFAULT 'graph',
+        from_email TEXT,
+        from_name TEXT,
+        reply_to TEXT,
+        admin_notification_email TEXT,
+        smtp_host TEXT,
+        smtp_port INTEGER,
+        smtp_secure BOOLEAN NOT NULL DEFAULT true,
+        smtp_user TEXT,
+        smtp_password_enc TEXT,
+        imap_host TEXT,
+        imap_port INTEGER,
+        imap_secure BOOLEAN NOT NULL DEFAULT true,
+        imap_user TEXT,
+        imap_password_enc TEXT,
+        graph_tenant_id TEXT,
+        graph_client_id TEXT,
+        graph_client_secret_enc TEXT,
+        graph_sender_email TEXT,
+        graph_sender_name TEXT,
+        updated_by TEXT,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `
+
     console.log("[db] Sentinel tables verified")
   } catch (err) {
     console.warn("[db] Sentinel tables not found — run migrations first:", err.message)
@@ -2214,4 +2245,215 @@ export async function executeProxyQuery(query, params = []) {
     // As a fallback, we just call it as tagged template with single string.
     return await sql([query], ...params)
   }
+}
+
+// ─────────────────────────── App Email Config (Singleton) ───────────────
+
+/**
+ * Derive a 32-byte AES-256-GCM key from JWT_SECRET so we can encrypt SMTP/IMAP/Graph
+ * passwords at rest. Falls back to a dev key when JWT_SECRET is not set; the
+ * encrypted blobs are non-portable across environments by design.
+ */
+function getEmailSecretKey() {
+  const base = process.env.JWT_SECRET || process.env.BACKEND_JWT_SECRET || "novussparks-email-config-dev-key"
+  return crypto.createHash("sha256").update(`email-config:${base}`).digest()
+}
+
+/** Encrypt a plaintext secret. Returns base64(iv|tag|ciphertext) or null. */
+function encryptEmailSecret(plaintext) {
+  if (plaintext === null || plaintext === undefined || plaintext === "") return null
+  const key = getEmailSecretKey()
+  const iv = crypto.randomBytes(12)
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv)
+  const ct = Buffer.concat([cipher.update(String(plaintext), "utf8"), cipher.final()])
+  const tag = cipher.getAuthTag()
+  return Buffer.concat([iv, tag, ct]).toString("base64")
+}
+
+/** Decrypt a stored secret. Returns plaintext or "" when blob is missing/invalid. */
+function decryptEmailSecret(stored) {
+  if (!stored) return ""
+  try {
+    const buf = Buffer.from(String(stored), "base64")
+    if (buf.length < 12 + 16) return ""
+    const iv = buf.subarray(0, 12)
+    const tag = buf.subarray(12, 28)
+    const ct = buf.subarray(28)
+    const key = getEmailSecretKey()
+    const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv)
+    decipher.setAuthTag(tag)
+    const pt = Buffer.concat([decipher.update(ct), decipher.final()])
+    return pt.toString("utf8")
+  } catch {
+    return ""
+  }
+}
+
+/** Mask a secret for safe display (returns true/false flag instead of value). */
+function emailConfigPublicShape(row) {
+  if (!row) return null
+  return {
+    provider: row.provider || "graph",
+    fromEmail: row.from_email || "",
+    fromName: row.from_name || "",
+    replyTo: row.reply_to || "",
+    adminNotificationEmail: row.admin_notification_email || "",
+    smtp: {
+      host: row.smtp_host || "",
+      port: row.smtp_port || null,
+      secure: row.smtp_secure !== false,
+      user: row.smtp_user || "",
+      hasPassword: Boolean(row.smtp_password_enc),
+    },
+    imap: {
+      host: row.imap_host || "",
+      port: row.imap_port || null,
+      secure: row.imap_secure !== false,
+      user: row.imap_user || "",
+      hasPassword: Boolean(row.imap_password_enc),
+    },
+    graph: {
+      tenantId: row.graph_tenant_id || "",
+      clientId: row.graph_client_id || "",
+      hasClientSecret: Boolean(row.graph_client_secret_enc),
+      senderEmail: row.graph_sender_email || "",
+      senderName: row.graph_sender_name || "",
+    },
+    updatedBy: row.updated_by || null,
+    updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : null,
+  }
+}
+
+/**
+ * Returns the stored email config including plaintext secrets (for transport use).
+ * NEVER expose this object to the client — use getEmailConfigPublic instead.
+ */
+export async function getEmailConfigInternal() {
+  if (!isDbConfigured()) return null
+  try {
+    const sql = getSql()
+    const rows = await sql`SELECT * FROM app_email_config WHERE id = 'default' LIMIT 1`
+    const row = rows[0]
+    if (!row) return null
+    return {
+      provider: row.provider || "graph",
+      fromEmail: row.from_email || "",
+      fromName: row.from_name || "",
+      replyTo: row.reply_to || "",
+      adminNotificationEmail: row.admin_notification_email || "",
+      smtp: {
+        host: row.smtp_host || "",
+        port: row.smtp_port || null,
+        secure: row.smtp_secure !== false,
+        user: row.smtp_user || "",
+        password: decryptEmailSecret(row.smtp_password_enc),
+      },
+      imap: {
+        host: row.imap_host || "",
+        port: row.imap_port || null,
+        secure: row.imap_secure !== false,
+        user: row.imap_user || "",
+        password: decryptEmailSecret(row.imap_password_enc),
+      },
+      graph: {
+        tenantId: row.graph_tenant_id || "",
+        clientId: row.graph_client_id || "",
+        clientSecret: decryptEmailSecret(row.graph_client_secret_enc),
+        senderEmail: row.graph_sender_email || "",
+        senderName: row.graph_sender_name || "",
+      },
+      updatedBy: row.updated_by || null,
+      updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : null,
+    }
+  } catch (err) {
+    console.warn("[db/email-config] read failed:", err?.message)
+    return null
+  }
+}
+
+/** Safe-for-client view of the stored email config (no secrets). */
+export async function getEmailConfigPublic() {
+  if (!isDbConfigured()) return null
+  try {
+    const sql = getSql()
+    const rows = await sql`SELECT * FROM app_email_config WHERE id = 'default' LIMIT 1`
+    return emailConfigPublicShape(rows[0] || null)
+  } catch (err) {
+    console.warn("[db/email-config] read-public failed:", err?.message)
+    return null
+  }
+}
+
+/**
+ * Upsert the singleton email config row. Sensitive fields:
+ * - smtpPassword / imapPassword / graphClientSecret are encrypted before write.
+ * - When passed as undefined the existing stored secret is preserved.
+ * - When passed as empty string ("") the stored secret is cleared.
+ */
+export async function saveEmailConfig(input, actorUserId = null) {
+  const sql = getSql()
+  const existing = await sql`SELECT * FROM app_email_config WHERE id = 'default' LIMIT 1`
+  const prev = existing[0] || {}
+
+  const provider = input?.provider === "smtp" ? "smtp" : "graph"
+  const smtp = input?.smtp || {}
+  const imap = input?.imap || {}
+  const graph = input?.graph || {}
+
+  const smtpPasswordEnc = smtp.password === undefined
+    ? (prev.smtp_password_enc || null)
+    : encryptEmailSecret(smtp.password)
+  const imapPasswordEnc = imap.password === undefined
+    ? (prev.imap_password_enc || null)
+    : encryptEmailSecret(imap.password)
+  const graphClientSecretEnc = graph.clientSecret === undefined
+    ? (prev.graph_client_secret_enc || null)
+    : encryptEmailSecret(graph.clientSecret)
+
+  await sql`
+    INSERT INTO app_email_config (
+      id, provider, from_email, from_name, reply_to, admin_notification_email,
+      smtp_host, smtp_port, smtp_secure, smtp_user, smtp_password_enc,
+      imap_host, imap_port, imap_secure, imap_user, imap_password_enc,
+      graph_tenant_id, graph_client_id, graph_client_secret_enc,
+      graph_sender_email, graph_sender_name,
+      updated_by, updated_at
+    ) VALUES (
+      'default', ${provider},
+      ${input?.fromEmail || null}, ${input?.fromName || null},
+      ${input?.replyTo || null}, ${input?.adminNotificationEmail || null},
+      ${smtp.host || null}, ${smtp.port ? Number(smtp.port) : null},
+      ${smtp.secure !== false}, ${smtp.user || null}, ${smtpPasswordEnc},
+      ${imap.host || null}, ${imap.port ? Number(imap.port) : null},
+      ${imap.secure !== false}, ${imap.user || null}, ${imapPasswordEnc},
+      ${graph.tenantId || null}, ${graph.clientId || null}, ${graphClientSecretEnc},
+      ${graph.senderEmail || null}, ${graph.senderName || null},
+      ${actorUserId}, NOW()
+    )
+    ON CONFLICT (id) DO UPDATE SET
+      provider = EXCLUDED.provider,
+      from_email = EXCLUDED.from_email,
+      from_name = EXCLUDED.from_name,
+      reply_to = EXCLUDED.reply_to,
+      admin_notification_email = EXCLUDED.admin_notification_email,
+      smtp_host = EXCLUDED.smtp_host,
+      smtp_port = EXCLUDED.smtp_port,
+      smtp_secure = EXCLUDED.smtp_secure,
+      smtp_user = EXCLUDED.smtp_user,
+      smtp_password_enc = EXCLUDED.smtp_password_enc,
+      imap_host = EXCLUDED.imap_host,
+      imap_port = EXCLUDED.imap_port,
+      imap_secure = EXCLUDED.imap_secure,
+      imap_user = EXCLUDED.imap_user,
+      imap_password_enc = EXCLUDED.imap_password_enc,
+      graph_tenant_id = EXCLUDED.graph_tenant_id,
+      graph_client_id = EXCLUDED.graph_client_id,
+      graph_client_secret_enc = EXCLUDED.graph_client_secret_enc,
+      graph_sender_email = EXCLUDED.graph_sender_email,
+      graph_sender_name = EXCLUDED.graph_sender_name,
+      updated_by = EXCLUDED.updated_by,
+      updated_at = NOW()
+  `
+
+  return getEmailConfigPublic()
 }
