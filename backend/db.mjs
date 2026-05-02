@@ -1039,34 +1039,94 @@ export async function deactivateUserById(userId) {
 }
 
 /**
- * Hard delete a user and their subscription from Neon.
- * Removes all related records including subscription and permissions.
- * Used by admin to permanently remove test users, etc.
+ * Hard delete a user. Cleans up all known dependent rows first; if any
+ * unknown FK still blocks the delete (NOT NULL REFERENCES sentinel_users),
+ * falls back to an anonymized soft delete (is_active=false, email scrambled)
+ * so the operator always gets a successful, idempotent result.
+ *
+ * Returns: { id, email, fullName, mode: "hard" | "soft" }
  */
 export async function deleteUserById(userId) {
   const sql = getSql()
+
+  // Best-effort cleanup of dependent rows. Each table is wrapped in its own
+  // try/catch so a missing table (different deploy stage) never aborts the rest.
+  const cleanupTables = [
+    // Subscriptions / billing
+    "sentinel_user_subscriptions",
+    "sentinel_module_permissions",
+    "sentinel_credit_ledger",
+    "sentinel_subscription_history",
+    // Auth / sessions
+    "sentinel_refresh_tokens",
+    "sentinel_password_resets",
+    "sentinel_oauth_identities",
+    "sentinel_user_sessions",
+    "sentinel_login_attempts",
+    // App data tied to user
+    "user_style_profiles",
+    "user_style_samples",
+    "user_style_history",
+    // Audit / activity (best-effort: keep history if FK is restrictive)
+    "sentinel_user_activity",
+  ]
+
+  for (const table of cleanupTables) {
+    try {
+      await sql.unsafe(`DELETE FROM ${table} WHERE user_id = $1`, [userId])
+    } catch {
+      // Table may not exist in this deploy or column may differ — ignore.
+    }
+  }
+
+  // Null out optional "actor" references that allow NULL.
+  const nullableActorRefs = [
+    { table: "sentinel_provider_routing", column: "updated_by" },
+    { table: "app_email_config", column: "updated_by" },
+    { table: "sentinel_audit_log", column: "user_id" },
+    { table: "audit_logs", column: "user_id" },
+  ]
+  for (const ref of nullableActorRefs) {
+    try {
+      await sql.unsafe(`UPDATE ${ref.table} SET ${ref.column} = NULL WHERE ${ref.column} = $1`, [userId])
+    } catch {
+      // Ignore — table or column may not exist.
+    }
+  }
+
+  // Attempt the hard delete.
   try {
-    // Delete user's subscriptions first (FK constraint)
-    await sql`
-      DELETE FROM sentinel_user_subscriptions
-      WHERE user_id = ${userId}
-    `
-
-    // Delete user's module permissions
-    await sql`
-      DELETE FROM sentinel_module_permissions
-      WHERE user_id = ${userId}
-    `
-
-    // Delete the user record
     const rows = await sql`
       DELETE FROM sentinel_users
       WHERE id = ${userId}
       RETURNING id, email, full_name AS "fullName"
     `
-
-    return rows[0] || null
+    if (rows[0]) return { ...rows[0], mode: "hard" }
+    return null
   } catch (err) {
+    // Postgres FK violation = code 23503. Fall back to anonymized soft delete.
+    const code = err?.code || err?.cause?.code
+    if (code === "23503") {
+      console.warn(
+        `[db.deleteUserById] FK constraint blocked hard delete of ${userId}; performing anonymized soft delete.`,
+        err?.detail || err?.message,
+      )
+      const anonEmail = `deleted+${userId.slice(0, 8)}@novussparks.invalid`
+      const rows = await sql`
+        UPDATE sentinel_users
+        SET is_active = FALSE,
+            email = ${anonEmail},
+            full_name = 'Deleted User',
+            password_hash = '',
+            avatar_url = NULL,
+            organization_id = NULL,
+            updated_at = NOW()
+        WHERE id = ${userId}
+        RETURNING id, email, full_name AS "fullName"
+      `
+      if (rows[0]) return { ...rows[0], mode: "soft" }
+      return null
+    }
     console.error(`[db.deleteUserById] error deleting user ${userId}:`, err)
     throw err
   }

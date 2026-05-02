@@ -2663,18 +2663,30 @@ async function handleAdminDeleteUser(req, res, user) {
       userIdToDelete = userRow.id
     }
 
-    // Delete the user from Neon
+    // Delete the user from Neon (auto-falls-back to anonymized soft delete on FK conflicts)
     const deletedUser = await deleteUserById(userIdToDelete)
     if (!deletedUser) {
       return sendJson(res, 404, { ok: false, error: "User not found" }, req)
     }
 
-    console.log(`[ADMIN DELETE USER] Admin ${user.email} deleted user ${deletedUser.email} (ID: ${userIdToDelete})`)
+    const mode = deletedUser.mode || "hard"
+    console.log(
+      `[ADMIN DELETE USER] Admin ${user.email} deleted user ${deletedUser.email} ` +
+      `(ID: ${userIdToDelete}, mode: ${mode})`,
+    )
 
-    return sendJson(res, 200, { ok: true, message: "User deleted successfully", deletedUser }, req)
+    return sendJson(res, 200, {
+      ok: true,
+      mode,
+      message: mode === "soft"
+        ? "User had related records and was anonymized + deactivated (soft delete)."
+        : "User deleted successfully",
+      deletedUser,
+    }, req)
   } catch (err) {
     console.error("[handleAdminDeleteUser] error:", err)
-    return sendJson(res, 500, { ok: false, error: "Internal server error" }, req)
+    const message = err?.message || "Internal server error"
+    return sendJson(res, 500, { ok: false, error: `User delete failed: ${message}` }, req)
   }
 }
 
