@@ -63,6 +63,7 @@ import { BudgetConfigManager } from "@/components/BudgetConfigManager"
 import { AdminSubscriptionPanel } from "@/components/AdminSubscriptionPanel"
 import { AdminProviderRoutingPanel } from "@/components/AdminProviderRoutingPanel"
 import { EmailConfigPanel } from "@/components/EmailConfigPanel"
+import { EmailStudioPanel } from "@/components/EmailStudioPanel"
 import { getSafeKVClient } from "@/lib/spark-shim"
 import { fetchBackendProviderStatus, type BackendProviderStatus } from "@/lib/platform-client"
 import { fetchAuthCapabilities, type AuthCapabilities } from "@/lib/auth-capabilities"
@@ -910,6 +911,10 @@ export function AdminDashboard() {
                   <Key size={18} weight="bold" />
                   Email Settings
                 </TabsTrigger>
+                <TabsTrigger value="email-studio" className="gap-2" disabled={!authCapabilities.isSentinelCommander}>
+                  <Key size={18} weight="bold" />
+                  Email Studio
+                </TabsTrigger>
               </TabsList>
             </div>
 
@@ -1455,6 +1460,10 @@ export function AdminDashboard() {
 
             <TabsContent value="email">
               <EmailConfigPanel canManage={authCapabilities.isSentinelCommander} />
+            </TabsContent>
+
+            <TabsContent value="email-studio">
+              <EmailStudioPanel canManage={authCapabilities.isSentinelCommander} />
             </TabsContent>
           </Tabs>
         </motion.div>

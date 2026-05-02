@@ -83,6 +83,102 @@ export async function ensureSentinelTables() {
       )
     `
 
+    // ── Email Studio (admin marketing campaigns) ─────────────────────────
+    // Marketing opt-out flag on user (transactional emails ignore this).
+    await sql`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'sentinel_users' AND column_name = 'marketing_opt_out'
+        ) THEN
+          ALTER TABLE sentinel_users ADD COLUMN marketing_opt_out BOOLEAN NOT NULL DEFAULT FALSE;
+        END IF;
+      END $$
+    `
+
+    // Brand identity — drives AI voice + email visuals (single-row table).
+    await sql`
+      CREATE TABLE IF NOT EXISTS email_brand_identity (
+        id INTEGER PRIMARY KEY DEFAULT 1,
+        brand_name TEXT NOT NULL DEFAULT 'Novus Sparks AI',
+        tagline TEXT,
+        voice_description TEXT NOT NULL DEFAULT 'Warm, confident, founder-personal. Technical but approachable.',
+        primary_color TEXT NOT NULL DEFAULT '#0f766e',
+        accent_color TEXT NOT NULL DEFAULT '#f59e0b',
+        logo_url TEXT,
+        founder_name TEXT NOT NULL DEFAULT 'Umer Lone',
+        founder_title TEXT NOT NULL DEFAULT 'Founder — Novus Sparks AI',
+        support_email TEXT NOT NULL DEFAULT 'agentic@novussparks.com',
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        CHECK (id = 1)
+      )
+    `
+    await sql`
+      INSERT INTO email_brand_identity (id) VALUES (1) ON CONFLICT (id) DO NOTHING
+    `
+
+    // Reusable templates (saved drafts).
+    await sql`
+      CREATE TABLE IF NOT EXISTS email_templates (
+        id BIGSERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        category TEXT NOT NULL DEFAULT 'marketing',
+        subject TEXT NOT NULL,
+        body_html TEXT NOT NULL,
+        variables JSONB NOT NULL DEFAULT '[]'::jsonb,
+        created_by TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `
+
+    // Campaigns — one row per send-out.
+    await sql`
+      CREATE TABLE IF NOT EXISTS email_campaigns (
+        id BIGSERIAL PRIMARY KEY,
+        template_id BIGINT REFERENCES email_templates(id) ON DELETE SET NULL,
+        name TEXT NOT NULL DEFAULT 'Untitled campaign',
+        subject TEXT NOT NULL,
+        body_html TEXT NOT NULL,
+        intent TEXT NOT NULL DEFAULT 'marketing',
+        audience_filter JSONB NOT NULL DEFAULT '{}'::jsonb,
+        status TEXT NOT NULL DEFAULT 'draft',
+        scheduled_for TIMESTAMPTZ,
+        total_recipients INTEGER NOT NULL DEFAULT 0,
+        sent_count INTEGER NOT NULL DEFAULT 0,
+        failed_count INTEGER NOT NULL DEFAULT 0,
+        skipped_count INTEGER NOT NULL DEFAULT 0,
+        created_by TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        started_at TIMESTAMPTZ,
+        completed_at TIMESTAMPTZ
+      )
+    `
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_email_campaigns_status_scheduled
+        ON email_campaigns (status, scheduled_for)
+    `
+
+    // Frozen recipient list per campaign (idempotent + resumable).
+    await sql`
+      CREATE TABLE IF NOT EXISTS email_campaign_recipients (
+        id BIGSERIAL PRIMARY KEY,
+        campaign_id BIGINT NOT NULL REFERENCES email_campaigns(id) ON DELETE CASCADE,
+        user_id TEXT NOT NULL,
+        email TEXT NOT NULL,
+        full_name TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        sent_at TIMESTAMPTZ,
+        error TEXT,
+        UNIQUE (campaign_id, user_id)
+      )
+    `
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_email_recipients_campaign_status
+        ON email_campaign_recipients (campaign_id, status)
+    `
+
     // Ensure RAG chat tables exist for threaded conversations.
     await sql`
       CREATE TABLE IF NOT EXISTS chat_threads (

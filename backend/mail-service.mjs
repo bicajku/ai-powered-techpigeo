@@ -310,10 +310,25 @@ function renderSignatureBlock() {
 }
 
 /**
- * Common HTML wrapper — gradient header, white card, footer. Compatible with
- * Gmail, Apple Mail, Outlook 365, and most webmail clients.
+ * Common HTML wrapper — gradient header (with logo), white card, footer.
+ * Compatible with Gmail, Apple Mail, Outlook 365, and most webmail clients.
+ *
+ * @param {Object} args
+ * @param {string} args.headline
+ * @param {string} [args.preheader]
+ * @param {string} [args.tagline]
+ * @param {string} args.body
+ * @param {string} [args.unsubscribeUrl]  Per-recipient one-click unsubscribe URL
+ *                                       (appears in footer for marketing campaigns).
+ * @param {string} [args.logoUrl]         Override logo URL (defaults to brand icon).
+ * @param {string} [args.brandName]       Header brand line (defaults to "Novus Sparks · AI").
  */
-function renderEmailShell({ preheader, headline, tagline, body }) {
+function renderEmailShell({ preheader, headline, tagline, body, unsubscribeUrl, logoUrl, brandName }) {
+  const logoSrc = logoUrl || `${APP_BASE_URL}/icons/icon-128.png`
+  const brandLine = brandName || "Novus Sparks · AI"
+  const unsubFooter = unsubscribeUrl
+    ? `<br/><a href="${escapeHtml(unsubscribeUrl)}" style="color:#7dd3fc; text-decoration:underline;">Unsubscribe</a> from marketing emails.`
+    : ""
   return `<!DOCTYPE html>
 <html lang="en">
   <head>
@@ -334,11 +349,23 @@ function renderEmailShell({ preheader, headline, tagline, body }) {
             <!-- Header / brand band -->
             <tr>
               <td style="background:linear-gradient(135deg, ${BRAND_PRIMARY} 0%, ${BRAND_PRIMARY_DARK} 60%, #0b3d3a 100%);
-                         padding:32px 36px; color:#ffffff;">
-                <div style="font-size:13px; letter-spacing:3px; text-transform:uppercase; opacity:0.85; margin-bottom:8px;">
-                  Novus Sparks · AI
-                </div>
-                <div style="font-size:26px; font-weight:700; line-height:1.2;">
+                         padding:28px 36px; color:#ffffff;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                  <tr>
+                    <td valign="middle" width="56" style="padding-right:14px;">
+                      <img src="${escapeHtml(logoSrc)}" alt="${escapeHtml(brandLine)}"
+                           width="48" height="48"
+                           style="display:block; border:0; border-radius:10px; background:rgba(255,255,255,0.08); padding:4px;" />
+                    </td>
+                    <td valign="middle">
+                      <div style="font-size:12px; letter-spacing:3px; text-transform:uppercase; opacity:0.85;">
+                        ${escapeHtml(brandLine)}
+                      </div>
+                      <div style="font-size:11px; opacity:0.7; margin-top:2px;">novussparks.com</div>
+                    </td>
+                  </tr>
+                </table>
+                <div style="font-size:24px; font-weight:700; line-height:1.25; margin-top:18px;">
                   ${escapeHtml(headline)}
                 </div>
                 ${tagline ? `<div style="font-size:14px; opacity:0.9; margin-top:8px;">${escapeHtml(tagline)}</div>` : ""}
@@ -359,7 +386,7 @@ function renderEmailShell({ preheader, headline, tagline, body }) {
                 If this wasn't you, please contact
                 <a href="mailto:${escapeHtml(SUPPORT_EMAIL)}" style="color:#7dd3fc; text-decoration:none;">
                   ${escapeHtml(SUPPORT_EMAIL)}
-                </a>.
+                </a>.${unsubFooter}
               </td>
             </tr>
           </table>
@@ -756,4 +783,19 @@ export async function sendTestEmail({ to, override = null, subject, body }) {
 
   await sendMail({ to, subject: subj, html, text })
   return { ok: true }
+}
+
+// ─────────────────────────── Re-exports for Email Studio ─────────────────
+// These let backend/email-studio.mjs render branded campaign emails using the
+// exact same shell + CTA helpers as transactional templates.
+export const renderBrandedShell = renderEmailShell
+export const renderBrandedCtaButton = renderCtaButton
+export const BRAND = {
+  primary: BRAND_PRIMARY,
+  primaryDark: BRAND_PRIMARY_DARK,
+  accent: BRAND_ACCENT,
+  founderName: FOUNDER_NAME,
+  founderTitle: FOUNDER_TITLE,
+  supportEmail: SUPPORT_EMAIL,
+  appBaseUrl: APP_BASE_URL,
 }

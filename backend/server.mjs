@@ -125,6 +125,25 @@ import {
   getEmailConfigPublic,
   saveEmailConfig,
 } from "./db.mjs"
+import {
+  getBrandIdentity,
+  saveBrandIdentity,
+  generateEmailDraft,
+  listTemplates,
+  saveTemplate,
+  deleteTemplate,
+  resolveAudience,
+  createCampaign,
+  listCampaigns,
+  getCampaign,
+  getCampaignRecipients,
+  cancelCampaign,
+  sendCampaignTest,
+  sendCampaignNow,
+  startCampaignScheduler,
+  verifyUnsubscribeToken,
+  applyOptOut,
+} from "./email-studio.mjs"
 
 // ─────────────────────────── Config ──────────────────────────────
 
@@ -4144,6 +4163,45 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { ok: true, status: "healthy", timestamp: Date.now() }, req)
     }
 
+    // ── GET /unsubscribe — public one-click marketing opt-out ──
+    if (method === "GET" && reqPathname === "/unsubscribe") {
+      const token = url.searchParams.get("t")
+      const sig = url.searchParams.get("s")
+      const isTest = url.searchParams.get("test") === "1"
+      let message = ""
+      let success = false
+      try {
+        if (isTest) {
+          message = "This was a test link. No changes were made."
+          success = true
+        } else {
+          const verified = verifyUnsubscribeToken(token, sig)
+          if (!verified) {
+            message = "This unsubscribe link is invalid or has expired. Please contact support."
+          } else {
+            await applyOptOut(verified.userId, verified.email)
+            message = `You've been unsubscribed from marketing emails. Transactional emails (security, billing) will still be delivered.`
+            success = true
+          }
+        }
+      } catch (err) {
+        console.error("[unsubscribe] error:", err?.message)
+        message = "Something went wrong. Please contact support."
+      }
+      const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
+<title>Unsubscribed · Novus Sparks AI</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+</head><body style="margin:0;padding:0;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif;color:#0f172a;">
+<div style="max-width:520px;margin:60px auto;background:#fff;border-radius:14px;padding:40px;box-shadow:0 4px 14px rgba(15,23,42,0.06);">
+  <div style="font-size:13px;letter-spacing:3px;text-transform:uppercase;color:#0f766e;margin-bottom:8px;">Novus Sparks · AI</div>
+  <h1 style="font-size:22px;margin:0 0 14px;">${success ? "You're unsubscribed" : "Unsubscribe"}</h1>
+  <p style="font-size:15px;line-height:1.6;color:#334155;">${message}</p>
+  <p style="margin-top:24px;"><a href="https://novussparks.com" style="color:#0f766e;text-decoration:none;font-weight:600;">← Back to novussparks.com</a></p>
+</div></body></html>`
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+      return res.end(html)
+    }
+
     // ── POST /api/auth/login ──
     if (method === "POST" && reqPathname === "/api/auth/login") {
       return handleLogin(req, res)
@@ -4450,6 +4508,125 @@ const server = http.createServer(async (req, res) => {
         } catch (err) {
           console.error(`[admin/email-config:test:${mode}] error:`, err)
           return sendJson(res, 500, { ok: false, error: err?.message || "Test failed" }, req)
+        }
+      }
+
+      // ─────────────── Email Studio (admin marketing) ───────────────
+      // All routes require SENTINEL_COMMANDER.
+      if (reqPathname.startsWith("/api/sentinel/admin/email-studio/")) {
+        if (!hasMinimumRole(user.role, "SENTINEL_COMMANDER")) {
+          return sendJson(res, 403, { ok: false, error: "Insufficient permissions" }, req)
+        }
+        try {
+          // GET brand identity
+          if (method === "GET" && reqPathname === "/api/sentinel/admin/email-studio/brand") {
+            const brand = await getBrandIdentity()
+            return sendJson(res, 200, { ok: true, brand }, req)
+          }
+          // PUT brand identity
+          if (method === "PUT" && reqPathname === "/api/sentinel/admin/email-studio/brand") {
+            const parsed = await parseJsonBody(req)
+            if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+            const brand = await saveBrandIdentity(parsed.data || {})
+            return sendJson(res, 200, { ok: true, brand }, req)
+          }
+          // POST AI draft generation
+          if (method === "POST" && reqPathname === "/api/sentinel/admin/email-studio/generate") {
+            const parsed = await parseJsonBody(req)
+            if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+            const draft = await generateEmailDraft(parsed.data || {})
+            return sendJson(res, 200, { ok: true, draft }, req)
+          }
+          // POST audience preview (count + sample)
+          if (method === "POST" && reqPathname === "/api/sentinel/admin/email-studio/audience") {
+            const parsed = await parseJsonBody(req)
+            if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+            const audience = await resolveAudience(parsed.data?.filter || {})
+            return sendJson(res, 200, {
+              ok: true,
+              count: audience.length,
+              sample: audience.slice(0, 25).map((u) => ({ email: u.email, fullName: u.fullName, tier: u.tier })),
+            }, req)
+          }
+          // POST send-test
+          if (method === "POST" && reqPathname === "/api/sentinel/admin/email-studio/send-test") {
+            const parsed = await parseJsonBody(req)
+            if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+            const { subject, bodyHtml, intent, to } = parsed.data || {}
+            if (!subject || !bodyHtml) return sendJson(res, 400, { ok: false, error: "subject and bodyHtml required" }, req)
+            const recipient = (typeof to === "string" && to.trim()) ? to.trim() : user.email
+            const result = await sendCampaignTest({
+              campaign: { subject, bodyHtml, intent: intent || "marketing" },
+              toEmail: recipient,
+            })
+            return sendJson(res, 200, { ok: true, result, sentTo: recipient }, req)
+          }
+          // GET templates
+          if (method === "GET" && reqPathname === "/api/sentinel/admin/email-studio/templates") {
+            const templates = await listTemplates()
+            return sendJson(res, 200, { ok: true, templates }, req)
+          }
+          // POST templates (create or update)
+          if (method === "POST" && reqPathname === "/api/sentinel/admin/email-studio/templates") {
+            const parsed = await parseJsonBody(req)
+            if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+            const template = await saveTemplate(parsed.data || {}, user.id)
+            return sendJson(res, 200, { ok: true, template }, req)
+          }
+          // DELETE template
+          {
+            const m = reqPathname.match(/^\/api\/sentinel\/admin\/email-studio\/templates\/(\d+)$/)
+            if (m && method === "DELETE") {
+              await deleteTemplate(Number(m[1]))
+              return sendJson(res, 200, { ok: true }, req)
+            }
+          }
+          // GET campaigns list
+          if (method === "GET" && reqPathname === "/api/sentinel/admin/email-studio/campaigns") {
+            const limit = Number(url.searchParams.get("limit") || 50)
+            const campaigns = await listCampaigns(limit)
+            return sendJson(res, 200, { ok: true, campaigns }, req)
+          }
+          // POST campaigns (create + freeze recipients; optional immediate send)
+          if (method === "POST" && reqPathname === "/api/sentinel/admin/email-studio/campaigns") {
+            const parsed = await parseJsonBody(req)
+            if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+            const campaign = await createCampaign(parsed.data || {}, user.id)
+            if (parsed.data?.sendImmediately && campaign?.id) {
+              await sendCampaignNow(campaign.id)
+            }
+            return sendJson(res, 200, { ok: true, campaign }, req)
+          }
+          // GET campaign detail (with recipients)
+          {
+            const m = reqPathname.match(/^\/api\/sentinel\/admin\/email-studio\/campaigns\/(\d+)$/)
+            if (m && method === "GET") {
+              const campaign = await getCampaign(Number(m[1]))
+              if (!campaign) return sendJson(res, 404, { ok: false, error: "Campaign not found" }, req)
+              const recipients = await getCampaignRecipients(Number(m[1]), 200)
+              return sendJson(res, 200, { ok: true, campaign, recipients }, req)
+            }
+          }
+          // POST campaigns/:id/send — send now
+          {
+            const m = reqPathname.match(/^\/api\/sentinel\/admin\/email-studio\/campaigns\/(\d+)\/send$/)
+            if (m && method === "POST") {
+              const result = await sendCampaignNow(Number(m[1]))
+              return sendJson(res, 200, { ok: true, result }, req)
+            }
+          }
+          // POST campaigns/:id/cancel
+          {
+            const m = reqPathname.match(/^\/api\/sentinel\/admin\/email-studio\/campaigns\/(\d+)\/cancel$/)
+            if (m && method === "POST") {
+              const campaign = await cancelCampaign(Number(m[1]))
+              return sendJson(res, 200, { ok: true, campaign }, req)
+            }
+          }
+          return sendJson(res, 404, { ok: false, error: "Email Studio route not found" }, req)
+        } catch (err) {
+          console.error(`[admin/email-studio] ${method} ${reqPathname} error:`, err)
+          return sendJson(res, 500, { ok: false, error: err?.message || "Email Studio request failed" }, req)
         }
       }
 
@@ -6118,6 +6295,13 @@ async function start() {
     await ensureSentinelTables().catch((err) => {
       console.warn("[startup] Sentinel table check failed:", err.message)
     })
+  }
+
+  // Boot the Email Studio campaign scheduler (resumes scheduled/in-flight campaigns).
+  try {
+    startCampaignScheduler()
+  } catch (err) {
+    console.warn("[startup] Email Studio scheduler failed to start:", err?.message)
   }
 
   server.listen(PORT, HOST, () => {
