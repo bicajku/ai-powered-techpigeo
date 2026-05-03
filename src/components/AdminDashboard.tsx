@@ -42,8 +42,6 @@ import {
   Sparkle,
   Trash,
   ChartBar,
-  FolderOpen,
-  MagnifyingGlass,
   Eye,
   FileText,
   Bug,
