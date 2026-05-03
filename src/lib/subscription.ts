@@ -431,43 +431,47 @@ export async function consumeReviewCredit(userId: string): Promise<{ success: bo
     // If on trial (basic plan with active trial)
     if (!isPaidPlan && trial?.requested && !trial.exhausted) {
       if (trial.submissionsUsed >= trial.maxSubmissions) {
-        // Exhaust the trial
+        // Trial submission limit already reached — mark exhausted but preserve
+        // proCredits so the backend welcome-bonus credits remain usable.
         users[userId] = {
           ...safeUser,
           subscription: {
             ...subscription,
-            proCredits: 0,
-            trial: { ...trial, exhausted: true, creditsGranted: 0 },
+            trial: { ...trial, exhausted: true },
             updatedAt: Date.now(),
           },
         }
         await getSafeKVClient().set(USERS_STORAGE_KEY, users)
-        return { success: false, remainingCredits: 0, error: "Trial exhausted. Please upgrade to Pro or Team to continue." }
-      }
+        // Fall through to the credit-based path below rather than hard-blocking.
+      } else {
+        const newSubmissionsUsed = trial.submissionsUsed + 1
+        const isNowExhausted = newSubmissionsUsed >= trial.maxSubmissions
 
-      const newSubmissionsUsed = trial.submissionsUsed + 1
-      const newCreditsUsed = Math.max(0, subscription.proCredits - 1)
-      const isNowExhausted = newSubmissionsUsed >= trial.maxSubmissions
-
-      users[userId] = {
-        ...safeUser,
-        subscription: {
-          ...subscription,
-          proCredits: isNowExhausted ? 0 : newCreditsUsed,
-          trial: {
-            ...trial,
-            submissionsUsed: newSubmissionsUsed,
-            exhausted: isNowExhausted,
-            creditsGranted: isNowExhausted ? 0 : trial.creditsGranted,
+        // Update trial submission counter only — keep proCredits intact so
+        // welcome-bonus credits (backend) remain accessible after exhaustion.
+        users[userId] = {
+          ...safeUser,
+          subscription: {
+            ...subscription,
+            trial: {
+              ...trial,
+              submissionsUsed: newSubmissionsUsed,
+              exhausted: isNowExhausted,
+            },
+            updatedAt: Date.now(),
           },
-          updatedAt: Date.now(),
-        },
-      }
-      await getSafeKVClient().set(USERS_STORAGE_KEY, users)
-      return {
-        success: true,
-        remainingCredits: isNowExhausted ? 0 : newCreditsUsed,
-        trialSubmissionsUsed: newSubmissionsUsed,
+        }
+        await getSafeKVClient().set(USERS_STORAGE_KEY, users)
+
+        // Also deduct from the backend subscription so the two credit stores
+        // stay in sync. This call is best-effort; a failure is non-blocking.
+        chargeCredits(userId, 1, "review", "Review check (trial)").catch(() => null)
+
+        return {
+          success: true,
+          remainingCredits: subscription.proCredits || 0,
+          trialSubmissionsUsed: newSubmissionsUsed,
+        }
       }
     }
 

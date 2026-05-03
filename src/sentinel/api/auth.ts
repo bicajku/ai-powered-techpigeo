@@ -41,6 +41,7 @@ import type {
   SentinelSession,
   SentinelAuthToken,
   SentinelRole,
+  UserSubscription,
 } from "../types/index"
 
 // ─────────────────────────── Backend API Base ────────────────────
@@ -186,7 +187,7 @@ interface BackendAuthResponse {
   ok: boolean
   token?: string
   user?: SentinelUser
-  subscription?: unknown
+  subscription?: UserSubscription | null
   error?: string
 }
 
@@ -231,13 +232,14 @@ export const sentinelAuth = {
       if (res.status !== 0) {
         // Backend responded (even if error)
         if (res.ok && res.data?.ok && res.data.token && res.data.user) {
-          const user = res.data.user as SentinelUser
+          const user = res.data.user
           const token = res.data.token
+          const subscription = res.data.subscription ?? null
           storeToken(token)
 
           return {
             success: true,
-            session: { user, token },
+            session: { user, token, subscription },
           }
         }
         return { success: false, error: res.data?.error || "Registration failed" }
@@ -310,11 +312,12 @@ export const sentinelAuth = {
       if (res.status !== 0) {
         // Backend responded
         if (res.ok && res.data?.ok && res.data.token && res.data.user) {
-          const user = res.data.user as SentinelUser
+          const user = res.data.user
           const token = res.data.token
+          const subscription = res.data.subscription ?? null
           storeToken(token)
 
-          return { success: true, session: { user, token } }
+          return { success: true, session: { user, token, subscription } }
         }
         return { success: false, error: res.data?.error || "Invalid email or password" }
       }
@@ -407,8 +410,9 @@ export const sentinelAuth = {
 
       if (res.status !== 0) {
         if (res.ok && res.data?.ok && res.data.user) {
-          const user = res.data.user as SentinelUser
-          return { user, token }
+          const user = res.data.user
+          const subscription = res.data.subscription ?? null
+          return { user, token, subscription }
         }
         // Backend said token is invalid — clear it
         clearToken()

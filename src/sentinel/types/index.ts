@@ -80,6 +80,7 @@ export interface UserSubscription {
   expiresAt: number | null
   organizationId: string
   autoRenew: boolean
+  proCredits?: number   // credit balance from sentinel_user_subscriptions
 }
 
 // ───────────────────────────── Organization ──────────────────────
@@ -216,7 +217,7 @@ export interface SentinelAuthToken {
 export interface SentinelSession {
   user: SentinelUser
   token: string
-  subscription?: UserSubscription
+  subscription?: UserSubscription | null
   organization?: Organization
 }
 
