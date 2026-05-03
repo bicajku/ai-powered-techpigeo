@@ -275,7 +275,8 @@ export async function recordUsage(
   action: QuotaAction,
   payload: { words?: number } = {},
 ): Promise<void> {
-  if (!user || isQuotaExempt(user)) return
+  if (!user) return
+  const exempt = isQuotaExempt(user)
   const userId = user.id
   const now = Date.now()
 
@@ -283,26 +284,28 @@ export async function recordUsage(
     case "rag_chat_words": {
       const words = Math.max(0, payload.words || 0)
       if (!words) return
-      const key = kvKey(userId, "rag-window")
-      const current = await readJson<RagWindowCounter | null>(key, null)
-      const windowOpen = current && now - current.windowStartMs < QUOTA_POLICY.ragChatWindowMs
-      const next: RagWindowCounter = windowOpen
-        ? { windowStartMs: current!.windowStartMs, wordsUsed: current!.wordsUsed + words }
-        : { windowStartMs: now, wordsUsed: words }
-      await writeJson(key, next)
+      if (!exempt) {
+        const key = kvKey(userId, "rag-window")
+        const current = await readJson<RagWindowCounter | null>(key, null)
+        const windowOpen = current && now - current.windowStartMs < QUOTA_POLICY.ragChatWindowMs
+        const next: RagWindowCounter = windowOpen
+          ? { windowStartMs: current!.windowStartMs, wordsUsed: current!.wordsUsed + words }
+          : { windowStartMs: now, wordsUsed: words }
+        await writeJson(key, next)
+      }
       void mirrorToBackend(user, action, { words }).catch(() => {})
       return
     }
     case "rag_chat_file":
-      await bumpDaily(userId, "rag-files")
+      if (!exempt) await bumpDaily(userId, "rag-files")
       void mirrorToBackend(user, action, { files: 1 }).catch(() => {})
       return
     case "review_file":
-      await bumpDaily(userId, "review-day")
+      if (!exempt) await bumpDaily(userId, "review-day")
       void mirrorToBackend(user, action, { files: 1 }).catch(() => {})
       return
     case "humanizer_submission":
-      await bumpDaily(userId, "humanizer-day")
+      if (!exempt) await bumpDaily(userId, "humanizer-day")
       void mirrorToBackend(user, action, { words: payload.words || 0, submissions: 1 }).catch(() => {})
       return
     case "humanizer_words":
