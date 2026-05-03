@@ -1675,10 +1675,13 @@ async function handleRegister(req, res) {
       return sendJson(res, 409, { ok: false, error: "An account with this email already exists" }, req)
     }
 
-    // Seed welcome credits (10 credits, 7-day BASIC trial) — non-blocking
-    seedWelcomeCredits(newUser.id, newUser.id).catch((err) => {
+    // Seed welcome credits (10 credits, 7-day BASIC trial) — await so the
+    // first /api/auth/verify after redirect already returns the subscription.
+    try {
+      await seedWelcomeCredits(newUser.id, newUser.id)
+    } catch (err) {
       console.warn("[register] welcome credits seed failed (non-blocking):", err?.message)
-    })
+    }
 
     // Sign JWT
     const token = signToken({

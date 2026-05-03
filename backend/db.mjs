@@ -1381,6 +1381,7 @@ export async function getUserSubscription(userId) {
     SELECT id, user_id AS "userId", subscription_id AS "subscriptionId",
            tier, status, assigned_by AS "assignedBy",
            organization_id AS "organizationId", auto_renew AS "autoRenew",
+           COALESCE(pro_credits, 0) AS "proCredits",
            EXTRACT(EPOCH FROM assigned_at)::BIGINT * 1000 AS "assignedAt",
            EXTRACT(EPOCH FROM expires_at)::BIGINT * 1000 AS "expiresAt"
     FROM sentinel_user_subscriptions
