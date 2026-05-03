@@ -248,6 +248,16 @@ function PlagiarismCheckerInner({ user, mode }: { user: UserProfile; mode: "revi
   const [subscriptionPlan] = useState<SubscriptionPlan>(user.subscription?.plan || "basic")
   const [proCredits, setProCredits] = useState(user.subscription?.proCredits || 0)
   const [trialSubmissionsUsed, setTrialSubmissionsUsed] = useState(user.subscription?.trial?.submissionsUsed || 0)
+
+  // Keep local credit state in sync with the latest subscription pulled from
+  // /api/auth/verify polling on the parent (App.tsx). Without this, optimistic
+  // local deductions can drift from the backend balance.
+  useEffect(() => {
+    const next = user.subscription?.proCredits ?? 0
+    setProCredits((prev) => (prev === next ? prev : next))
+    const usedNext = user.subscription?.trial?.submissionsUsed ?? 0
+    setTrialSubmissionsUsed((prev) => (prev === usedNext ? prev : usedNext))
+  }, [user.subscription?.proCredits, user.subscription?.trial?.submissionsUsed])
   const [, setDocumentReviews] = useSafeKV<DocumentReviewResult[]>(
     `document-reviews-${userId}`,
     []
@@ -1752,18 +1762,13 @@ function PlagiarismCheckerInner({ user, mode }: { user: UserProfile; mode: "revi
       return
     }
 
-    if (!entitlements.isPaidPlan && user.role !== "admin") {
-      toast.info("🔒 Humanizer is available for Admin, Pro, and Team plans. Upgrade to unlock this feature.")
-      return
-    }
-
     if (!entitlements.canUseHumanizer) {
-      toast.error("No credits remaining. Please buy credits to continue using Humanizer.")
+      toast.error("No credits remaining. Please buy credits or upgrade to continue using Humanizer.")
       return
     }
 
     const requiredCredits = estimateHumanizerCredits(wordCount)
-    if (entitlements.isPaidPlan && user.role !== "admin" && proCredits < requiredCredits) {
+    if (user.role !== "admin" && user.role !== "tester" && proCredits < requiredCredits) {
       toast.error(`Not enough credits. This run requires ${requiredCredits} credit(s).`)
       return
     }

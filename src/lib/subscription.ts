@@ -136,8 +136,32 @@ async function chargeCredits(
   const kv = getSafeKVClient()
   const users = (await kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
   const rawUser = users[userId]
+
+  // Backend-first path: when the local KV mirror is missing (common for users
+  // that authenticated against the backend without a stored client-side profile),
+  // delegate the deduction to the backend which is the source of truth.
   if (!rawUser) {
-    return { success: false, remainingCredits: 0, error: "User not found" }
+    try {
+      const res = await postBackend("/api/usage/consume-credits", {
+        userId,
+        amount: creditsToConsume,
+        module,
+        reason,
+      })
+      if (res.ok && res.data && typeof res.data.remainingCredits === "number") {
+        return { success: true, remainingCredits: Number(res.data.remainingCredits) }
+      }
+      if (res.status === 402 || res.status === 403) {
+        return {
+          success: false,
+          remainingCredits: Number(res.data?.remainingCredits ?? 0),
+          error: (res.data?.error as string) || "Credit deduction rejected",
+        }
+      }
+    } catch {
+      // fallthrough
+    }
+    return { success: false, remainingCredits: 0, error: "Unable to deduct credits. Please try again." }
   }
 
   const user = ensureUserSubscription(rawUser)
@@ -387,8 +411,10 @@ export async function consumeReviewCredit(userId: string): Promise<{ success: bo
     const users = (await getSafeKVClient().get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
     const user = users[userId]
 
+    // Backend-only user (no local KV mirror) — go straight through chargeCredits
+    // which has its own backend-first fallback path.
     if (!user) {
-      return { success: false, remainingCredits: 0, error: "User not found" }
+      return await chargeCredits(userId, 1, "review", "Review check")
     }
 
     const safeUser = ensureUserSubscription(user)
