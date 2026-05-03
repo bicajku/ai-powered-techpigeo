@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react"
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -129,6 +129,13 @@ const AUTH_BOOTSTRAP_TIMEOUT_MS = 5000
 const APP_UI_STATE_KEY = "sentinel-ui-state-v1"
 
 const getDefaultSignedInTab = (ragChatEnabled: boolean) => (ragChatEnabled ? "rag-chat" : "generate")
+
+const getBackendBaseUrl = () => {
+  if (typeof import.meta !== "undefined" && import.meta.env?.VITE_BACKEND_API_BASE_URL) {
+    return import.meta.env.VITE_BACKEND_API_BASE_URL as string
+  }
+  return ""
+}
 
 type PersistedUIState = {
   activeTab?: string
@@ -327,6 +334,63 @@ function App() {
     isSentinelCommander: false,
   })
   const resultsRef = useRef<HTMLDivElement>(null)
+  const wasGeneratingRef = useRef(false)
+
+  const refreshUserCredits = useCallback(async () => {
+    const token = typeof localStorage !== "undefined"
+      ? localStorage.getItem("sentinel-auth-token") || localStorage.getItem("sentinel_token")
+      : null
+
+    if (!token) return
+
+    try {
+      const response = await fetch(`${getBackendBaseUrl()}/api/auth/verify`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        credentials: "include",
+      })
+
+      if (!response.ok) return
+
+      const payload = await response.json().catch(() => null) as {
+        ok?: boolean
+        user?: { id?: string }
+        subscription?: { tier?: string; status?: string; proCredits?: number } | null
+      } | null
+
+      if (!payload?.ok || !payload.user?.id || !payload.subscription) return
+
+      setUser((prev) => {
+        if (!prev || prev.id !== payload.user?.id) return prev
+
+        const tier = String(payload.subscription?.tier || prev.subscription?.plan || "basic").toLowerCase()
+        const statusRaw = String(payload.subscription?.status || prev.subscription?.status || "active").toLowerCase()
+        const normalizedPlan = (tier === "teams" ? "team" : tier) as "basic" | "pro" | "team" | "enterprise"
+        const normalizedStatus = (statusRaw === "grace" ? "grace" : statusRaw === "inactive" ? "inactive" : "active") as "active" | "inactive" | "grace"
+        const nextCredits = Number(payload.subscription?.proCredits ?? prev.subscription?.proCredits ?? 0)
+
+        return {
+          ...prev,
+          subscription: {
+            ...(prev.subscription || {
+              plan: "basic",
+              status: "active",
+              proCredits: 0,
+              updatedAt: Date.now(),
+            }),
+            plan: normalizedPlan,
+            status: normalizedStatus,
+            proCredits: Math.max(0, nextCredits),
+            updatedAt: Date.now(),
+          },
+        }
+      })
+    } catch {
+      // Keep existing UI state when verify endpoint is unavailable.
+    }
+  }, [])
 
   // When admin logs in, load all users' strategies for a global view
   useEffect(() => {
@@ -540,6 +604,26 @@ function App() {
       setActiveTab(getDefaultSignedInTab(ragChatEnabled))
     }
   }, [activeTab, user, canAccessNGOSaaS, ragChatEnabled, authCapabilities.isSentinelCommander])
+
+  useEffect(() => {
+    if (!user) return
+
+    void refreshUserCredits()
+    const timer = window.setInterval(() => {
+      void refreshUserCredits()
+    }, 15000)
+
+    return () => window.clearInterval(timer)
+  }, [user?.id, refreshUserCredits])
+
+  useEffect(() => {
+    if (!user) return
+
+    if (wasGeneratingRef.current && !isLoading) {
+      void refreshUserCredits()
+    }
+    wasGeneratingRef.current = isLoading
+  }, [isLoading, user?.id, refreshUserCredits])
 
   const quickPromptSuggestions = useMemo(() => {
     const current = description.trim().toLowerCase()

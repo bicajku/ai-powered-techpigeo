@@ -1,6 +1,6 @@
 import { motion } from "framer-motion"
 import { UserProfile } from "@/types"
-import { Sparkle, Crown, User, Clock } from "@phosphor-icons/react"
+import { Sparkle, Crown, User, Clock, Coins } from "@phosphor-icons/react"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useState, useEffect, useRef, useMemo } from "react"
@@ -20,7 +20,10 @@ interface SparkleParticle {
 
 export function WelcomeBanner({ user }: WelcomeBannerProps) {
   const [sessionDuration, setSessionDuration] = useState(0)
+  const [lastCreditSyncAt, setLastCreditSyncAt] = useState(Date.now())
+  const [creditDelta, setCreditDelta] = useState(0)
   const sessionStartRef = useRef(Date.now())
+  const previousCreditsRef = useRef<number>(Number(user.subscription?.proCredits || 0))
 
   const sparkleParticles = useMemo<SparkleParticle[]>(() => {
     const particles: SparkleParticle[] = []
@@ -74,6 +77,20 @@ export function WelcomeBanner({ user }: WelcomeBannerProps) {
   }
 
   const isAdmin = user.role === "admin"
+  const credits = Number(user.subscription?.proCredits || 0)
+  const subscriptionPlan = String(user.subscription?.plan || "basic").toUpperCase()
+
+  useEffect(() => {
+    const previousCredits = previousCreditsRef.current
+    if (previousCredits !== credits) {
+      setCreditDelta(credits - previousCredits)
+      setLastCreditSyncAt(Date.now())
+      previousCreditsRef.current = credits
+    }
+  }, [credits])
+
+  const creditSyncAge = Math.max(0, Math.floor((Date.now() - lastCreditSyncAt) / 1000))
+  const creditSyncLabel = creditSyncAge < 6 ? "Live now" : `${creditSyncAge}s ago`
 
   return (
     <motion.div
@@ -147,6 +164,17 @@ export function WelcomeBanner({ user }: WelcomeBannerProps) {
         </div>
         
         <div className="flex flex-col gap-4">
+          <div className="flex items-center gap-2">
+            <Coins size={32} weight="duotone" className={creditDelta < 0 ? "text-amber-500" : "text-emerald-500"} />
+            <div className="text-right">
+              <p className="text-sm font-medium text-muted-foreground">Credits ({subscriptionPlan})</p>
+              <p className="text-lg font-bold text-foreground tabular-nums">{credits}</p>
+              <p className="text-xs text-muted-foreground">
+                {creditDelta < 0 ? `${Math.abs(creditDelta)} consumed` : creditDelta > 0 ? `+${creditDelta} added` : "No recent change"} · {creditSyncLabel}
+              </p>
+            </div>
+          </div>
+
           <div className="flex items-center gap-2">
             <Sparkle size={32} weight="duotone" className="text-primary animate-pulse" />
             <div className="text-right">

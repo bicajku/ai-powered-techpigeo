@@ -81,6 +81,19 @@ export function ProfileEdit({ user, open, onOpenChange, onProfileUpdate }: Profi
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="rounded-lg border border-primary/30 bg-primary/5 px-4 py-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm text-muted-foreground">Current Plan</p>
+              <Badge variant="outline" className="uppercase">
+                {user.subscription?.plan || "basic"}
+              </Badge>
+            </div>
+            <div className="mt-2 flex items-center justify-between gap-2">
+              <p className="text-sm text-muted-foreground">Available Credits</p>
+              <p className="text-xl font-bold tabular-nums text-foreground">{Number(user.subscription?.proCredits || 0)}</p>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="edit-fullName">Full Name *</Label>
