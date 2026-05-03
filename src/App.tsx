@@ -3121,6 +3121,8 @@ ${JSON.stringify(candidate)}`
                     userId={user.id}
                     userName={user.fullName || user.email || ""}
                     isAdmin={user.role === "admin"}
+                    user={user}
+                    onUpgradeRequest={() => setActiveTab("profile")}
                   />
                 </Suspense>
               </TabsContent>

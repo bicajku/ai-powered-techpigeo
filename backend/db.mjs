@@ -2716,3 +2716,152 @@ export async function saveEmailConfig(input, actorUserId = null) {
 
   return getEmailConfigPublic()
 }
+
+// ─────────────────────────── Usage Events (quotas/observability) ─────────────
+
+let _usageEventsTableReady = false
+async function ensureUsageEventsTable() {
+  if (_usageEventsTableReady) return
+  const sql = getSql()
+  await sql`
+    CREATE TABLE IF NOT EXISTS usage_events (
+      id BIGSERIAL PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      action TEXT NOT NULL,
+      plan TEXT,
+      words INTEGER NOT NULL DEFAULT 0,
+      files INTEGER NOT NULL DEFAULT 0,
+      submissions INTEGER NOT NULL DEFAULT 0,
+      outcome TEXT NOT NULL DEFAULT 'allowed',
+      reason TEXT,
+      metadata JSONB,
+      ip_address TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `
+  await sql`CREATE INDEX IF NOT EXISTS idx_usage_events_user_created ON usage_events (user_id, created_at DESC)`
+  await sql`CREATE INDEX IF NOT EXISTS idx_usage_events_action_created ON usage_events (action, created_at DESC)`
+  await sql`CREATE INDEX IF NOT EXISTS idx_usage_events_outcome_created ON usage_events (outcome, created_at DESC)`
+  _usageEventsTableReady = true
+}
+
+/**
+ * Persist a usage/quota event for a single user. Used by both successful
+ * actions and blocked attempts (outcome = 'blocked'). Best-effort: callers
+ * may swallow errors so usage logging never blocks the user-facing flow.
+ */
+export async function recordUsageEvent({
+  userId,
+  action,
+  plan = null,
+  words = 0,
+  files = 0,
+  submissions = 0,
+  outcome = "allowed",
+  reason = null,
+  metadata = null,
+  ipAddress = null,
+}) {
+  if (!userId || !action) {
+    throw new Error("recordUsageEvent requires userId and action")
+  }
+  await ensureUsageEventsTable()
+  const sql = getSql()
+  const rows = await sql`
+    INSERT INTO usage_events
+      (user_id, action, plan, words, files, submissions, outcome, reason, metadata, ip_address)
+    VALUES
+      (${String(userId)}, ${String(action)}, ${plan},
+       ${Number(words) || 0}, ${Number(files) || 0}, ${Number(submissions) || 0},
+       ${String(outcome)}, ${reason},
+       ${metadata ? JSON.stringify(metadata) : null}, ${ipAddress})
+    RETURNING id
+  `
+  return rows?.[0]?.id || null
+}
+
+/**
+ * Aggregated per-user activity for the admin Global Dashboard.
+ *
+ * @param {object} opts
+ * @param {number} [opts.sinceMs] - epoch ms lower bound (default: 24h ago)
+ * @param {number} [opts.limit]   - max user rows (default: 100)
+ */
+export async function getUsageSummary({ sinceMs, limit = 100 } = {}) {
+  await ensureUsageEventsTable()
+  const sql = getSql()
+  const since = sinceMs ? new Date(sinceMs) : new Date(Date.now() - 24 * 60 * 60 * 1000)
+  const cap = Math.max(1, Math.min(Number(limit) || 100, 500))
+
+  const perUser = await sql`
+    SELECT
+      ue.user_id AS "userId",
+      MAX(u.email) AS email,
+      MAX(u.full_name) AS "fullName",
+      MAX(ue.plan) AS plan,
+      COUNT(*) FILTER (WHERE ue.action = 'rag_chat_words' AND ue.outcome = 'allowed') AS "ragMessages",
+      COALESCE(SUM(ue.words) FILTER (WHERE ue.action = 'rag_chat_words' AND ue.outcome = 'allowed'), 0) AS "ragWords",
+      COUNT(*) FILTER (WHERE ue.action = 'rag_chat_file' AND ue.outcome = 'allowed') AS "ragFiles",
+      COUNT(*) FILTER (WHERE ue.action = 'review_file' AND ue.outcome = 'allowed') AS "reviews",
+      COUNT(*) FILTER (WHERE ue.action = 'humanizer_submission' AND ue.outcome = 'allowed') AS "humanizations",
+      COALESCE(SUM(ue.words) FILTER (WHERE ue.action = 'humanizer_submission' AND ue.outcome = 'allowed'), 0) AS "humanizerWords",
+      COUNT(*) FILTER (WHERE ue.outcome = 'blocked') AS "blockedAttempts",
+      MAX(ue.created_at) AS "lastActivity"
+    FROM usage_events ue
+    LEFT JOIN sentinel_users u ON u.id = ue.user_id
+    WHERE ue.created_at >= ${since.toISOString()}
+    GROUP BY ue.user_id
+    ORDER BY "lastActivity" DESC
+    LIMIT ${cap}
+  `
+
+  const totals = await sql`
+    SELECT
+      COUNT(*)::INTEGER AS "totalEvents",
+      COUNT(DISTINCT user_id)::INTEGER AS "activeUsers",
+      COUNT(*) FILTER (WHERE outcome = 'blocked')::INTEGER AS "totalBlocked",
+      COALESCE(SUM(words) FILTER (WHERE action = 'rag_chat_words' AND outcome = 'allowed'), 0)::INTEGER AS "totalRagWords",
+      COALESCE(SUM(words) FILTER (WHERE action = 'humanizer_submission' AND outcome = 'allowed'), 0)::INTEGER AS "totalHumanizerWords",
+      COUNT(*) FILTER (WHERE action = 'review_file' AND outcome = 'allowed')::INTEGER AS "totalReviews",
+      COUNT(*) FILTER (WHERE action = 'rag_chat_file' AND outcome = 'allowed')::INTEGER AS "totalChatFiles"
+    FROM usage_events
+    WHERE created_at >= ${since.toISOString()}
+  `
+
+  return {
+    sinceMs: since.getTime(),
+    perUser: Array.isArray(perUser) ? perUser : [],
+    totals: totals?.[0] || {},
+  }
+}
+
+/**
+ * Recent blocked attempts for the Policy Violations panel.
+ */
+export async function getPolicyViolations({ sinceMs, limit = 100 } = {}) {
+  await ensureUsageEventsTable()
+  const sql = getSql()
+  const since = sinceMs ? new Date(sinceMs) : new Date(Date.now() - 24 * 60 * 60 * 1000)
+  const cap = Math.max(1, Math.min(Number(limit) || 100, 500))
+
+  const rows = await sql`
+    SELECT
+      ue.id,
+      ue.user_id AS "userId",
+      u.email,
+      u.full_name AS "fullName",
+      ue.action,
+      ue.reason,
+      ue.plan,
+      ue.words,
+      ue.files,
+      ue.metadata,
+      EXTRACT(EPOCH FROM ue.created_at)::BIGINT * 1000 AS "createdAt"
+    FROM usage_events ue
+    LEFT JOIN sentinel_users u ON u.id = ue.user_id
+    WHERE ue.outcome = 'blocked' AND ue.created_at >= ${since.toISOString()}
+    ORDER BY ue.created_at DESC
+    LIMIT ${cap}
+  `
+  return Array.isArray(rows) ? rows : []
+}

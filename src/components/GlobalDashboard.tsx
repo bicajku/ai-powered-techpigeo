@@ -114,6 +114,10 @@ export function GlobalDashboard() {
   const [isLoading, setIsLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [isSentinelCommander, setIsSentinelCommander] = useState(false)
+  const [usageRangeHours, setUsageRangeHours] = useState<24 | 168 | 720>(24)
+  const [usageSummary, setUsageSummary] = useState<Awaited<ReturnType<typeof adminService.getUsageSummary>> | null>(null)
+  const [policyViolations, setPolicyViolations] = useState<Awaited<ReturnType<typeof adminService.getPolicyViolations>>>([])
+  const [isUsageLoading, setIsUsageLoading] = useState(false)
 
   const loadData = useCallback(async (showToast = false) => {
     if (showToast) {
@@ -145,9 +149,31 @@ export function GlobalDashboard() {
     }
   }, [])
 
+  const loadUsage = useCallback(async (rangeHours: number) => {
+    setIsUsageLoading(true)
+    try {
+      const [summary, violations] = await Promise.all([
+        adminService.getUsageSummary(rangeHours),
+        adminService.getPolicyViolations(rangeHours),
+      ])
+      setUsageSummary(summary)
+      setPolicyViolations(violations)
+    } catch (error) {
+      console.error("Failed to load usage governance data:", error)
+      toast.error("Failed to load usage governance data")
+    } finally {
+      setIsUsageLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     void loadData(false)
   }, [loadData])
+
+  useEffect(() => {
+    if (!isSentinelCommander) return
+    void loadUsage(usageRangeHours)
+  }, [isSentinelCommander, usageRangeHours, loadUsage])
 
   const analytics = useMemo(() => {
     const users = data?.users || []
@@ -596,6 +622,185 @@ export function GlobalDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* ── Usage Governance: per-user activity & policy violations ── */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-3">
+          <div>
+            <CardTitle>User Activity (Quota Usage)</CardTitle>
+            <p className="text-xs text-muted-foreground mt-1">
+              Per-user activity from quota-tracked actions. Window:{" "}
+              {usageRangeHours === 24 ? "last 24 hours" : usageRangeHours === 168 ? "last 7 days" : "last 30 days"}.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {([
+              { label: "24h", value: 24 as const },
+              { label: "7d", value: 168 as const },
+              { label: "30d", value: 720 as const },
+            ]).map((opt) => (
+              <Button
+                key={opt.label}
+                size="sm"
+                variant={usageRangeHours === opt.value ? "default" : "outline"}
+                onClick={() => setUsageRangeHours(opt.value)}
+                disabled={isUsageLoading}
+              >
+                {opt.label}
+              </Button>
+            ))}
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => void loadUsage(usageRangeHours)}
+              disabled={isUsageLoading}
+            >
+              <ArrowsClockwise className={isUsageLoading ? "animate-spin" : ""} />
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {usageSummary?.totals && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+              <div className="rounded-md border p-3">
+                <div className="text-xs text-muted-foreground">Active users</div>
+                <div className="text-lg font-semibold">{formatCompactNumber(Number(usageSummary.totals.activeUsers || 0))}</div>
+              </div>
+              <div className="rounded-md border p-3">
+                <div className="text-xs text-muted-foreground">RAG words</div>
+                <div className="text-lg font-semibold">{formatCompactNumber(Number(usageSummary.totals.totalRagWords || 0))}</div>
+              </div>
+              <div className="rounded-md border p-3">
+                <div className="text-xs text-muted-foreground">Reviews / Humanizations</div>
+                <div className="text-lg font-semibold">
+                  {formatCompactNumber(Number(usageSummary.totals.totalReviews || 0))}
+                  {" / "}
+                  {formatCompactNumber(Number(usageSummary.totals.totalHumanizerWords || 0))}w
+                </div>
+              </div>
+              <div className="rounded-md border p-3">
+                <div className="text-xs text-muted-foreground">Blocked attempts</div>
+                <div className="text-lg font-semibold text-amber-600 dark:text-amber-400">
+                  {formatCompactNumber(Number(usageSummary.totals.totalBlocked || 0))}
+                </div>
+              </div>
+            </div>
+          )}
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>User</TableHead>
+                  <TableHead>Plan</TableHead>
+                  <TableHead className="text-right">RAG msgs</TableHead>
+                  <TableHead className="text-right">RAG words</TableHead>
+                  <TableHead className="text-right">Files</TableHead>
+                  <TableHead className="text-right">Reviews</TableHead>
+                  <TableHead className="text-right">Humanizations</TableHead>
+                  <TableHead className="text-right">Blocked</TableHead>
+                  <TableHead>Last active</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(!usageSummary || usageSummary.perUser.length === 0) ? (
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
+                      {isUsageLoading ? "Loading usage data…" : "No quota-tracked activity in this window"}
+                    </TableCell>
+                  </TableRow>
+                ) : usageSummary.perUser.map((row) => (
+                  <TableRow key={row.userId}>
+                    <TableCell>
+                      <div className="font-medium">{row.fullName || row.email || row.userId}</div>
+                      {row.email && row.fullName ? (
+                        <div className="text-xs text-muted-foreground">{row.email}</div>
+                      ) : null}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={row.plan === "basic" || !row.plan ? "secondary" : "default"} className="capitalize">
+                        {row.plan || "basic"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">{formatCompactNumber(row.ragMessages)}</TableCell>
+                    <TableCell className="text-right">{formatCompactNumber(row.ragWords)}</TableCell>
+                    <TableCell className="text-right">{formatCompactNumber(row.ragFiles)}</TableCell>
+                    <TableCell className="text-right">{formatCompactNumber(row.reviews)}</TableCell>
+                    <TableCell className="text-right">
+                      {formatCompactNumber(row.humanizations)}
+                      <span className="text-xs text-muted-foreground"> ({formatCompactNumber(row.humanizerWords)}w)</span>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {row.blockedAttempts > 0 ? (
+                        <Badge variant="destructive">{row.blockedAttempts}</Badge>
+                      ) : (
+                        <span className="text-muted-foreground">0</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {row.lastActivity ? new Date(row.lastActivity).toLocaleString() : "—"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Policy Violations</CardTitle>
+          <p className="text-xs text-muted-foreground mt-1">
+            Recent blocked attempts (quota exceeded, plan-locked features). Repeat offenders are flagged.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-md border max-h-[420px] overflow-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Time</TableHead>
+                  <TableHead>User</TableHead>
+                  <TableHead>Action</TableHead>
+                  <TableHead>Reason</TableHead>
+                  <TableHead>Plan</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {policyViolations.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                      {isUsageLoading ? "Loading violations…" : "No policy violations in this window"}
+                    </TableCell>
+                  </TableRow>
+                ) : policyViolations.map((row) => {
+                  const repeatCount = policyViolations.filter((v) => v.userId === row.userId).length
+                  return (
+                    <TableRow key={row.id}>
+                      <TableCell className="text-xs whitespace-nowrap">
+                        {new Date(row.createdAt).toLocaleString()}
+                      </TableCell>
+                      <TableCell>
+                        <div className="font-medium">{row.fullName || row.email || row.userId}</div>
+                        {repeatCount > 1 ? (
+                          <Badge variant="destructive" className="mt-1 text-[10px]">
+                            {repeatCount}× repeat
+                          </Badge>
+                        ) : null}
+                      </TableCell>
+                      <TableCell className="text-xs font-mono">{row.action}</TableCell>
+                      <TableCell className="text-xs">{row.reason || "—"}</TableCell>
+                      <TableCell>
+                        <Badge variant="secondary" className="capitalize">{row.plan || "basic"}</Badge>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }

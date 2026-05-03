@@ -29,6 +29,15 @@ import { sentinelQuery, ingestTextTooBrain } from "@/lib/sentinel-query-pipeline
 import { isNeonConfigured } from "@/lib/neon-client"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
+import type { UserProfile } from "@/types"
+import {
+  checkQuota,
+  recordUsage,
+  countWords as quotaCountWords,
+  logBlockedAttempt,
+  type QuotaCheckResult,
+} from "@/lib/usage-quotas"
+import { QuotaBlockDialog } from "@/components/QuotaBlockDialog"
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
@@ -118,6 +127,10 @@ interface RagChatProps {
   userId: string
   userName?: string
   isAdmin?: boolean
+  /** Optional full user profile — required for plan-aware usage quota enforcement. */
+  user?: UserProfile | null
+  /** Invoked when the user clicks Upgrade in the quota-block dialog. */
+  onUpgradeRequest?: () => void
 }
 
 type TraceByMessage = Record<number, RetrievalTrace>
@@ -162,7 +175,7 @@ function toCsvFromText(text: string): string {
   return rows.map((line) => `"${line.replace(/"/g, '""')}"`).join("\n")
 }
 
-export function RagChat({ userId, userName, isAdmin = false }: RagChatProps) {
+export function RagChat({ userId, userName, isAdmin = false, user = null, onUpgradeRequest }: RagChatProps) {
   // Use the raw string userId directly — the chat_threads.user_id column
   // is now TEXT to properly support UUID-based user IDs from the backend.
   const dbUserId = userId
@@ -199,6 +212,7 @@ export function RagChat({ userId, userName, isAdmin = false }: RagChatProps) {
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
   const chatScrollRef = useRef<HTMLDivElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const [quotaBlock, setQuotaBlock] = useState<QuotaCheckResult | null>(null)
 
   useEffect(() => {
     if (!isSending) {
@@ -337,6 +351,19 @@ export function RagChat({ userId, userName, isAdmin = false }: RagChatProps) {
     const incoming = event.target.files
     if (!incoming || incoming.length === 0) return
 
+    // Plan-aware quota: free/basic users get 1 file upload per day across all chat threads.
+    if (user) {
+      const quota = await checkQuota(user, "rag_chat_file")
+      if (!quota.allowed) {
+        setQuotaBlock(quota)
+        if (quota.reason) {
+          void logBlockedAttempt(user, "rag_chat_file", quota.reason, { files: incoming.length })
+        }
+        if (fileInputRef.current) fileInputRef.current.value = ""
+        return
+      }
+    }
+
     setIsUploadingFiles(true)
     try {
       const parsed: UploadedContextFile[] = []
@@ -369,6 +396,9 @@ export function RagChat({ userId, userName, isAdmin = false }: RagChatProps) {
       }
 
       setUploadedFiles((current) => [...next, ...current].slice(0, 8))
+      if (user) {
+        void recordUsage(user, "rag_chat_file")
+      }
       toast.success(`${next.length} file(s) added to chat context`)
     } catch {
       toast.error("Failed to process uploaded file(s)")
@@ -626,6 +656,19 @@ export function RagChat({ userId, userName, isAdmin = false }: RagChatProps) {
       return
     }
 
+    // Plan-aware quota: free/basic users get 1000 words / 2h on RAG chat.
+    if (user) {
+      const wordsRequested = quotaCountWords(text)
+      const quota = await checkQuota(user, "rag_chat_words", { words: wordsRequested })
+      if (!quota.allowed) {
+        setQuotaBlock(quota)
+        if (quota.reason) {
+          void logBlockedAttempt(user, "rag_chat_words", quota.reason, { words: wordsRequested })
+        }
+        return
+      }
+    }
+
     setIsSending(true)
     setLiveAssistantText("")
     setSendStage("preparing")
@@ -711,6 +754,9 @@ export function RagChat({ userId, userName, isAdmin = false }: RagChatProps) {
 
     try {
       await sendOnce()
+      if (user) {
+        void recordUsage(user, "rag_chat_words", { words: quotaCountWords(text) })
+      }
     } catch (err) {
       console.error("Failed to send message:", err)
       const authError = isAuthError(err)
@@ -1544,6 +1590,13 @@ export function RagChat({ userId, userName, isAdmin = false }: RagChatProps) {
           </ScrollArea>
         </SheetContent>
       </Sheet>
+
+      <QuotaBlockDialog
+        open={!!quotaBlock}
+        onOpenChange={(open) => { if (!open) setQuotaBlock(null) }}
+        result={quotaBlock}
+        onUpgrade={onUpgradeRequest ? () => { setQuotaBlock(null); onUpgradeRequest() } : undefined}
+      />
     </div>
   )
 }

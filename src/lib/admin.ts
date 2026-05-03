@@ -216,6 +216,101 @@ export const adminService = {
     return { success: true }
   },
 
+  async getUsageSummary(rangeHours: number = 24): Promise<{
+    rangeHours: number
+    sinceMs: number
+    perUser: Array<{
+      userId: string
+      email?: string | null
+      fullName?: string | null
+      plan?: string | null
+      ragMessages: number
+      ragWords: number
+      ragFiles: number
+      reviews: number
+      humanizations: number
+      humanizerWords: number
+      blockedAttempts: number
+      lastActivity: string | null
+    }>
+    totals: {
+      totalEvents?: number
+      activeUsers?: number
+      totalBlocked?: number
+      totalRagWords?: number
+      totalHumanizerWords?: number
+      totalReviews?: number
+      totalChatFiles?: number
+    }
+  }> {
+    const range = rangeHours <= 24 ? "24h" : rangeHours <= 24 * 7 ? "7d" : "30d"
+    const res = await requestBackend("GET", `/api/sentinel/admin/usage-summary?range=${range}`)
+    if (!res.ok || !res.data?.ok) {
+      throw new Error((res.data?.error as string) || "Failed to load usage summary")
+    }
+    return {
+      rangeHours: Number(res.data.rangeHours || rangeHours),
+      sinceMs: Number(res.data.sinceMs || 0),
+      perUser: Array.isArray(res.data.perUser) ? (res.data.perUser as Array<{
+        userId: string
+        email?: string | null
+        fullName?: string | null
+        plan?: string | null
+        ragMessages: number
+        ragWords: number
+        ragFiles: number
+        reviews: number
+        humanizations: number
+        humanizerWords: number
+        blockedAttempts: number
+        lastActivity: string | null
+      }>).map((row) => ({
+        ...row,
+        ragMessages: Number(row.ragMessages || 0),
+        ragWords: Number(row.ragWords || 0),
+        ragFiles: Number(row.ragFiles || 0),
+        reviews: Number(row.reviews || 0),
+        humanizations: Number(row.humanizations || 0),
+        humanizerWords: Number(row.humanizerWords || 0),
+        blockedAttempts: Number(row.blockedAttempts || 0),
+      })) : [],
+      totals: (res.data.totals as Record<string, number>) || {},
+    }
+  },
+
+  async getPolicyViolations(rangeHours: number = 24): Promise<Array<{
+    id: number
+    userId: string
+    email?: string | null
+    fullName?: string | null
+    action: string
+    reason: string | null
+    plan: string | null
+    words: number
+    files: number
+    metadata: Record<string, unknown> | null
+    createdAt: number
+  }>> {
+    const range = rangeHours <= 24 ? "24h" : rangeHours <= 24 * 7 ? "7d" : "30d"
+    const res = await requestBackend("GET", `/api/sentinel/admin/policy-violations?range=${range}`)
+    if (!res.ok || !res.data?.ok) {
+      throw new Error((res.data?.error as string) || "Failed to load policy violations")
+    }
+    return Array.isArray(res.data.violations) ? res.data.violations as Array<{
+      id: number
+      userId: string
+      email?: string | null
+      fullName?: string | null
+      action: string
+      reason: string | null
+      plan: string | null
+      words: number
+      files: number
+      metadata: Record<string, unknown> | null
+      createdAt: number
+    }> : []
+  },
+
   async getUserStrategies(userId: string): Promise<SavedStrategy[]> {
     try {
       const strategies = await getSafeKVClient().get<SavedStrategy[]>(`saved-strategies-${userId}`)

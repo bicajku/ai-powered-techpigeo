@@ -87,6 +87,9 @@ import {
   seedWelcomeCredits,
   addCreditsToUserSubscription,
   setUserSubscriptionPlan,
+  recordUsageEvent,
+  getUsageSummary,
+  getPolicyViolations,
 } from "./db.mjs"
 import {
   canPerformAction,
@@ -4003,6 +4006,111 @@ async function handleVerifySignature(req, res, user, reportId) {
 // ─────────────────────────── User Style Profile Handlers ────────────
 
 /**
+ * POST /api/usage/record
+ * Mirror client-side quota events for admin observability.
+ * Any authenticated sentinel user can record events for themselves.
+ */
+async function handleRecordUsageEvent(req, res, user) {
+  try {
+    const { ok: bodyOk, data } = await parseJsonBody(req)
+    if (!bodyOk) {
+      return sendJson(res, 400, { ok: false, error: "Invalid request body" }, req)
+    }
+
+    const allowedActions = new Set([
+      "rag_chat_words",
+      "rag_chat_file",
+      "review_file",
+      "humanizer_words",
+      "humanizer_submission",
+    ])
+    const allowedOutcomes = new Set(["allowed", "blocked"])
+
+    const action = typeof data?.action === "string" ? data.action : ""
+    if (!allowedActions.has(action)) {
+      return sendJson(res, 400, { ok: false, error: "Invalid action" }, req)
+    }
+    const outcome = allowedOutcomes.has(data?.outcome) ? data.outcome : "allowed"
+    const words = Number.isFinite(data?.words) ? Math.max(0, Math.floor(data.words)) : 0
+    const files = Number.isFinite(data?.files) ? Math.max(0, Math.floor(data.files)) : 0
+    const submissions = Number.isFinite(data?.submissions) ? Math.max(0, Math.floor(data.submissions)) : 0
+    const reason = typeof data?.reason === "string" ? data.reason.slice(0, 64) : null
+    const plan = typeof data?.plan === "string" ? data.plan.slice(0, 32) : null
+    const metadata = data?.metadata && typeof data.metadata === "object" ? data.metadata : null
+
+    const id = await recordUsageEvent({
+      userId: user.id,
+      action,
+      plan,
+      words,
+      files,
+      submissions,
+      outcome,
+      reason,
+      metadata,
+      ipAddress: req.headers["x-forwarded-for"]?.toString().split(",")[0]?.trim() || req.socket?.remoteAddress || null,
+    })
+    return sendJson(res, 200, { ok: true, id }, req)
+  } catch (err) {
+    console.error("[usage/record] error:", err?.message || err)
+    return sendJson(res, 500, { ok: false, error: "Failed to record usage event" }, req)
+  }
+}
+
+function rangeHoursFromQuery(req) {
+  try {
+    const url = new URL(req.url, "http://localhost")
+    const raw = (url.searchParams.get("range") || "24h").toLowerCase()
+    const map = { "1h": 1, "24h": 24, "7d": 24 * 7, "30d": 24 * 30 }
+    return map[raw] || 24
+  } catch {
+    return 24
+  }
+}
+
+/**
+ * GET /api/sentinel/admin/usage-summary?range=24h|7d|30d
+ */
+async function handleGetUsageSummary(req, res, actor) {
+  if (!hasMinimumRole(actor.role, "SENTINEL_COMMANDER")) {
+    return sendJson(res, 403, { ok: false, error: "Insufficient permissions" }, req)
+  }
+  if (!isDbConfigured()) {
+    return sendJson(res, 503, { ok: false, error: "Usage analytics require NEON_DATABASE_URL on backend" }, req)
+  }
+  try {
+    const hours = rangeHoursFromQuery(req)
+    const sinceMs = Date.now() - hours * 60 * 60 * 1000
+    const summary = await getUsageSummary({ sinceMs })
+    return sendJson(res, 200, { ok: true, rangeHours: hours, ...summary }, req)
+  } catch (err) {
+    console.error("[admin/usage-summary] error:", err?.message || err)
+    return sendJson(res, 500, { ok: false, error: "Failed to load usage summary" }, req)
+  }
+}
+
+/**
+ * GET /api/sentinel/admin/policy-violations?range=24h|7d|30d
+ */
+async function handleGetPolicyViolations(req, res, actor) {
+  if (!hasMinimumRole(actor.role, "SENTINEL_COMMANDER")) {
+    return sendJson(res, 403, { ok: false, error: "Insufficient permissions" }, req)
+  }
+  if (!isDbConfigured()) {
+    return sendJson(res, 503, { ok: false, error: "Policy violation analytics require NEON_DATABASE_URL on backend" }, req)
+  }
+  try {
+    const hours = rangeHoursFromQuery(req)
+    const sinceMs = Date.now() - hours * 60 * 60 * 1000
+    const violations = await getPolicyViolations({ sinceMs, limit: 200 })
+    return sendJson(res, 200, { ok: true, rangeHours: hours, violations }, req)
+  } catch (err) {
+    console.error("[admin/policy-violations] error:", err?.message || err)
+    return sendJson(res, 500, { ok: false, error: "Failed to load policy violations" }, req)
+  }
+}
+
+/**
  * POST /api/sentinel/user-style/track-generation
  * Log generation metadata for building user style profile
  */
@@ -4892,6 +5000,20 @@ const server = http.createServer(async (req, res) => {
 
       if (method === "POST" && reqPathname === "/api/sentinel/admin/testers/action") {
         return handleTesterAccountAction(req, res, user)
+      }
+
+      // ── Usage governance / observability ──
+
+      if (method === "POST" && reqPathname === "/api/usage/record") {
+        return handleRecordUsageEvent(req, res, user)
+      }
+
+      if (method === "GET" && reqPathname === "/api/sentinel/admin/usage-summary") {
+        return handleGetUsageSummary(req, res, user)
+      }
+
+      if (method === "GET" && reqPathname === "/api/sentinel/admin/policy-violations") {
+        return handleGetPolicyViolations(req, res, user)
       }
 
       // POST /api/sentinel/user-style/track-generation

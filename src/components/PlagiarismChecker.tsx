@@ -35,6 +35,8 @@ import { computeReviewAnalysis, ReviewComputationMeta, ReviewFilters, SectionSum
 import { AdvancedDetectionResult } from "@/lib/advanced-detection"
 import { addProCredits, consumeProCredits, consumeReviewCredit, getFeatureEntitlements, requestUpgrade } from "@/lib/subscription"
 import { UpgradePaywall } from "@/components/UpgradePaywall"
+import { QuotaBlockDialog } from "@/components/QuotaBlockDialog"
+import { checkQuota, recordUsage, logBlockedAttempt, type QuotaCheckResult } from "@/lib/usage-quotas"
 import type { SubscriptionPlan } from "@/types"
 import { getCurrentMonthKey, getExportPlanConfig } from "@/lib/strategy-governance"
 import { estimateHumanizerMeters, getHumanizerScoringModeLabel, rankHumanizerCandidatesOnServer, scoreHumanizerMeters, selectBestHumanizerCandidate } from "@/lib/humanizer-metrics"
@@ -271,6 +273,7 @@ function PlagiarismCheckerInner({ user, mode }: { user: UserProfile; mode: "revi
     0
   )
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [quotaBlock, setQuotaBlock] = useState<QuotaCheckResult | null>(null)
   const entitlements = getFeatureEntitlements({
     ...user,
     subscription: {
@@ -787,6 +790,19 @@ function PlagiarismCheckerInner({ user, mode }: { user: UserProfile; mode: "revi
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
+
+    // Plan-aware quota: basic users limited to 3 review files per day.
+    if (mode === "review") {
+      const quota = await checkQuota(user, "review_file")
+      if (!quota.allowed) {
+        setQuotaBlock(quota)
+        if (quota.reason) {
+          void logBlockedAttempt(user, "review_file", quota.reason, { files: 1 })
+        }
+        resetUploadInput()
+        return
+      }
+    }
 
     const lowerName = file.name.toLowerCase()
     const normalizedType = (file.type || "").toLowerCase()
@@ -1360,6 +1376,11 @@ function PlagiarismCheckerInner({ user, mode }: { user: UserProfile; mode: "revi
         toast.warning("Document analysis complete. Review evidence and recommendations before submission.")
       }
 
+      // Record review usage for daily quota (basic plan: 3/day).
+      if (mode === "review") {
+        void recordUsage(user, "review_file")
+      }
+
       setTimeout(() => {
         setShowSaveDialog(true)
       }, 1000)
@@ -1705,6 +1726,25 @@ function PlagiarismCheckerInner({ user, mode }: { user: UserProfile; mode: "revi
     }
 
     const wordCount = countWords(text)
+
+    // Plan-aware quota: basic users limited to 300 words per submission and 7 submissions/day.
+    const wordQuota = await checkQuota(user, "humanizer_words", { words: wordCount })
+    if (!wordQuota.allowed) {
+      setQuotaBlock(wordQuota)
+      if (wordQuota.reason) {
+        void logBlockedAttempt(user, "humanizer_words", wordQuota.reason, { words: wordCount })
+      }
+      return
+    }
+    const dayQuota = await checkQuota(user, "humanizer_submission")
+    if (!dayQuota.allowed) {
+      setQuotaBlock(dayQuota)
+      if (dayQuota.reason) {
+        void logBlockedAttempt(user, "humanizer_submission", dayQuota.reason, { words: wordCount })
+      }
+      return
+    }
+
     if (wordCount > HUMANIZER_MAX_WORDS) {
       const capped = trimToWordLimit(text, HUMANIZER_MAX_WORDS)
       setText(capped)
@@ -1916,6 +1956,7 @@ Return ONLY a valid JSON object:
         ? ` ${rankedCandidates[0].scores.notes[0]}.`
         : ""
       toast.success(`Best rewrite candidate selected from ${rankedCandidates.length} options.${selectionNote} ${remainingCredits} Pro credits left.`)
+      void recordUsage(user, "humanizer_submission", { words: countWords(text) })
     } catch (error) {
       console.error("Humanization error:", error)
       const message = error instanceof Error ? error.message : "Failed to humanize text. Please try again."
@@ -3629,6 +3670,12 @@ Return ONLY a valid JSON object:
           />
         </div>
       )}
+
+      <QuotaBlockDialog
+        open={!!quotaBlock}
+        onOpenChange={(open) => { if (!open) setQuotaBlock(null) }}
+        result={quotaBlock}
+      />
     </div>
   )
 }
