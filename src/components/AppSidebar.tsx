@@ -7,6 +7,7 @@ import {
   ChartBar,
   EnvelopeSimple,
   FolderOpen,
+  Key,
   LinkedinLogo,
   Globe,
   List,
@@ -37,6 +38,7 @@ interface AppSidebarProps {
   activeTab: string
   collapsed: boolean
   isSentinelCommander?: boolean
+  canManageProviderRouting?: boolean
   onToggleCollapsed: () => void
   onTabChange: (tab: string) => void
   onOpenProfile: () => void
@@ -67,6 +69,7 @@ export function AppSidebar({
   activeTab,
   collapsed,
   isSentinelCommander = false,
+  canManageProviderRouting = false,
   onToggleCollapsed,
   onTabChange,
   onOpenProfile,
@@ -78,6 +81,17 @@ export function AppSidebar({
   const roleNavItems = useMemo<SidebarNavItem[]>(() => {
     if (isAdmin) {
       const adminChildren: SidebarNavItem[] = [
+        ...(isSentinelCommander
+          ? [
+              {
+                id: "email",
+                label: "Email Settings",
+                icon: EnvelopeSimple,
+                onClick: () => onTabChange("email"),
+                active: activeTab === "email",
+              },
+            ]
+          : []),
         {
           id: "email-studio",
           label: "Email Studio",
@@ -87,6 +101,17 @@ export function AppSidebar({
         },
       ]
       const sentinelChildren: SidebarNavItem[] = [
+        ...(canManageProviderRouting
+          ? [
+              {
+                id: "routing",
+                label: "Provider Routing",
+                icon: Key,
+                onClick: () => onTabChange("routing"),
+                active: activeTab === "routing",
+              },
+            ]
+          : []),
         {
           id: "strategies",
           label: "Strategies",
@@ -145,7 +170,7 @@ export function AppSidebar({
         active: activeTab === "dashboard",
       },
     ]
-  }, [activeTab, isAdmin, isSentinelCommander, onTabChange])
+  }, [activeTab, canManageProviderRouting, isAdmin, isSentinelCommander, onTabChange])
 
   const accountItems: SidebarNavItem[] = [
     {

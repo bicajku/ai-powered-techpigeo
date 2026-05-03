@@ -592,6 +592,8 @@ function App() {
       allowedTabs.add("enterprise")
       allowedTabs.add("global-dashboard")
       allowedTabs.add("email-studio")
+      allowedTabs.add("email")
+      allowedTabs.add("routing")
       allowedTabs.add("strategies")
       allowedTabs.add("reviews")
     }
@@ -1977,6 +1979,7 @@ ${JSON.stringify(candidate)}`
           activeTab={activeTab}
           collapsed={isSidebarCollapsed}
           isSentinelCommander={authCapabilities.isSentinelCommander}
+          canManageProviderRouting={authCapabilities.canManageProviderRouting}
           onToggleCollapsed={() => setIsSidebarCollapsed((prev) => !prev)}
           onTabChange={setActiveTab}
           onOpenProfile={() => setShowProfileEdit(true)}
@@ -3408,6 +3411,22 @@ ${JSON.stringify(candidate)}`
               <TabsContent value="email-studio" className="space-y-6">
                 <Suspense fallback={<LoadingState />}>
                   <AdminDashboard initialTab="email-studio" />
+                </Suspense>
+              </TabsContent>
+            )}
+
+            {user.role === "admin" && (
+              <TabsContent value="email" className="space-y-6">
+                <Suspense fallback={<LoadingState />}>
+                  <AdminDashboard initialTab="email" />
+                </Suspense>
+              </TabsContent>
+            )}
+
+            {user.role === "admin" && (
+              <TabsContent value="routing" className="space-y-6">
+                <Suspense fallback={<LoadingState />}>
+                  <AdminDashboard initialTab="routing" />
                 </Suspense>
               </TabsContent>
             )}

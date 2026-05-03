@@ -873,7 +873,7 @@ export function AdminDashboard({ initialTab }: { initialTab?: string } = {}) {
         >
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <div className="mb-4 overflow-x-auto pb-1">
-              <TabsList className="grid min-w-[1200px] grid-cols-8">
+              <TabsList className="grid min-w-[920px] grid-cols-6">
                 <TabsTrigger value="users" className="gap-2">
                   <Users size={18} weight="bold" />
                   User Management
@@ -897,14 +897,6 @@ export function AdminDashboard({ initialTab }: { initialTab?: string } = {}) {
                 <TabsTrigger value="errors" className="gap-2">
                   <Bug size={18} weight="bold" />
                   Error Logs
-                </TabsTrigger>
-                <TabsTrigger value="routing" className="gap-2" disabled={!authCapabilities.canManageProviderRouting}>
-                  <Key size={18} weight="bold" />
-                  Provider Routing
-                </TabsTrigger>
-                <TabsTrigger value="email" className="gap-2" disabled={!authCapabilities.isSentinelCommander}>
-                  <Key size={18} weight="bold" />
-                  Email Settings
                 </TabsTrigger>
               </TabsList>
             </div>
