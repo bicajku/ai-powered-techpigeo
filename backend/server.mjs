@@ -1555,7 +1555,17 @@ async function handleLogin(req, res) {
     }
 
     // Get subscription info for token
-    const subscription = await getUserSubscription(user.id)
+    let subscription = await getUserSubscription(user.id)
+    // Safety net: lazy-seed welcome credits for any non-tester user that
+    // somehow lacks an active subscription (catches legacy/skipped signups).
+    if (!subscription && user.role !== "TESTER") {
+      try {
+        await seedWelcomeCredits(user.id, user.id)
+        subscription = await getUserSubscription(user.id)
+      } catch (err) {
+        console.warn("[auth/login] lazy welcome seed failed:", err?.message)
+      }
+    }
     const tier = subscription?.tier || null
 
     // Sign JWT
@@ -1998,7 +2008,19 @@ async function handleVerify(req, res) {
       return sendJson(res, 401, { ok: false, error: "User not found or inactive" }, req)
     }
 
-    const subscription = await getUserSubscription(user.id)
+    let subscription = await getUserSubscription(user.id)
+    // Safety net: any user (regardless of signup path) without an active
+    // subscription gets the welcome trial seeded on demand. This guarantees
+    // 10 BASIC credits are always available even if an old signup flow
+    // (or a future regression) skipped the seed step.
+    if (!subscription && normalizeAuthUser(user).role !== "TESTER") {
+      try {
+        await seedWelcomeCredits(user.id, user.id)
+        subscription = await getUserSubscription(user.id)
+      } catch (err) {
+        console.warn("[auth/verify] lazy welcome seed failed:", err?.message)
+      }
+    }
     const normalizedUser = normalizeAuthUser(user)
 
     if (normalizedUser.role === "TESTER") {
