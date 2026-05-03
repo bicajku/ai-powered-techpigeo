@@ -192,19 +192,29 @@ export const authService = {
         const users = await kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
         const existingUser = findStoredUserBySentinelUser(users, sentinelResult.session.user)
         const normalizedUser = mergeUserProfileWithStoredState(sentinelResult.session.user, existingUser)
-        // Auto-grant welcome trial so new users can access Review & Humanizer
+
+        // Sync credits from the backend subscription (source of truth) if available.
+        // Fall back to TRIAL_CREDITS so the trial sub-object is also set correctly.
+        const backendSub = sentinelResult.session.subscription
+        const backendProCredits = (typeof backendSub?.proCredits === "number") ? backendSub.proCredits : TRIAL_CREDITS
         if (!normalizedUser.subscription?.trial?.requested) {
           normalizedUser.subscription = {
             ...(normalizedUser.subscription || getDefaultSubscription()),
-            proCredits: TRIAL_CREDITS,
+            proCredits: backendProCredits,
             trial: {
               requested: true,
               requestedAt: Date.now(),
               exhausted: false,
-              creditsGranted: TRIAL_CREDITS,
+              creditsGranted: backendProCredits,
               submissionsUsed: 0,
               maxSubmissions: TRIAL_MAX_SUBMISSIONS,
             },
+          }
+        } else if (typeof backendSub?.proCredits === "number") {
+          // Trial already set — still keep proCredits in sync with backend
+          normalizedUser.subscription = {
+            ...(normalizedUser.subscription || getDefaultSubscription()),
+            proCredits: backendSub.proCredits,
           }
         }
         users[normalizedUser.id] = normalizedUser
@@ -286,6 +296,14 @@ export const authService = {
         const users = await kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
         const existingUser = findStoredUserBySentinelUser(users, sentinelResult.session.user)
         const normalizedUser = mergeUserProfileWithStoredState(sentinelResult.session.user, existingUser)
+        // Sync backend subscription proCredits so KV always reflects the real balance.
+        const backendSub = sentinelResult.session.subscription
+        if (typeof backendSub?.proCredits === "number" && normalizedUser.role !== "admin") {
+          normalizedUser.subscription = {
+            ...(normalizedUser.subscription || getDefaultSubscription()),
+            proCredits: backendSub.proCredits,
+          }
+        }
         users[normalizedUser.id] = normalizedUser
         await kv.set(USERS_STORAGE_KEY, users)
         await kv.set(CURRENT_USER_KEY, normalizedUser.id)
@@ -456,27 +474,37 @@ export const authService = {
       // user is never shadowed by a stale KV-stored admin/previous session.
       const kv = getSafeKVClient()
       try {
-        const sentinelUser = await resolveSentinelSessionUserIfTokenPresent(
-          () => localStorage.getItem("sentinel-auth-token"),
-          () => sentinelAuth.getSession()
-        )
-        if (sentinelUser) {
-          const users = await kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
-          const existingUser = findStoredUserBySentinelUser(users, sentinelUser)
-          const normalized = mergeUserProfileWithStoredState(sentinelUser, existingUser)
-          users[normalized.id] = normalized
-          await kv.set(USERS_STORAGE_KEY, users)
-          await kv.set(CURRENT_USER_KEY, normalized.id)
-          saveCurrentUserIdLocal(normalized.id)
-          return normalized
-        }
-
-        // If a token existed but backend verification did not yield a valid session,
-        // clear local session pointers so the UI returns to a proper login state.
-        if (hadSentinelToken) {
-          await kv.delete(CURRENT_USER_KEY).catch(() => null)
-          clearCurrentUserIdLocal()
-          return null
+        // Check token inline so we can capture the full session (incl. subscription).
+        const sentinelToken = localStorage.getItem("sentinel-auth-token")
+        if (sentinelToken) {
+          const session = await sentinelAuth.getSession()
+          const sentinelUser = session?.user ?? null
+          if (sentinelUser) {
+            const users = await kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
+            const existingUser = findStoredUserBySentinelUser(users, sentinelUser)
+            const normalized = mergeUserProfileWithStoredState(sentinelUser, existingUser)
+            // Sync backend proCredits (source of truth) so the frontend always
+            // reflects the real credit balance, including welcome bonus credits
+            // that were seeded on the backend after OAuth or email signup.
+            const backendSub = session?.subscription
+            if (typeof backendSub?.proCredits === "number" && normalized.role !== "admin") {
+              normalized.subscription = {
+                ...(normalized.subscription || getDefaultSubscription()),
+                proCredits: backendSub.proCredits,
+              }
+            }
+            users[normalized.id] = normalized
+            await kv.set(USERS_STORAGE_KEY, users)
+            await kv.set(CURRENT_USER_KEY, normalized.id)
+            saveCurrentUserIdLocal(normalized.id)
+            return normalized
+          }
+          // Token present but backend verification failed — force re-login.
+          if (hadSentinelToken) {
+            await kv.delete(CURRENT_USER_KEY).catch(() => null)
+            clearCurrentUserIdLocal()
+            return null
+          }
         }
       } catch {
         // Sentinel token check failed — fall through to KV lookup
@@ -535,6 +563,14 @@ export const authService = {
           const users = await kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY) || {}
           const existingUser = findStoredUserBySentinelUser(users, sentinelSession.user)
           const normalized = mergeUserProfileWithStoredState(sentinelSession.user, existingUser)
+          // Sync backend proCredits so the frontend reflects the real balance.
+          const backendSub = sentinelSession.subscription
+          if (typeof backendSub?.proCredits === "number" && normalized.role !== "admin") {
+            normalized.subscription = {
+              ...(normalized.subscription || getDefaultSubscription()),
+              proCredits: backendSub.proCredits,
+            }
+          }
           users[normalized.id] = normalized
           await kv.set(USERS_STORAGE_KEY, users)
           await kv.set(CURRENT_USER_KEY, normalized.id)

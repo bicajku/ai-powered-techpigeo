@@ -1741,10 +1741,20 @@ async function handleRegister(req, res) {
       source: isReturningUser ? "signup-returning" : "signup",
     }).catch(() => {})
 
+    // Fetch the freshly-seeded subscription so the frontend can display the
+    // correct credit balance immediately after registration.
+    let subscription = null
+    try {
+      subscription = await getUserSubscription(newUser.id)
+    } catch {
+      // Non-blocking — frontend will sync via /api/auth/verify on next load.
+    }
+
     return sendJson(res, 201, {
       ok: true,
       token,
       user: newUser,
+      subscription,
     }, req, { "Set-Cookie": csrfSetCookieValue(generateCsrfToken()) })
   } catch (err) {
     console.error("[auth/register] error:", err)
@@ -4101,10 +4111,13 @@ async function handleConsumeCredits(req, res, user) {
 
     // Admin/tester — unlimited, no deduction
     if (user.role === "SENTINEL_COMMANDER" || user.role === "ORG_ADMIN" || user.role === "TEAM_ADMIN" || user.role === "TESTER") {
-      return sendJson(res, 200, { ok: true, success: true, remainingCredits: Number.POSITIVE_INFINITY }, req)
+      // Return a large finite number so JSON serialisation works and the
+      // frontend toast shows a sensible "credits left" value.
+      return sendJson(res, 200, { ok: true, success: true, remainingCredits: 999999 }, req)
     }
 
-    const result = await consumeUserCredits(user.id, amount)
+    // user.userId (from JWT payload) is the correct field — user.id is undefined here.
+    const result = await consumeUserCredits(user.userId, amount)
     if (!result.success) {
       const status = result.error === "insufficient" ? 402 : 403
       return sendJson(res, status, {
@@ -4119,7 +4132,7 @@ async function handleConsumeCredits(req, res, user) {
 
     // Best-effort audit log
     recordUsageEvent({
-      userId: user.id,
+      userId: user.userId,
       action: moduleName === "review" ? "review_file" : moduleName === "humanizer" ? "humanizer_submission" : "credit_consume",
       plan: null,
       words: 0,
