@@ -6,9 +6,12 @@ import {
   CaretDoubleRight,
   ChartBar,
   EnvelopeSimple,
+  FolderOpen,
   LinkedinLogo,
   Globe,
   List,
+  MagnifyingGlass,
+  PaperPlaneTilt,
   ShieldCheck,
   SignOut,
   UserCircle,
@@ -26,6 +29,7 @@ type SidebarNavItem = {
   icon: Icon
   onClick: () => void
   active?: boolean
+  children?: SidebarNavItem[]
 }
 
 interface AppSidebarProps {
@@ -39,7 +43,7 @@ interface AppSidebarProps {
   onSignOut: () => void
 }
 
-function SidebarLink({ item, collapsed }: { item: SidebarNavItem; collapsed: boolean }) {
+function SidebarLink({ item, collapsed, indent = false }: { item: SidebarNavItem; collapsed: boolean; indent?: boolean }) {
   const Icon = item.icon
   return (
     <Button
@@ -48,10 +52,11 @@ function SidebarLink({ item, collapsed }: { item: SidebarNavItem; collapsed: boo
       className={cn(
         "w-full justify-start gap-3 rounded-xl h-10",
         collapsed && "justify-center px-2",
+        !collapsed && indent && "pl-8 h-9 text-sm",
         item.active && "shadow-sm"
       )}
     >
-      <Icon size={18} weight={item.active ? "fill" : "regular"} />
+      <Icon size={indent ? 16 : 18} weight={item.active ? "fill" : "regular"} />
       {!collapsed && <span className="truncate">{item.label}</span>}
     </Button>
   )
@@ -72,6 +77,31 @@ export function AppSidebar({
 
   const roleNavItems = useMemo<SidebarNavItem[]>(() => {
     if (isAdmin) {
+      const adminChildren: SidebarNavItem[] = [
+        {
+          id: "email-studio",
+          label: "Email Studio",
+          icon: PaperPlaneTilt,
+          onClick: () => onTabChange("email-studio"),
+          active: activeTab === "email-studio",
+        },
+      ]
+      const sentinelChildren: SidebarNavItem[] = [
+        {
+          id: "strategies",
+          label: "Strategies",
+          icon: FolderOpen,
+          onClick: () => onTabChange("strategies"),
+          active: activeTab === "strategies",
+        },
+        {
+          id: "reviews",
+          label: "Reviews",
+          icon: MagnifyingGlass,
+          onClick: () => onTabChange("reviews"),
+          active: activeTab === "reviews",
+        },
+      ]
       return [
         {
           id: "global-dashboard",
@@ -86,6 +116,7 @@ export function AppSidebar({
           icon: ShieldCheck,
           onClick: () => onTabChange("admin"),
           active: activeTab === "admin",
+          children: adminChildren,
         },
         {
           id: "enterprise",
@@ -100,6 +131,7 @@ export function AppSidebar({
           icon: Brain,
           onClick: () => onTabChange("sentinel-brain"),
           active: activeTab === "sentinel-brain",
+          children: sentinelChildren,
         },
       ]
     }
@@ -172,9 +204,23 @@ export function AppSidebar({
           </div>
 
           <div className="space-y-1.5">
-            {roleNavItems.map((item) => (
-              <SidebarLink key={item.id} item={item} collapsed={collapsed} />
-            ))}
+            {roleNavItems.map((item) => {
+              const childActive = item.children?.some((c) => c.active) ?? false
+              const showChildren = !collapsed && !!item.children?.length && (item.active || childActive)
+              const parentItem = childActive ? { ...item, active: true } : item
+              return (
+                <div key={item.id} className="space-y-1">
+                  <SidebarLink item={parentItem} collapsed={collapsed} />
+                  {showChildren && (
+                    <div className="space-y-1">
+                      {item.children!.map((child) => (
+                        <SidebarLink key={child.id} item={child} collapsed={collapsed} indent />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
 
           <div className="mt-6 border-t border-border/60 pt-4 space-y-1.5">
@@ -223,20 +269,43 @@ export function AppSidebar({
               </SheetTitle>
             </SheetHeader>
             <div className="p-4 space-y-2">
-              {roleNavItems.map((item) => (
-                <Button
-                  key={item.id}
-                  variant={item.active ? "default" : "ghost"}
-                  className="w-full justify-start gap-3 rounded-xl"
-                  onClick={() => {
-                    item.onClick()
-                    setMobileOpen(false)
-                  }}
-                >
-                  <item.icon size={18} weight={item.active ? "fill" : "regular"} />
-                  <span>{item.label}</span>
-                </Button>
-              ))}
+              {roleNavItems.map((item) => {
+                const childActive = item.children?.some((c) => c.active) ?? false
+                const parentActive = item.active || childActive
+                return (
+                  <div key={item.id} className="space-y-1">
+                    <Button
+                      variant={parentActive ? "default" : "ghost"}
+                      className="w-full justify-start gap-3 rounded-xl"
+                      onClick={() => {
+                        item.onClick()
+                        setMobileOpen(false)
+                      }}
+                    >
+                      <item.icon size={18} weight={parentActive ? "fill" : "regular"} />
+                      <span>{item.label}</span>
+                    </Button>
+                    {!!item.children?.length && (
+                      <div className="space-y-1 pl-6">
+                        {item.children.map((child) => (
+                          <Button
+                            key={child.id}
+                            variant={child.active ? "default" : "ghost"}
+                            className="w-full justify-start gap-3 rounded-xl h-9 text-sm"
+                            onClick={() => {
+                              child.onClick()
+                              setMobileOpen(false)
+                            }}
+                          >
+                            <child.icon size={16} weight={child.active ? "fill" : "regular"} />
+                            <span>{child.label}</span>
+                          </Button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
 
               <div className="border-t border-border/60 pt-3 mt-3" />
 

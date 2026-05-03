@@ -527,6 +527,9 @@ function App() {
       allowedTabs.add("admin")
       allowedTabs.add("enterprise")
       allowedTabs.add("global-dashboard")
+      allowedTabs.add("email-studio")
+      allowedTabs.add("strategies")
+      allowedTabs.add("reviews")
     }
 
     if (canAccessNGOSaaS) {
@@ -3313,6 +3316,30 @@ ${JSON.stringify(candidate)}`
               <TabsContent value="admin" className="space-y-6">
                 <Suspense fallback={<LoadingState />}>
                   <AdminDashboard />
+                </Suspense>
+              </TabsContent>
+            )}
+
+            {user.role === "admin" && (
+              <TabsContent value="email-studio" className="space-y-6">
+                <Suspense fallback={<LoadingState />}>
+                  <AdminDashboard initialTab="email-studio" />
+                </Suspense>
+              </TabsContent>
+            )}
+
+            {user.role === "admin" && (
+              <TabsContent value="strategies" className="space-y-6">
+                <Suspense fallback={<LoadingState />}>
+                  <AdminDashboard initialTab="strategies" />
+                </Suspense>
+              </TabsContent>
+            )}
+
+            {user.role === "admin" && (
+              <TabsContent value="reviews" className="space-y-6">
+                <Suspense fallback={<LoadingState />}>
+                  <AdminDashboard initialTab="reviews" />
                 </Suspense>
               </TabsContent>
             )}

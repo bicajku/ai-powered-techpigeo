@@ -70,8 +70,11 @@ import { fetchAuthCapabilities, type AuthCapabilities } from "@/lib/auth-capabil
 import { errorLogger } from "@/lib/error-logger"
 import { getEnvConfig } from "@/lib/env-config"
 
-export function AdminDashboard() {
-  const [activeTab, setActiveTab] = useState("users")
+export function AdminDashboard({ initialTab }: { initialTab?: string } = {}) {
+  const [activeTab, setActiveTab] = useState(initialTab || "users")
+  useEffect(() => {
+    if (initialTab) setActiveTab(initialTab)
+  }, [initialTab])
   const [users, setUsers] = useState<UserProfile[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -870,7 +873,7 @@ export function AdminDashboard() {
         >
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <div className="mb-4 overflow-x-auto pb-1">
-              <TabsList className="grid min-w-[1460px] grid-cols-10">
+              <TabsList className="grid min-w-[1200px] grid-cols-8">
                 <TabsTrigger value="users" className="gap-2">
                   <Users size={18} weight="bold" />
                   User Management
@@ -882,14 +885,6 @@ export function AdminDashboard() {
                 <TabsTrigger value="budget" className="gap-2">
                   <CurrencyDollar size={18} weight="bold" />
                   Budget & Limits
-                </TabsTrigger>
-                <TabsTrigger value="strategies" className="gap-2">
-                  <FolderOpen size={18} weight="bold" />
-                  All Strategies ({hasLoadedStrategies ? allStrategies.reduce((sum, item) => sum + item.strategies.length, 0) : "..."})
-                </TabsTrigger>
-                <TabsTrigger value="reviews" className="gap-2">
-                  <MagnifyingGlass size={18} weight="bold" />
-                  All Reviews ({hasLoadedReviews ? allReviews.reduce((sum, item) => sum + item.reviews.length, 0) : "..."})
                 </TabsTrigger>
                 <TabsTrigger value="invites" className="gap-2">
                   <LinkIcon size={18} weight="bold" />
@@ -910,10 +905,6 @@ export function AdminDashboard() {
                 <TabsTrigger value="email" className="gap-2" disabled={!authCapabilities.isSentinelCommander}>
                   <Key size={18} weight="bold" />
                   Email Settings
-                </TabsTrigger>
-                <TabsTrigger value="email-studio" className="gap-2" disabled={!authCapabilities.isSentinelCommander}>
-                  <Key size={18} weight="bold" />
-                  Email Studio
                 </TabsTrigger>
               </TabsList>
             </div>
