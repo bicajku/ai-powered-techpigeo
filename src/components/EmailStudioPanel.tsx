@@ -551,7 +551,6 @@ export function EmailStudioPanel({ canManage = true }: Props) {
                   {bodyHtml ? (
                     <div
                       className="rounded border p-4 max-h-96 overflow-auto bg-white text-black text-sm"
-                      // eslint-disable-next-line react/no-danger
                       dangerouslySetInnerHTML={{ __html: bodyHtml }}
                     />
                   ) : (
