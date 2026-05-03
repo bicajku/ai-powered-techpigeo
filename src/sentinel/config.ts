@@ -222,7 +222,7 @@ export const DEFAULT_SENTINEL_BRANDING: Omit<
   phone: "",
   email: "support@novussparks.com",
   officeAddress: "NovusSparks, Pakistan",
-  website: "https://novussparks.com",
+  website: "https://www.novussparks.com",
   useCustomBranding: false,
 }
 

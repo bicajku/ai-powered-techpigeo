@@ -8,7 +8,7 @@ export function Footer() {
       <div className="max-w-6xl mx-auto px-6 md:px-8 py-12">
         <div className="flex flex-col items-center mb-8">
           <a 
-            href="https://novussparks.com" 
+            href="https://www.novussparks.com" 
             target="_blank" 
             rel="noopener noreferrer"
             className="transition-transform hover:scale-105 duration-300"
@@ -71,13 +71,13 @@ export function Footer() {
 
         <div className="flex flex-col md:flex-row items-center justify-center gap-6 mb-6 pb-6 border-b border-border/30">
           <a 
-            href="https://novussparks.com" 
+            href="https://www.novussparks.com" 
             target="_blank" 
             rel="noopener noreferrer"
             className="flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors group"
           >
             <Globe size={18} weight="duotone" className="group-hover:rotate-12 transition-transform" />
-            <span>novussparks.com</span>
+            <span>www.novussparks.com</span>
           </a>
           <a 
             href="mailto:info@novussparks.com" 

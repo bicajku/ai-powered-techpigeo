@@ -4196,7 +4196,7 @@ const server = http.createServer(async (req, res) => {
   <div style="font-size:13px;letter-spacing:3px;text-transform:uppercase;color:#0f766e;margin-bottom:8px;">Novus Sparks · AI</div>
   <h1 style="font-size:22px;margin:0 0 14px;">${success ? "You're unsubscribed" : "Unsubscribe"}</h1>
   <p style="font-size:15px;line-height:1.6;color:#334155;">${message}</p>
-  <p style="margin-top:24px;"><a href="https://novussparks.com" style="color:#0f766e;text-decoration:none;font-weight:600;">← Back to novussparks.com</a></p>
+  <p style="margin-top:24px;"><a href="https://www.novussparks.com" style="color:#0f766e;text-decoration:none;font-weight:600;">← Back to www.novussparks.com</a></p>
 </div></body></html>`
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
       return res.end(html)

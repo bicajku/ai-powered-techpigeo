@@ -281,7 +281,7 @@ export function PrivacyPolicy({ onBack }: PrivacyPolicyProps) {
                 <p><strong>NovusSparks Data Privacy</strong></p>
                 <p>Email: <a href="mailto:privacy@novussparks.com" className="text-primary hover:underline">privacy@novussparks.com</a></p>
                 <p>General: <a href="mailto:info@novussparks.com" className="text-primary hover:underline">info@novussparks.com</a></p>
-                <p>Web: <a href="https://novussparks.com" className="text-primary hover:underline" target="_blank" rel="noopener noreferrer">novussparks.com</a></p>
+                <p>Web: <a href="https://www.novussparks.com" className="text-primary hover:underline" target="_blank" rel="noopener noreferrer">www.novussparks.com</a></p>
               </div>
               <p className="text-sm text-muted-foreground mt-4">
                 We aim to respond to all privacy-related inquiries within 5 business days.

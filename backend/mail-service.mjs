@@ -262,7 +262,9 @@ export async function safeSend(label, args) {
 
 // ─────────────────────────── Templates ──────────────────────────────────
 
-const APP_BASE_URL = process.env.APP_PUBLIC_URL || "https://novussparks.com"
+// Hardcoded canonical app URL — always use the www subdomain so claim/unsubscribe
+// links land on the production hostname (apex redirects can break tokens).
+const APP_BASE_URL = "https://www.novussparks.com"
 const FOUNDER_NAME = "Umer Lone"
 const FOUNDER_TITLE = "Founder — Novus Sparks AI"
 const SUPPORT_EMAIL = process.env.SUPPORT_EMAIL || "agentic@novussparks.com"
@@ -305,7 +307,7 @@ function renderSignatureBlock() {
           </div>
           <div style="font-size: 12px; color: #64748b; margin-top: 10px;">
             ${escapeHtml(SUPPORT_EMAIL)} &nbsp;·&nbsp;
-            <a href="${escapeHtml(APP_BASE_URL)}" style="color: ${BRAND_PRIMARY}; text-decoration: none;">novussparks.com</a>
+            <a href="${escapeHtml(APP_BASE_URL)}" style="color: ${BRAND_PRIMARY}; text-decoration: none;">www.novussparks.com</a>
           </div>
         </td>
       </tr>
@@ -387,7 +389,7 @@ function renderEmailShell({ preheader, headline, tagline, body, unsubscribeUrl, 
                   style="display:inline-block; width:160px; max-width:60%; height:auto; margin:0 0 12px; border:0; outline:none; text-decoration:none;" />
                 <div style="text-align:left;">
                 © ${new Date().getFullYear()} Novus Sparks AI · Crafted by humans &amp; agents.<br/>
-                You received this because you created an account at novussparks.com.
+                You received this because you created an account at www.novussparks.com.
                 If this wasn't you, please contact
                 <a href="mailto:${escapeHtml(SUPPORT_EMAIL)}" style="color:#7dd3fc; text-decoration:none;">
                   ${escapeHtml(SUPPORT_EMAIL)}
