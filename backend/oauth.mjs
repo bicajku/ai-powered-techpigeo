@@ -337,14 +337,14 @@ async function processOAuthUser(profile) {
     `;
     user.organization_id = orgId;
 
-    // 4. Create a 7-day BASIC trial subscription
+    // 4. Create a 7-day BASIC trial subscription with welcome credits
     const trialExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
     const subId = crypto.randomUUID();
     await sql`
       INSERT INTO sentinel_user_subscriptions
-        (id, user_id, organization_id, tier, status, assigned_by, expires_at, auto_renew)
+        (id, user_id, organization_id, tier, status, assigned_by, pro_credits, expires_at, auto_renew)
       VALUES
-        (${subId}, ${user.id}, ${orgId}, 'BASIC', 'ACTIVE', ${user.id}, ${trialExpiresAt}::TIMESTAMPTZ, false)
+        (${subId}, ${user.id}, ${orgId}, 'BASIC', 'ACTIVE', ${user.id}, 10, ${trialExpiresAt}::TIMESTAMPTZ, false)
     `;
 
     console.log(`[oauth] New user provisioned: ${profile.email} | org: ${orgId} | trial expires: ${trialExpiresAt}`);
