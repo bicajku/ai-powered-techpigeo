@@ -55,7 +55,10 @@ async function postBackend(path: string, payload: unknown): Promise<{ ok: boolea
   }
 }
 
-type ChargeableModule = "review" | "humanizer"
+type ChargeableModule = "review" | "humanizer" | "idea-canvas" | "idea-pitch"
+
+export const IDEA_CANVAS_CREDIT_COST = 2
+export const IDEA_PITCH_CREDIT_COST = 4
 
 interface CreditHistoryEntry {
   id: string
@@ -78,7 +81,10 @@ function hasModuleAccess(user: UserProfile, module: ChargeableModule): boolean {
   if (sub.individualProLicense) return true
 
   const modules = sub.enterpriseModuleAccess || ["strategy", "ideas"]
-  return modules.includes(module)
+  // Idea-generation sub-modules are gated by the broader "ideas" module access.
+  const required: "review" | "humanizer" | "ideas" =
+    module === "idea-canvas" || module === "idea-pitch" ? "ideas" : module
+  return modules.includes(required)
 }
 
 async function resolveCreditPayer(
@@ -204,7 +210,7 @@ async function chargeCredits(
     reason,
   })
 
-  if (chargeToOrgId) {
+  if (chargeToOrgId && (module === "review" || module === "humanizer")) {
     await logEnterpriseCreditUsage({
       organizationId: chargeToOrgId,
       actorUserId: actor.id,
@@ -460,6 +466,24 @@ export async function consumeProCredits(userId: string, creditsToConsume: number
     return await chargeCredits(userId, creditsToConsume, "humanizer", "Humanizer processing")
   } catch (error) {
     console.error("Failed to consume Pro credits:", error)
+    return { success: false, remainingCredits: 0, error: "Failed to consume credits" }
+  }
+}
+
+export async function consumeIdeaCanvasCredits(userId: string): Promise<{ success: boolean; remainingCredits: number; error?: string }> {
+  try {
+    return await chargeCredits(userId, IDEA_CANVAS_CREDIT_COST, "idea-canvas", "Business Canvas generation")
+  } catch (error) {
+    console.error("Failed to consume Idea Canvas credits:", error)
+    return { success: false, remainingCredits: 0, error: "Failed to consume credits" }
+  }
+}
+
+export async function consumeIdeaPitchCredits(userId: string): Promise<{ success: boolean; remainingCredits: number; error?: string }> {
+  try {
+    return await chargeCredits(userId, IDEA_PITCH_CREDIT_COST, "idea-pitch", "Pitch Deck generation")
+  } catch (error) {
+    console.error("Failed to consume Idea Pitch credits:", error)
     return { success: false, remainingCredits: 0, error: "Failed to consume credits" }
   }
 }

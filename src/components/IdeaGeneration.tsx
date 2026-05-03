@@ -21,7 +21,7 @@ import { SavedIdeasList } from "@/components/SavedIdeasList"
 import { PostProcessControls, type PostProcessSettings } from "@/components/PostProcessControls"
 import { useSafeKV } from "@/hooks/useSafeKV"
 import { toast } from "sonner"
-import { getFeatureEntitlements } from "@/lib/subscription"
+import { getFeatureEntitlements, consumeIdeaCanvasCredits, consumeIdeaPitchCredits, IDEA_CANVAS_CREDIT_COST, IDEA_PITCH_CREDIT_COST } from "@/lib/subscription"
 import { sentinelQuery } from "@/lib/sentinel-query-pipeline"
 import { trackGenerationInsight } from "@/lib/user-style-client"
 import { EXAMPLE_PROMPTS_BY_PLAN } from "@/lib/plan-definitions"
@@ -365,6 +365,16 @@ CRITICAL: Return ONLY valid JSON with no markdown, no code blocks, no explanator
       return
     }
 
+    // Credit pre-check (admin/tester bypass; trial users allowed; otherwise need >= cost)
+    if (user && user.role !== "admin" && user.role !== "tester") {
+      const ent = getFeatureEntitlements(user)
+      const hasAccess = ent.isTrialActive || ent.proCreditsRemaining >= IDEA_CANVAS_CREDIT_COST
+      if (!hasAccess) {
+        toast.error(`Generating a Business Canvas costs ${IDEA_CANVAS_CREDIT_COST} credits. You have ${ent.proCreditsRemaining}. Please upgrade or top up to continue.`)
+        return
+      }
+    }
+
     setIsLoadingCanvas(true)
 
     try {
@@ -404,6 +414,16 @@ CRITICAL: Return ONLY valid JSON with no markdown formatting.`
 
       setBusinessCanvas(normalizedCanvas)
 
+      // Deduct credits after a successful generation (admin/tester bypassed inside chargeCredits).
+      if (user && user.role !== "admin" && user.role !== "tester") {
+        const charge = await consumeIdeaCanvasCredits(user.id)
+        if (!charge.success) {
+          toast.error(charge.error || "Failed to deduct credits for Business Canvas.")
+        } else {
+          toast.success(`Business Canvas generated. -${IDEA_CANVAS_CREDIT_COST} credits (${charge.remainingCredits} left).`)
+        }
+      }
+
       const canvasMemory: UserMemoryEntry = {
         id: crypto.randomUUID(),
         userId,
@@ -418,7 +438,9 @@ CRITICAL: Return ONLY valid JSON with no markdown formatting.`
       }
       setUserMemory(current => [canvasMemory, ...(current ?? [])].slice(0, 20))
 
-      toast.success("Business Canvas generated successfully!")
+      if (!user || user.role === "admin" || user.role === "tester") {
+        toast.success("Business Canvas generated successfully!")
+      }
       
       setTimeout(() => {
         const canvasElement = document.querySelector('[data-canvas-view]')
@@ -438,6 +460,16 @@ CRITICAL: Return ONLY valid JSON with no markdown formatting.`
     if (!cookedIdea) {
       toast.error("Please cook your idea first")
       return
+    }
+
+    // Credit pre-check (admin/tester bypass; trial users allowed; otherwise need >= cost)
+    if (user && user.role !== "admin" && user.role !== "tester") {
+      const ent = getFeatureEntitlements(user)
+      const hasAccess = ent.isTrialActive || ent.proCreditsRemaining >= IDEA_PITCH_CREDIT_COST
+      if (!hasAccess) {
+        toast.error(`Generating a Pitch Deck costs ${IDEA_PITCH_CREDIT_COST} credits. You have ${ent.proCreditsRemaining}. Please upgrade or top up to continue.`)
+        return
+      }
     }
 
     setIsLoadingPitch(true)
@@ -479,6 +511,16 @@ CRITICAL: Return ONLY valid JSON with no markdown.`
 
       setPitchDeck(normalizedPitchDeck)
 
+      // Deduct credits after a successful generation (admin/tester bypassed inside chargeCredits).
+      if (user && user.role !== "admin" && user.role !== "tester") {
+        const charge = await consumeIdeaPitchCredits(user.id)
+        if (!charge.success) {
+          toast.error(charge.error || "Failed to deduct credits for Pitch Deck.")
+        } else {
+          toast.success(`Pitch Deck generated. -${IDEA_PITCH_CREDIT_COST} credits (${charge.remainingCredits} left).`)
+        }
+      }
+
       const pitchMemory: UserMemoryEntry = {
         id: crypto.randomUUID(),
         userId,
@@ -492,7 +534,9 @@ CRITICAL: Return ONLY valid JSON with no markdown.`
       }
       setUserMemory(current => [pitchMemory, ...(current ?? [])].slice(0, 20))
 
-      toast.success("Pitch Deck generated successfully!")
+      if (!user || user.role === "admin" || user.role === "tester") {
+        toast.success("Pitch Deck generated successfully!")
+      }
       
       setTimeout(() => {
         const pitchElement = document.querySelector('[data-pitch-view]')
