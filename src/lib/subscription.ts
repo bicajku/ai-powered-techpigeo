@@ -465,7 +465,9 @@ export async function consumeReviewCredit(userId: string): Promise<{ success: bo
 
         // Also deduct from the backend subscription so the two credit stores
         // stay in sync. This call is best-effort; a failure is non-blocking.
-        chargeCredits(userId, 1, "review", "Review check (trial)").catch(() => null)
+        chargeCredits(userId, 1, "review", "Review check (trial)").catch((err) =>
+          console.warn("[consumeReviewCredit] Trial backend credit sync failed (non-blocking):", err)
+        )
 
         return {
           success: true,
