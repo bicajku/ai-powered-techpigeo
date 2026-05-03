@@ -150,21 +150,41 @@ async function chargeCredits(
     return { success: true, remainingCredits: payerSub.proCredits || 0 }
   }
 
-  const isPaidPlan = payerSub.plan === "pro" || payerSub.plan === "team" || payerSub.plan === "enterprise"
-  if (!isPaidPlan) {
-    return { success: false, remainingCredits: payerSub.proCredits || 0, error: "Pro, Team, or Enterprise subscription required" }
-  }
-
+  // Subscription must be active (or in grace) regardless of plan tier.
   if (!(payerSub.status === "active" || payerSub.status === "grace")) {
     return { success: false, remainingCredits: payerSub.proCredits || 0, error: "Subscription is not active" }
   }
 
   const currentCredits = Math.max(0, payerSub.proCredits || 0)
   if (currentCredits < creditsToConsume) {
-    return { success: false, remainingCredits: currentCredits, error: "Insufficient credits" }
+    return { success: false, remainingCredits: currentCredits, error: "Insufficient credits. Upgrade or request a top-up to continue." }
   }
 
-  const remainingCredits = currentCredits - creditsToConsume
+  // Persist the deduction to the backend so polling /api/auth/verify reflects the
+  // new balance across devices/refreshes. Backend is the source of truth.
+  let backendRemaining: number | null = null
+  try {
+    const res = await postBackend("/api/usage/consume-credits", {
+      userId: payer.id,
+      amount: creditsToConsume,
+      module,
+      reason,
+    })
+    if (res.ok && res.data && typeof res.data.remainingCredits === "number") {
+      backendRemaining = Number(res.data.remainingCredits)
+    } else if (res.status === 402 || res.status === 403) {
+      // Backend rejected (insufficient/locked). Surface the error.
+      return {
+        success: false,
+        remainingCredits: Number(res.data?.remainingCredits ?? currentCredits),
+        error: (res.data?.error as string) || "Credit deduction rejected",
+      }
+    }
+  } catch {
+    // Backend unreachable — fall back to local-only deduction below.
+  }
+
+  const remainingCredits = backendRemaining ?? (currentCredits - creditsToConsume)
   users[payer.id] = {
     ...payer,
     subscription: {
@@ -330,11 +350,11 @@ export function getFeatureEntitlements(user: UserProfile): FeatureEntitlements {
     ? Math.max(0, (trial?.maxSubmissions || 0) - (trial?.submissionsUsed || 0))
     : 0
 
-  // Review access: admin always, paid plans with active sub & credits, or active trial with remaining submissions
-  const canAccessReview = isAdmin || isTester || (isPaidPlan && isSubscriptionActive && credits > 0) || isTrialActive
+  // Review access: admin/tester always; OR active subscription with credits > 0 (any plan); OR active trial
+  const canAccessReview = isAdmin || isTester || (isSubscriptionActive && credits > 0) || isTrialActive
 
-  // Humanize: admin always, paid plans with active sub & credits, or active trial with remaining submissions
-  const canUseHumanizer = isAdmin || isTester || (isPaidPlan && isSubscriptionActive && credits > 0) || isTrialActive
+  // Humanizer access: same rule — credits gate the feature regardless of plan tier
+  const canUseHumanizer = isAdmin || isTester || (isSubscriptionActive && credits > 0) || isTrialActive
 
   // NGO SaaS: strictly admin OR enterprise + explicitly created by NGO admin (ngoTeamAdminId/ngoAccessLevel set)
   const canAccessNGOSaaS =
@@ -420,7 +440,11 @@ export async function consumeReviewCredit(userId: string): Promise<{ success: bo
     }
 
     if (!isPaidPlan) {
-      return { success: false, remainingCredits: 0, error: "Pro or Team subscription required" }
+      // Basic users can consume credits granted via welcome bonus / admin top-up.
+      // Block only when no credits remain.
+      if ((subscription.proCredits || 0) <= 0) {
+        return { success: false, remainingCredits: 0, error: "No credits remaining. Upgrade or request a top-up to continue." }
+      }
     }
 
     return await chargeCredits(userId, 1, "review", "Review check")

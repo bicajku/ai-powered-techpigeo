@@ -1524,6 +1524,49 @@ export async function addCreditsToUserSubscription(userId, creditsToAdd, assigne
 }
 
 /**
+ * Atomically deduct credits from a user's active subscription.
+ * Returns { success, remainingCredits, error }.
+ *
+ *   - success=false, error='no_subscription'  → no active subscription
+ *   - success=false, error='insufficient'     → not enough credits (no change)
+ *   - success=true,  remainingCredits=number  → deduction applied
+ */
+export async function consumeUserCredits(userId, amount) {
+  const sql = getSql()
+  const value = Math.max(1, Math.floor(Number(amount) || 0))
+
+  const rows = await sql`
+    UPDATE sentinel_user_subscriptions
+    SET pro_credits = COALESCE(pro_credits, 0) - ${value},
+        updated_at  = NOW()
+    WHERE id = (
+      SELECT id FROM sentinel_user_subscriptions
+      WHERE user_id = ${userId} AND status = 'ACTIVE'
+      ORDER BY assigned_at DESC
+      LIMIT 1
+    )
+      AND COALESCE(pro_credits, 0) >= ${value}
+    RETURNING COALESCE(pro_credits, 0) AS "proCredits"
+  `
+
+  if (rows.length === 0) {
+    const subRows = await sql`
+      SELECT COALESCE(pro_credits, 0) AS "proCredits"
+      FROM sentinel_user_subscriptions
+      WHERE user_id = ${userId} AND status = 'ACTIVE'
+      ORDER BY assigned_at DESC
+      LIMIT 1
+    `
+    if (subRows.length === 0) {
+      return { success: false, remainingCredits: 0, error: "no_subscription" }
+    }
+    return { success: false, remainingCredits: subRows[0].proCredits, error: "insufficient" }
+  }
+
+  return { success: true, remainingCredits: rows[0].proCredits }
+}
+
+/**
  * Set the plan tier on a user's latest active subscription.
  * If no active subscription exists, create one with the desired tier.
  */

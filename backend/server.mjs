@@ -90,6 +90,7 @@ import {
   recordUsageEvent,
   getUsageSummary,
   getPolicyViolations,
+  consumeUserCredits,
 } from "./db.mjs"
 import {
   canPerformAction,
@@ -4082,6 +4083,60 @@ async function handleRecordUsageEvent(req, res, user) {
   }
 }
 
+/**
+ * POST /api/usage/consume-credits
+ * Body: { amount, module, reason }
+ * Atomically deducts credits from the caller's active subscription.
+ * Admin/tester are granted unlimited (no deduction).
+ */
+async function handleConsumeCredits(req, res, user) {
+  try {
+    const { ok: bodyOk, data } = await parseJsonBody(req)
+    if (!bodyOk) {
+      return sendJson(res, 400, { ok: false, error: "Invalid request body" }, req)
+    }
+    const amount = Number.isFinite(data?.amount) ? Math.max(1, Math.floor(data.amount)) : 1
+    const moduleName = typeof data?.module === "string" ? data.module : "unknown"
+    const reason = typeof data?.reason === "string" ? data.reason.slice(0, 200) : ""
+
+    // Admin/tester — unlimited, no deduction
+    if (user.role === "SENTINEL_COMMANDER" || user.role === "ORG_ADMIN" || user.role === "TEAM_ADMIN" || user.role === "TESTER") {
+      return sendJson(res, 200, { ok: true, success: true, remainingCredits: Number.POSITIVE_INFINITY }, req)
+    }
+
+    const result = await consumeUserCredits(user.id, amount)
+    if (!result.success) {
+      const status = result.error === "insufficient" ? 402 : 403
+      return sendJson(res, status, {
+        ok: false,
+        success: false,
+        remainingCredits: result.remainingCredits,
+        error: result.error === "insufficient"
+          ? "Insufficient credits. Upgrade or request a top-up to continue."
+          : "No active subscription. Please log in again or contact support.",
+      }, req)
+    }
+
+    // Best-effort audit log
+    recordUsageEvent({
+      userId: user.id,
+      action: moduleName === "review" ? "review_file" : moduleName === "humanizer" ? "humanizer_submission" : "credit_consume",
+      plan: null,
+      words: 0,
+      files: 0,
+      submissions: moduleName === "humanizer" ? 1 : 0,
+      outcome: "allowed",
+      reason: null,
+      metadata: { module: moduleName, amount, reason },
+    }).catch(() => {})
+
+    return sendJson(res, 200, { ok: true, success: true, remainingCredits: result.remainingCredits }, req)
+  } catch (err) {
+    console.error("[usage/consume-credits] error:", err?.message || err)
+    return sendJson(res, 500, { ok: false, error: "Failed to consume credits" }, req)
+  }
+}
+
 function rangeHoursFromQuery(req) {
   try {
     const url = new URL(req.url, "http://localhost")
@@ -5031,6 +5086,10 @@ const server = http.createServer(async (req, res) => {
 
       if (method === "POST" && reqPathname === "/api/usage/record") {
         return handleRecordUsageEvent(req, res, user)
+      }
+
+      if (method === "POST" && reqPathname === "/api/usage/consume-credits") {
+        return handleConsumeCredits(req, res, user)
       }
 
       if (method === "GET" && reqPathname === "/api/sentinel/admin/usage-summary") {
