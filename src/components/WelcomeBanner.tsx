@@ -81,9 +81,8 @@ export function WelcomeBanner({ user }: WelcomeBannerProps) {
   const subscriptionPlan = String(user.subscription?.plan || "basic").toUpperCase()
 
   useEffect(() => {
-    // Admins/testers bypass credit deduction entirely — don't track a delta
-    // for them (otherwise stale prior-session balances cause confusing
-    // "-N consumed" labels right after switching accounts).
+    // INVARIANT[admin-credits-display]: admins/testers bypass credit deduction;
+    // never compute or render a consumed delta for them. See /memories/repo/policies.md.
     if (isAdmin) return
     const previousCredits = previousCreditsRef.current
     if (previousCredits !== credits) {

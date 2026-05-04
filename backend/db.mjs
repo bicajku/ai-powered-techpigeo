@@ -1252,6 +1252,10 @@ export async function deleteUserById(userId, options = {}) {
         `[db.deleteUserById] FK constraint blocked hard delete of ${userId}; performing anonymized soft delete.`,
         err?.detail || err?.message,
       )
+      // INVARIANT[sticky-user-deletion]: soft delete MUST clear OAuth provider IDs
+      // (google_id, github_id, microsoft_id) and set is_active = FALSE. Email is
+      // also recorded in sentinel_deleted_emails by recordDeletedEmail below.
+      // Removing any of these allows deleted users to log back in. See /memories/repo/policies.md.
       const anonEmail = `deleted+${userId.slice(0, 8)}@novussparks.invalid`
       const rows = await sql`
         UPDATE sentinel_users

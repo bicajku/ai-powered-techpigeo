@@ -57,6 +57,8 @@ async function postBackend(path: string, payload: unknown): Promise<{ ok: boolea
 
 type ChargeableModule = "review" | "humanizer" | "idea-canvas" | "idea-pitch"
 
+// INVARIANT[idea-credit-costs]: Business Canvas = 2 credits, Pitch Deck = 4 credits.
+// These values are user-facing pricing locked by product. See /memories/repo/policies.md.
 export const IDEA_CANVAS_CREDIT_COST = 2
 export const IDEA_PITCH_CREDIT_COST = 4
 

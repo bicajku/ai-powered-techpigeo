@@ -16,6 +16,7 @@
         "build": "tsc -b --noCheck && vite build",
         "benchmark:check": "node scripts/benchmark-check.mjs",
         "guard:lockfile": "node scripts/guard-lockfile.mjs",
+        "guard:policies": "node scripts/guard-policies.mjs",
         "lint": "eslint .",
         "test:e2e": "playwright test",
         "optimize": "vite optimize",

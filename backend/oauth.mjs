@@ -269,7 +269,10 @@ export async function handleMicrosoftCallback(code) {
 async function processOAuthUser(profile) {
   const sql = getSql();
 
-  // Block OAuth login/signup for emails that were previously deleted by an admin.
+  // INVARIANT[oauth-deleted-block]: OAuth login/signup MUST be blocked for emails
+  // that were previously deleted by an admin AND lookups MUST filter is_active = TRUE.
+  // Removing either check allows admin-deleted users to log back in via OAuth.
+  // See /memories/repo/policies.md.
   // Admin must remove the row from sentinel_deleted_emails to allow rejoin.
   try {
     const { wasEmailDeleted } = await import("./db.mjs");

@@ -1668,7 +1668,9 @@ async function handleRegister(req, res) {
     return sendJson(res, 503, { ok: false, error: "JWT not configured" }, req)
   }
 
-  // Hard-block re-signup with an email that was previously deleted by an admin.
+  // INVARIANT[register-deleted-block]: password registration MUST hard-block
+  // any email present in sentinel_deleted_emails. Removing this lets banned
+  // users re-register with the same email. See /memories/repo/policies.md.
   // Admin must remove the row from sentinel_deleted_emails to allow rejoin.
   try {
     const { wasEmailDeleted } = await import("./db.mjs")

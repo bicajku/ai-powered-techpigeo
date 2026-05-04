@@ -54,10 +54,11 @@ interface PasswordResetCode {
 }
 
 function mapSentinelUserToUserProfile(user: SentinelUser): UserProfile {
-  // Platform-wide "admin" (super-admin) is reserved for SENTINEL_COMMANDER.
-  // ORG_ADMIN / TEAM_ADMIN are organization-scoped roles — their elevated
-  // capabilities are scoped via subscription flags (e.g. enterpriseOrganizationId,
-  // ngoAccessLevel) and module-level helpers, NOT via the platform admin role.
+  // INVARIANT[platform-admin-rbac]: Platform-wide "admin" (super-admin) is reserved
+  // for SENTINEL_COMMANDER ONLY. ORG_ADMIN / TEAM_ADMIN are organization-scoped
+  // roles — their elevated capabilities are scoped via subscription flags
+  // (e.g. enterpriseOrganizationId, ngoAccessLevel) and module-level helpers,
+  // NOT via the platform admin role. See /memories/repo/policies.md.
   const isPlatformAdmin = user.role === "SENTINEL_COMMANDER"
 
   const defaultSub = getDefaultSubscription()
