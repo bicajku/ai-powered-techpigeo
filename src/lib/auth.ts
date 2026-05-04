@@ -132,10 +132,36 @@ function mergeUserProfileWithStoredState(user: SentinelUser, storedUser?: UserPr
   const mappedUser = mapSentinelUserToUserProfile(user)
   const previous = storedUser ?? null
 
-  const mergedSubscription = previous?.subscription ? {
-    ...previous.subscription,
-    enterpriseOrganizationId: user.organizationId || previous.subscription.enterpriseOrganizationId
-  } : mappedUser.subscription
+  // INVARIANT[enterprise-grant-persistence]: when the freshly verified
+  // SentinelUser carries an enterprise/NGO grant from the DB, the mapped
+  // subscription (plan: 'enterprise', status: 'active', ngoAccessLevel,
+  // ngoTeamAdminId, enterpriseRole, enterpriseModuleAccess,
+  // hasNgoModuleAccess, individualProLicense) MUST overwrite any stale
+  // locally-cached subscription. Otherwise users granted NGO-SAAS access
+  // from another browser would never see the tab unlock on reload, because
+  // the previous local subscription would mask the new grant fields.
+  const hasEnterpriseGrant =
+    !!user.enterpriseRole ||
+    !!user.ngoAccessLevel ||
+    (Array.isArray(user.enterpriseModuleAccess) && user.enterpriseModuleAccess.length > 0) ||
+    user.individualProLicense === true
+
+  const mappedSub = mappedUser.subscription || getDefaultSubscription()
+  const mergedSubscription = previous?.subscription
+    ? hasEnterpriseGrant
+      ? {
+          ...previous.subscription,
+          ...mappedSub,
+          enterpriseOrganizationId:
+            user.organizationId
+            || mappedSub.enterpriseOrganizationId
+            || previous.subscription.enterpriseOrganizationId,
+        }
+      : {
+          ...previous.subscription,
+          enterpriseOrganizationId: user.organizationId || previous.subscription.enterpriseOrganizationId,
+        }
+    : mappedSub
 
   return ensureUserSubscription({
     ...previous,
