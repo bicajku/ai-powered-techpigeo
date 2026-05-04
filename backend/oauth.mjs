@@ -268,16 +268,30 @@ export async function handleMicrosoftCallback(code) {
 // ============================================================================
 async function processOAuthUser(profile) {
   const sql = getSql();
-  
-  // 1. Find existing user by email or provider ID
+
+  // Block OAuth login/signup for emails that were previously deleted by an admin.
+  // Admin must remove the row from sentinel_deleted_emails to allow rejoin.
+  try {
+    const { wasEmailDeleted } = await import("./db.mjs");
+    if (await wasEmailDeleted(profile.email)) {
+      const err = new Error("This account was removed by an administrator and cannot sign in. Contact support if you believe this is a mistake.");
+      err.code = "ACCOUNT_DELETED";
+      throw err;
+    }
+  } catch (err) {
+    if (err?.code === "ACCOUNT_DELETED") throw err;
+    // Best effort — if the check fails (db error), continue.
+  }
+
+  // 1. Find existing user by email or provider ID (active accounts only).
   let user;
-  
+
   if (profile.provider === "google") {
-    user = await sql`SELECT * FROM sentinel_users WHERE google_id = ${profile.providerId} OR email = ${profile.email} LIMIT 1`;
+    user = await sql`SELECT * FROM sentinel_users WHERE (google_id = ${profile.providerId} OR email = ${profile.email}) AND is_active = TRUE LIMIT 1`;
   } else if (profile.provider === "github") {
-    user = await sql`SELECT * FROM sentinel_users WHERE github_id = ${profile.providerId} OR email = ${profile.email} LIMIT 1`;
+    user = await sql`SELECT * FROM sentinel_users WHERE (github_id = ${profile.providerId} OR email = ${profile.email}) AND is_active = TRUE LIMIT 1`;
   } else if (profile.provider === "microsoft") {
-    user = await sql`SELECT * FROM sentinel_users WHERE microsoft_id = ${profile.providerId} OR email = ${profile.email} LIMIT 1`;
+    user = await sql`SELECT * FROM sentinel_users WHERE (microsoft_id = ${profile.providerId} OR email = ${profile.email}) AND is_active = TRUE LIMIT 1`;
   }
 
   if (user && user.length > 0) {

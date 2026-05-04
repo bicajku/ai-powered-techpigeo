@@ -1261,6 +1261,9 @@ export async function deleteUserById(userId, options = {}) {
             password_hash = '',
             avatar_url = NULL,
             organization_id = NULL,
+            google_id = NULL,
+            github_id = NULL,
+            microsoft_id = NULL,
             updated_at = NOW()
         WHERE id = ${userId}
         RETURNING id, email, full_name AS "fullName"

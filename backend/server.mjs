@@ -1668,6 +1668,20 @@ async function handleRegister(req, res) {
     return sendJson(res, 503, { ok: false, error: "JWT not configured" }, req)
   }
 
+  // Hard-block re-signup with an email that was previously deleted by an admin.
+  // Admin must remove the row from sentinel_deleted_emails to allow rejoin.
+  try {
+    const { wasEmailDeleted } = await import("./db.mjs")
+    if (await wasEmailDeleted(email)) {
+      return sendJson(res, 403, {
+        ok: false,
+        error: "This email was removed by an administrator and cannot be used to create a new account. Contact support if you believe this is a mistake.",
+      }, req)
+    }
+  } catch {
+    // ignore — best effort
+  }
+
   try {
     const passwordHash = await hashPassword(password)
     const userId = crypto.randomUUID()
