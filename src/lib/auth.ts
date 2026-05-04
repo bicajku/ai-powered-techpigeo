@@ -54,10 +54,11 @@ interface PasswordResetCode {
 }
 
 function mapSentinelUserToUserProfile(user: SentinelUser): UserProfile {
-  const isAdminRole =
-    user.role === "SENTINEL_COMMANDER" ||
-    user.role === "ORG_ADMIN" ||
-    user.role === "TEAM_ADMIN"
+  // Platform-wide "admin" (super-admin) is reserved for SENTINEL_COMMANDER.
+  // ORG_ADMIN / TEAM_ADMIN are organization-scoped roles — their elevated
+  // capabilities are scoped via subscription flags (e.g. enterpriseOrganizationId,
+  // ngoAccessLevel) and module-level helpers, NOT via the platform admin role.
+  const isPlatformAdmin = user.role === "SENTINEL_COMMANDER"
 
   const defaultSub = getDefaultSubscription()
   const isTesterRole = user.role === "TESTER"
@@ -77,7 +78,7 @@ function mapSentinelUserToUserProfile(user: SentinelUser): UserProfile {
     id: user.id,
     email: user.email,
     fullName: user.fullName,
-    role: isAdminRole ? "admin" : isTesterRole ? "tester" : "client",
+    role: isPlatformAdmin ? "admin" : isTesterRole ? "tester" : "client",
     avatarUrl: user.avatarUrl,
     subscription: user.organizationId ? {
       ...(testerSubscription || defaultSub),

@@ -145,7 +145,9 @@ export const adminService = {
           fullName: raw.fullName,
           role: (["admin", "client", "tester"].includes(raw.role?.toLowerCase())
             ? raw.role.toLowerCase()
-            : raw.role === "SENTINEL_COMMANDER" || raw.role === "ORG_ADMIN" || raw.role === "TEAM_ADMIN"
+            // Only SENTINEL_COMMANDER is treated as platform admin; ORG_ADMIN /
+            // TEAM_ADMIN are organization-scoped and remain regular clients.
+            : raw.role === "SENTINEL_COMMANDER"
               ? "admin"
               : raw.role === "TESTER" ? "tester" : "client") as import("@/types").UserRole,
           avatarUrl: raw.avatarUrl,
