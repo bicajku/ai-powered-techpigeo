@@ -1980,6 +1980,7 @@ ${JSON.stringify(candidate)}`
           collapsed={isSidebarCollapsed}
           isSentinelCommander={authCapabilities.isSentinelCommander}
           canManageProviderRouting={authCapabilities.canManageProviderRouting}
+          canAccessNGOSaaS={canAccessNGOSaaS}
           onToggleCollapsed={() => setIsSidebarCollapsed((prev) => !prev)}
           onTabChange={setActiveTab}
           onOpenProfile={() => setShowProfileEdit(true)}

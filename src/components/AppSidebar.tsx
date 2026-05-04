@@ -7,6 +7,7 @@ import {
   ChartBar,
   EnvelopeSimple,
   FolderOpen,
+  HandHeart,
   Key,
   LinkedinLogo,
   Globe,
@@ -39,6 +40,7 @@ interface AppSidebarProps {
   collapsed: boolean
   isSentinelCommander?: boolean
   canManageProviderRouting?: boolean
+  canAccessNGOSaaS?: boolean
   onToggleCollapsed: () => void
   onTabChange: (tab: string) => void
   onOpenProfile: () => void
@@ -70,6 +72,7 @@ export function AppSidebar({
   collapsed,
   isSentinelCommander = false,
   canManageProviderRouting = false,
+  canAccessNGOSaaS = false,
   onToggleCollapsed,
   onTabChange,
   onOpenProfile,
@@ -169,8 +172,23 @@ export function AppSidebar({
         onClick: () => onTabChange("dashboard"),
         active: activeTab === "dashboard",
       },
+      // INVARIANT[enterprise-grant-persistence]: NGO-SAAS sidebar link only
+      // appears for users whose subscription has an explicit ngoAccessLevel
+      // grant (computed upstream as canAccessNGOSaaS). Ordinary signups
+      // never see this link because their subscription stays on BASIC.
+      ...(canAccessNGOSaaS
+        ? [
+            {
+              id: "ngo-saas",
+              label: "NGO-SAAS",
+              icon: HandHeart,
+              onClick: () => onTabChange("ngo-saas"),
+              active: activeTab === "ngo-saas",
+            },
+          ]
+        : []),
     ]
-  }, [activeTab, canManageProviderRouting, isAdmin, isSentinelCommander, onTabChange])
+  }, [activeTab, canAccessNGOSaaS, canManageProviderRouting, isAdmin, isSentinelCommander, onTabChange])
 
   const accountItems: SidebarNavItem[] = [
     {
