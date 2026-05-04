@@ -81,13 +81,17 @@ export function WelcomeBanner({ user }: WelcomeBannerProps) {
   const subscriptionPlan = String(user.subscription?.plan || "basic").toUpperCase()
 
   useEffect(() => {
+    // Admins/testers bypass credit deduction entirely — don't track a delta
+    // for them (otherwise stale prior-session balances cause confusing
+    // "-N consumed" labels right after switching accounts).
+    if (isAdmin) return
     const previousCredits = previousCreditsRef.current
     if (previousCredits !== credits) {
       setCreditDelta(credits - previousCredits)
       setLastCreditSyncAt(Date.now())
       previousCreditsRef.current = credits
     }
-  }, [credits])
+  }, [credits, isAdmin])
 
   const creditSyncAge = Math.max(0, Math.floor((Date.now() - lastCreditSyncAt) / 1000))
   const creditSyncLabel = creditSyncAge < 6 ? "Live now" : `${creditSyncAge}s ago`
@@ -165,13 +169,18 @@ export function WelcomeBanner({ user }: WelcomeBannerProps) {
         
         <div className="flex flex-col gap-4">
           <div className="flex items-center gap-2">
-            <Coins size={32} weight="duotone" className={creditDelta < 0 ? "text-amber-500" : "text-emerald-500"} />
+            <Coins size={32} weight="duotone" className={isAdmin ? "text-primary" : creditDelta < 0 ? "text-amber-500" : "text-emerald-500"} />
             <div className="text-right">
-              <p className="text-sm font-medium text-muted-foreground">Credits ({subscriptionPlan})</p>
-              <p className="text-lg font-bold text-foreground tabular-nums">{credits}</p>
-              <p className="text-xs text-muted-foreground">
-                {creditDelta < 0 ? `${Math.abs(creditDelta)} consumed` : creditDelta > 0 ? `+${creditDelta} added` : "No recent change"} · {creditSyncLabel}
-              </p>
+              <p className="text-sm font-medium text-muted-foreground">{isAdmin ? "Credits" : `Credits (${subscriptionPlan})`}</p>
+              <p className="text-lg font-bold text-foreground tabular-nums">{isAdmin ? "Unlimited" : credits}</p>
+              {!isAdmin && (
+                <p className="text-xs text-muted-foreground">
+                  {creditDelta < 0 ? `${Math.abs(creditDelta)} consumed` : creditDelta > 0 ? `+${creditDelta} added` : "No recent change"} · {creditSyncLabel}
+                </p>
+              )}
+              {isAdmin && (
+                <p className="text-xs text-muted-foreground">Admin bypass active</p>
+              )}
             </div>
           </div>
 
