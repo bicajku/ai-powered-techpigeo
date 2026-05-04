@@ -236,9 +236,14 @@ export async function addTeamMember(
       return { success: false, error: backendCreate.error || "Failed to create backend team member" }
     }
 
-    const userId = typeof backendCreate.member?.id === "string"
-      ? backendCreate.member.id
-      : `ngo_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    // INVARIANT[no-synthetic-user-ids]: refuse to fabricate an id when the
+    // backend account creation did not return one. A synthetic id would later
+    // be sent to /api/sentinel/admin/enterprise-grant and fail the
+    // sentinel_users id lookup (the original 'Target user not found' bug).
+    if (typeof backendCreate.member?.id !== "string" || !backendCreate.member.id) {
+      return { success: false, error: "Backend did not return a user id. Member NOT created. Please retry once the backend is reachable." }
+    }
+    const userId = backendCreate.member.id
     const passwordHash = await simpleHash(password)
 
     const newUser: UserProfile = {

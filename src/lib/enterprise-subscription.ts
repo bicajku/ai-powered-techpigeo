@@ -384,7 +384,18 @@ export async function addEnterpriseTeamMember(
       }
 
       const backendUser = backendCreate.member as Partial<UserProfile> | undefined
-      userId = typeof backendUser?.id === "string" ? backendUser.id : `ent_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+      // INVARIANT[no-synthetic-user-ids]: never invent a synthetic user id.
+      // If the backend did not return a real sentinel_users.id, fail fast so
+      // we don't poison the local KV cache with a row that no /api/auth/verify
+      // call can ever resolve. Synthetic ids were the root cause of
+      // 'Target user not found or inactive' across browsers.
+      if (typeof backendUser?.id !== "string" || !backendUser.id) {
+        return {
+          success: false,
+          error: "Backend did not return a user id. Member NOT created. Please retry once the backend is reachable.",
+        }
+      }
+      userId = backendUser.id
       const passwordHash = await simpleHash(password.trim())
       const targetPlan = planFromTier(sub.tier)
 

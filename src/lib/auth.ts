@@ -132,6 +132,11 @@ function mergeUserProfileWithStoredState(user: SentinelUser, storedUser?: UserPr
   const mappedUser = mapSentinelUserToUserProfile(user)
   const previous = storedUser ?? null
 
+  // INVARIANT[server-auth-wins]: identity-bearing fields (role, subscription
+  // grant fields) must be sourced from the freshly verified server profile.
+  // Local KV state may augment UI-only properties but must NOT override
+  // server-authoritative values. The grant-aware merge below enforces this
+  // for the enterprise/NGO subscription fields.
   // INVARIANT[enterprise-grant-persistence]: when the freshly verified
   // SentinelUser carries an enterprise/NGO grant from the DB, the mapped
   // subscription (plan: 'enterprise', status: 'active', ngoAccessLevel,

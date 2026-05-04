@@ -104,6 +104,39 @@ const INVARIANTS = [
       "ngoAccessLevel",
     ],
   },
+  {
+    id: "server-auth-wins",
+    file: "src/lib/auth.ts",
+    marker: "INVARIANT[server-auth-wins]",
+    mustContain: ["hasEnterpriseGrant"],
+  },
+  {
+    id: "enterprise-org-source-of-truth",
+    file: "backend/db.mjs",
+    marker: "INVARIANT[enterprise-org-source-of-truth]",
+    mustContain: [
+      "sentinel_enterprise_orgs",
+      "sentinel_enterprise_members",
+    ],
+  },
+  {
+    id: "ngo-team-source-of-truth",
+    file: "backend/db.mjs",
+    marker: "INVARIANT[ngo-team-source-of-truth]",
+    mustContain: ["sentinel_ngo_team_members"],
+  },
+  {
+    id: "audit-log-table",
+    file: "backend/db.mjs",
+    marker: "INVARIANT[audit-log-table]",
+    mustContain: ["sentinel_audit_log", "writeGrantAudit"],
+  },
+  {
+    id: "grants-health-endpoint",
+    file: "backend/server.mjs",
+    marker: "INVARIANT[grants-health-endpoint]",
+    mustContain: ["/api/health/grants", "handleGrantsHealth"],
+  },
 ]
 
 let failed = 0
@@ -132,6 +165,39 @@ for (const inv of INVARIANTS) {
   }
 }
 
+/**
+ * Forbidden-pattern checks.
+ *
+ * INVARIANT[no-synthetic-user-ids]: client code MUST NOT fabricate user ids
+ * when a backend account-creation call did not return one. Synthetic ids
+ * (`ent_<ts>_<rand>`, `ngo_<ts>_<rand>`) caused the May 2026 cross-browser
+ * "Target user not found or inactive" regression because the synthetic id
+ * later flowed into /api/sentinel/admin/enterprise-grant which could not
+ * resolve it against sentinel_users.id. Enforced repo-wide.
+ */
+const FORBIDDEN_PATTERNS = [
+  {
+    id: "no-synthetic-user-ids",
+    pattern: /`(ent|ngo)_\$\{Date\.now\(\)\}_\$\{Math\.random/,
+    description:
+      "Synthetic user id template literal (`ent_${Date.now()}...` or `ngo_${Date.now()}...`). " +
+      "Backend MUST return a real sentinel_users.id; fail the operation instead.",
+  },
+]
+
+const SCAN_GLOBS = ["src/lib/enterprise-subscription.ts", "src/lib/ngo-team.ts"]
+for (const file of SCAN_GLOBS) {
+  const abs = resolve(repoRoot, file)
+  if (!existsSync(abs)) continue
+  const src = readFileSync(abs, "utf8")
+  for (const fp of FORBIDDEN_PATTERNS) {
+    if (fp.pattern.test(src)) {
+      failures.push(`[${fp.id}] ${file} contains forbidden pattern: ${fp.description}`)
+      failed++
+    }
+  }
+}
+
 if (failed > 0) {
   console.error("\n✖ Policy guard failed:\n")
   for (const f of failures) console.error("  - " + f)
@@ -141,4 +207,4 @@ if (failed > 0) {
   process.exit(1)
 }
 
-console.log(`✓ Policy guard passed (${INVARIANTS.length} invariants verified).`)
+console.log(`✓ Policy guard passed (${INVARIANTS.length} invariants + ${FORBIDDEN_PATTERNS.length} forbidden-pattern checks verified).`)

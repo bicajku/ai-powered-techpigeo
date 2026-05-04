@@ -93,6 +93,18 @@ import {
   consumeUserCredits,
   setEnterpriseGrant,
   revokeNgoGrant,
+  // Phase 1 (May 2026): Enterprise/NGO source-of-truth tables
+  upsertEnterpriseOrg,
+  getEnterpriseOrg,
+  listEnterpriseMembers,
+  upsertEnterpriseMember,
+  removeEnterpriseMember,
+  listNgoTeamMembers,
+  upsertNgoTeamMember,
+  removeNgoTeamMember,
+  // Phase 4 (May 2026): grant audit + health
+  writeGrantAudit,
+  getGrantsHealth,
 } from "./db.mjs"
 import {
   canPerformAction,
@@ -2877,6 +2889,18 @@ async function handleAdminEnterpriseGrant(req, res, actor) {
 
     if (!updated) return sendJson(res, 404, { ok: false, error: "Target user not found or inactive" }, req)
     console.log(`[ADMIN ENTERPRISE GRANT] ${actor.email} granted ${userId} via ${grantedVia || "(no-ngo)"}`)
+    await writeGrantAudit({
+      actorUserId: actor.userId || actor.id || null,
+      targetUserId: userId,
+      action: ngoAccessLevel ? "GRANT_NGO" : "GRANT_ENTERPRISE",
+      payload: {
+        ngoAccessLevel,
+        grantedVia,
+        enterpriseRole: body.enterpriseRole || null,
+        moduleAccess,
+        organizationId: body.organizationId || null,
+      },
+    })
     return sendJson(res, 200, { ok: true, user: updated }, req)
   } catch (err) {
     console.error("[handleAdminEnterpriseGrant] error:", err)
@@ -2914,11 +2938,252 @@ async function handleAdminEnterpriseRevokeNgo(req, res, actor) {
   try {
     const updated = await revokeNgoGrant(userId)
     if (!updated) return sendJson(res, 404, { ok: false, error: "Target user not found or inactive" }, req)
+    await writeGrantAudit({
+      actorUserId: actor.userId || actor.id || null,
+      targetUserId: userId,
+      action: "REVOKE_NGO",
+      payload: {},
+    })
     return sendJson(res, 200, { ok: true, user: updated }, req)
   } catch (err) {
     console.error("[handleAdminEnterpriseRevokeNgo] error:", err)
     return sendJson(res, 500, { ok: false, error: err?.message || "Failed to revoke NGO access" }, req)
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Phase 1 (May 2026): Enterprise Org / Member CRUD + NGO Team CRUD.
+// All routes are TEAM_ADMIN+ gated. Org-scoped admins are limited to their
+// own organization; SENTINEL_COMMANDER bypasses the scope check.
+// INVARIANT[enterprise-org-source-of-truth]
+// INVARIANT[ngo-team-source-of-truth]
+// ─────────────────────────────────────────────────────────────────────────
+
+function _enterpriseAdminGuard(actor, res, req) {
+  if (!hasMinimumRole(actor.role, "TEAM_ADMIN")) {
+    sendJson(res, 403, { ok: false, error: "Insufficient permissions" }, req)
+    return false
+  }
+  if (!isDbConfigured()) {
+    sendJson(res, 503, { ok: false, error: "Database not configured" }, req)
+    return false
+  }
+  return true
+}
+
+function _orgScopeOk(actor, orgId) {
+  if (actor.role === "SENTINEL_COMMANDER") return true
+  return !!actor.organizationId && (!orgId || orgId === actor.organizationId)
+}
+
+async function handleAdminEnterpriseGetOrg(req, res, actor, orgId) {
+  if (!_enterpriseAdminGuard(actor, res, req)) return
+  if (!_orgScopeOk(actor, orgId)) {
+    return sendJson(res, 403, { ok: false, error: "Cannot view organization outside your scope" }, req)
+  }
+  try {
+    const org = await getEnterpriseOrg(orgId)
+    if (!org) return sendJson(res, 404, { ok: false, error: "Organization not found" }, req)
+    const members = await listEnterpriseMembers(orgId)
+    return sendJson(res, 200, { ok: true, org, members }, req)
+  } catch (err) {
+    return sendJson(res, 500, { ok: false, error: err?.message || "Failed to fetch organization" }, req)
+  }
+}
+
+async function handleAdminEnterpriseUpsertOrg(req, res, actor) {
+  if (!_enterpriseAdminGuard(actor, res, req)) return
+  const parsed = await parseJsonBody(req)
+  if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+  const { id, ownerUserId, name, tier } = parsed.data || {}
+  if (typeof id !== "string" || !id.trim()) return sendJson(res, 400, { ok: false, error: "id required" }, req)
+  if (!_orgScopeOk(actor, id)) {
+    return sendJson(res, 403, { ok: false, error: "Cannot upsert organization outside your scope" }, req)
+  }
+  try {
+    const org = await upsertEnterpriseOrg({
+      id: id.trim(),
+      ownerUserId: typeof ownerUserId === "string" ? ownerUserId : (actor.userId || actor.id),
+      name: typeof name === "string" ? name : null,
+      tier: typeof tier === "string" ? tier : "ENTERPRISE",
+    })
+    await writeGrantAudit({
+      actorUserId: actor.userId || actor.id || null,
+      targetUserId: null,
+      action: "UPSERT_ENTERPRISE_ORG",
+      payload: { orgId: org?.id, name: org?.name, tier: org?.tier },
+    })
+    return sendJson(res, 200, { ok: true, org }, req)
+  } catch (err) {
+    return sendJson(res, 500, { ok: false, error: err?.message || "Failed to upsert organization" }, req)
+  }
+}
+
+async function handleAdminEnterpriseAddMember(req, res, actor) {
+  if (!_enterpriseAdminGuard(actor, res, req)) return
+  const parsed = await parseJsonBody(req)
+  if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+  const body = parsed.data || {}
+  const orgId = typeof body.orgId === "string" ? body.orgId.trim() : ""
+  let userId = typeof body.userId === "string" ? body.userId.trim() : ""
+  const emailHint = typeof body.email === "string" ? body.email.trim().toLowerCase() : ""
+  if (!orgId) return sendJson(res, 400, { ok: false, error: "orgId required" }, req)
+  if (!userId && !emailHint) return sendJson(res, 400, { ok: false, error: "userId or email required" }, req)
+  if (!_orgScopeOk(actor, orgId)) {
+    return sendJson(res, 403, { ok: false, error: "Cannot add member outside your organization" }, req)
+  }
+  try {
+    const lookupById = userId ? await getUserById(userId) : null
+    if (!lookupById && emailHint) {
+      const byEmail = await getUserByEmail(emailHint)
+      if (byEmail?.id) userId = byEmail.id
+    }
+    if (!userId) return sendJson(res, 404, { ok: false, error: "Target user not found. Create the account first." }, req)
+    const member = await upsertEnterpriseMember({
+      orgId,
+      userId,
+      role: typeof body.role === "string" ? body.role : "viewer",
+      moduleAccess: Array.isArray(body.moduleAccess) ? body.moduleAccess : ["strategy", "ideas"],
+      individualProLicense: !!body.individualProLicense,
+    })
+    await writeGrantAudit({
+      actorUserId: actor.userId || actor.id || null,
+      targetUserId: userId,
+      action: "ADD_ENTERPRISE_MEMBER",
+      payload: { orgId, role: member?.role, moduleAccess: member?.moduleAccess },
+    })
+    return sendJson(res, 200, { ok: true, member }, req)
+  } catch (err) {
+    return sendJson(res, 500, { ok: false, error: err?.message || "Failed to add member" }, req)
+  }
+}
+
+async function handleAdminEnterpriseRemoveMember(req, res, actor) {
+  if (!_enterpriseAdminGuard(actor, res, req)) return
+  const parsed = await parseJsonBody(req)
+  if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+  const orgId = typeof parsed.data?.orgId === "string" ? parsed.data.orgId.trim() : ""
+  const userId = typeof parsed.data?.userId === "string" ? parsed.data.userId.trim() : ""
+  if (!orgId || !userId) return sendJson(res, 400, { ok: false, error: "orgId and userId required" }, req)
+  if (!_orgScopeOk(actor, orgId)) {
+    return sendJson(res, 403, { ok: false, error: "Cannot remove member outside your organization" }, req)
+  }
+  try {
+    const removed = await removeEnterpriseMember(orgId, userId)
+    if (!removed) return sendJson(res, 404, { ok: false, error: "Membership not found" }, req)
+    await writeGrantAudit({
+      actorUserId: actor.userId || actor.id || null,
+      targetUserId: userId,
+      action: "REMOVE_ENTERPRISE_MEMBER",
+      payload: { orgId },
+    })
+    return sendJson(res, 200, { ok: true }, req)
+  } catch (err) {
+    return sendJson(res, 500, { ok: false, error: err?.message || "Failed to remove member" }, req)
+  }
+}
+
+async function handleAdminNgoTeamList(req, res, actor, adminUserId) {
+  if (!_enterpriseAdminGuard(actor, res, req)) return
+  // Caller can list either their own NGO team or, as SENTINEL_COMMANDER, any.
+  const me = actor.userId || actor.id
+  if (actor.role !== "SENTINEL_COMMANDER" && adminUserId !== me) {
+    return sendJson(res, 403, { ok: false, error: "Cannot list another admin's NGO team" }, req)
+  }
+  try {
+    const members = await listNgoTeamMembers(adminUserId)
+    return sendJson(res, 200, { ok: true, members }, req)
+  } catch (err) {
+    return sendJson(res, 500, { ok: false, error: err?.message || "Failed to list NGO team" }, req)
+  }
+}
+
+async function handleAdminNgoTeamUpsert(req, res, actor) {
+  if (!_enterpriseAdminGuard(actor, res, req)) return
+  const parsed = await parseJsonBody(req)
+  if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+  const body = parsed.data || {}
+  const adminUserId = typeof body.adminUserId === "string" ? body.adminUserId.trim() : (actor.userId || actor.id)
+  let memberUserId = typeof body.memberUserId === "string" ? body.memberUserId.trim() : ""
+  const emailHint = typeof body.email === "string" ? body.email.trim().toLowerCase() : ""
+  const accessLevel = typeof body.accessLevel === "string" ? body.accessLevel : "user"
+  if (actor.role !== "SENTINEL_COMMANDER" && adminUserId !== (actor.userId || actor.id)) {
+    return sendJson(res, 403, { ok: false, error: "Cannot manage another admin's NGO team" }, req)
+  }
+  if (!memberUserId && !emailHint) return sendJson(res, 400, { ok: false, error: "memberUserId or email required" }, req)
+  try {
+    const lookupById = memberUserId ? await getUserById(memberUserId) : null
+    if (!lookupById && emailHint) {
+      const byEmail = await getUserByEmail(emailHint)
+      if (byEmail?.id) memberUserId = byEmail.id
+    }
+    if (!memberUserId) return sendJson(res, 404, { ok: false, error: "Target user not found" }, req)
+    const member = await upsertNgoTeamMember({ adminUserId, memberUserId, accessLevel })
+    await writeGrantAudit({
+      actorUserId: actor.userId || actor.id || null,
+      targetUserId: memberUserId,
+      action: "UPSERT_NGO_TEAM_MEMBER",
+      payload: { adminUserId, accessLevel },
+    })
+    return sendJson(res, 200, { ok: true, member }, req)
+  } catch (err) {
+    return sendJson(res, 400, { ok: false, error: err?.message || "Failed to upsert NGO team member" }, req)
+  }
+}
+
+async function handleAdminNgoTeamRemove(req, res, actor) {
+  if (!_enterpriseAdminGuard(actor, res, req)) return
+  const parsed = await parseJsonBody(req)
+  if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+  const body = parsed.data || {}
+  const adminUserId = typeof body.adminUserId === "string" ? body.adminUserId.trim() : (actor.userId || actor.id)
+  const memberUserId = typeof body.memberUserId === "string" ? body.memberUserId.trim() : ""
+  if (actor.role !== "SENTINEL_COMMANDER" && adminUserId !== (actor.userId || actor.id)) {
+    return sendJson(res, 403, { ok: false, error: "Cannot manage another admin's NGO team" }, req)
+  }
+  if (!memberUserId) return sendJson(res, 400, { ok: false, error: "memberUserId required" }, req)
+  try {
+    const removed = await removeNgoTeamMember(adminUserId, memberUserId)
+    if (!removed) return sendJson(res, 404, { ok: false, error: "Membership not found" }, req)
+    await writeGrantAudit({
+      actorUserId: actor.userId || actor.id || null,
+      targetUserId: memberUserId,
+      action: "REMOVE_NGO_TEAM_MEMBER",
+      payload: { adminUserId },
+    })
+    return sendJson(res, 200, { ok: true }, req)
+  } catch (err) {
+    return sendJson(res, 500, { ok: false, error: err?.message || "Failed to remove NGO team member" }, req)
+  }
+}
+
+// Phase 4: public-ish health endpoint (auth NOT required to keep monitoring
+// simple, but it returns counts only — no PII).
+// INVARIANT[grants-health-endpoint]
+async function handleGrantsHealth(req, res) {
+  if (!isDbConfigured()) {
+    return sendJson(res, 503, { ok: false, error: "Database not configured" }, req)
+  }
+  const health = await getGrantsHealth()
+  return sendJson(res, 200, { ok: true, health, ts: Date.now() }, req)
+}
+
+// Phase 4: client-side drift telemetry endpoint. Logs to console + audit
+// table so we can trace stale-cache regressions without touching user data.
+async function handleDriftTelemetry(req, res, actor) {
+  const parsed = await parseJsonBody(req)
+  if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+  const payload = parsed.data || {}
+  console.warn("[telemetry/drift]", actor?.email || "(anon)", JSON.stringify(payload).slice(0, 500))
+  if (isDbConfigured()) {
+    await writeGrantAudit({
+      actorUserId: actor?.userId || actor?.id || null,
+      targetUserId: actor?.userId || actor?.id || null,
+      action: "CLIENT_DRIFT",
+      payload,
+    })
+  }
+  return sendJson(res, 200, { ok: true }, req)
 }
 
 /**
@@ -4519,6 +4784,12 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { ok: true, status: "healthy", timestamp: Date.now() }, req)
     }
 
+    // ── GET /api/health/grants ── (public, counts only — no PII)
+    // INVARIANT[grants-health-endpoint]
+    if (method === "GET" && reqPathname === "/api/health/grants") {
+      return handleGrantsHealth(req, res)
+    }
+
     // ── GET /unsubscribe — public one-click marketing opt-out ──
     if (method === "GET" && reqPathname === "/unsubscribe") {
       const token = url.searchParams.get("t")
@@ -5062,6 +5333,46 @@ const server = http.createServer(async (req, res) => {
       // POST /api/sentinel/admin/enterprise-revoke-ngo
       if (method === "POST" && reqPathname === "/api/sentinel/admin/enterprise-revoke-ngo") {
         return handleAdminEnterpriseRevokeNgo(req, res, user)
+      }
+
+      // ── Phase 1 (May 2026): Enterprise Org / Member CRUD ─────────────
+      // GET /api/sentinel/admin/enterprise/org/:orgId
+      {
+        const orgGetMatch = reqPathname.match(/^\/api\/sentinel\/admin\/enterprise\/org\/([^/]+)$/)
+        if (method === "GET" && orgGetMatch) {
+          return handleAdminEnterpriseGetOrg(req, res, user, decodeURIComponent(orgGetMatch[1]))
+        }
+      }
+      // POST /api/sentinel/admin/enterprise/org (upsert)
+      if (method === "POST" && reqPathname === "/api/sentinel/admin/enterprise/org") {
+        return handleAdminEnterpriseUpsertOrg(req, res, user)
+      }
+      // POST /api/sentinel/admin/enterprise/members (add/upsert)
+      if (method === "POST" && reqPathname === "/api/sentinel/admin/enterprise/members") {
+        return handleAdminEnterpriseAddMember(req, res, user)
+      }
+      // POST /api/sentinel/admin/enterprise/members/remove
+      if (method === "POST" && reqPathname === "/api/sentinel/admin/enterprise/members/remove") {
+        return handleAdminEnterpriseRemoveMember(req, res, user)
+      }
+
+      // ── Phase 1 (May 2026): NGO-Team CRUD ────────────────────────────
+      {
+        const ngoListMatch = reqPathname.match(/^\/api\/sentinel\/admin\/ngo-team\/([^/]+)$/)
+        if (method === "GET" && ngoListMatch) {
+          return handleAdminNgoTeamList(req, res, user, decodeURIComponent(ngoListMatch[1]))
+        }
+      }
+      if (method === "POST" && reqPathname === "/api/sentinel/admin/ngo-team/upsert") {
+        return handleAdminNgoTeamUpsert(req, res, user)
+      }
+      if (method === "POST" && reqPathname === "/api/sentinel/admin/ngo-team/remove") {
+        return handleAdminNgoTeamRemove(req, res, user)
+      }
+
+      // POST /api/telemetry/drift (logged-in users only)
+      if (method === "POST" && reqPathname === "/api/telemetry/drift") {
+        return handleDriftTelemetry(req, res, user)
       }
 
       // POST /api/sentinel/admin/subscriptions/add-credits

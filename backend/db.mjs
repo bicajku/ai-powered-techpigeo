@@ -532,6 +532,100 @@ export async function ensureSentinelTables() {
       )
     `
 
+    // ── Enterprise organizations & memberships (May 2026 production hardening) ──
+    // Source-of-truth for enterprise org structure & team rosters. Replaces the
+    // per-browser Spark KV maps which caused multi-device drift.
+    // INVARIANT[enterprise-org-source-of-truth]
+    await sql`
+      CREATE TABLE IF NOT EXISTS sentinel_enterprise_orgs (
+        id TEXT PRIMARY KEY,
+        owner_user_id TEXT NOT NULL,
+        name TEXT,
+        tier TEXT NOT NULL DEFAULT 'ENTERPRISE',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `
+    await sql`
+      CREATE TABLE IF NOT EXISTS sentinel_enterprise_members (
+        org_id TEXT NOT NULL REFERENCES sentinel_enterprise_orgs(id) ON DELETE CASCADE,
+        user_id TEXT NOT NULL REFERENCES sentinel_users(id) ON DELETE CASCADE,
+        role TEXT NOT NULL DEFAULT 'viewer',
+        module_access JSONB NOT NULL DEFAULT '[]'::jsonb,
+        individual_pro_license BOOLEAN NOT NULL DEFAULT FALSE,
+        added_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        last_active_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (org_id, user_id)
+      )
+    `
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_enterprise_members_user
+      ON sentinel_enterprise_members (user_id)
+    `
+
+    // NGO team roster (admin → member). Mirrors the same shape but distinct
+    // because an NGO admin can be outside an enterprise org.
+    // INVARIANT[ngo-team-source-of-truth]
+    await sql`
+      CREATE TABLE IF NOT EXISTS sentinel_ngo_team_members (
+        admin_user_id TEXT NOT NULL REFERENCES sentinel_users(id) ON DELETE CASCADE,
+        member_user_id TEXT NOT NULL REFERENCES sentinel_users(id) ON DELETE CASCADE,
+        access_level TEXT NOT NULL DEFAULT 'user',
+        added_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (admin_user_id, member_user_id)
+      )
+    `
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_ngo_team_members_member
+      ON sentinel_ngo_team_members (member_user_id)
+    `
+
+    // ── Audit log (Phase 4) ─────────────────────────────────────────────
+    // Append-only record of every grant / revoke / role-change for forensic
+    // review. INVARIANT[audit-log-table]
+    await sql`
+      CREATE TABLE IF NOT EXISTS sentinel_audit_log (
+        id BIGSERIAL PRIMARY KEY,
+        actor_user_id TEXT,
+        target_user_id TEXT,
+        action TEXT NOT NULL,
+        payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_sentinel_audit_log_target_created
+      ON sentinel_audit_log (target_user_id, created_at DESC)
+    `
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_sentinel_audit_log_action_created
+      ON sentinel_audit_log (action, created_at DESC)
+    `
+
+    // ── Phase 5: data-integrity constraints + indexes on existing columns ─
+    // CHECK constraints mirror the route-layer whitelist so even a direct DB
+    // write (e.g. by a future migration) cannot store invalid values.
+    await sql`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'sentinel_users_ngo_access_level_chk') THEN
+          ALTER TABLE sentinel_users
+            ADD CONSTRAINT sentinel_users_ngo_access_level_chk
+            CHECK (ngo_access_level IS NULL OR ngo_access_level IN ('owner','contributor','user'));
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'sentinel_users_granted_via_chk') THEN
+          ALTER TABLE sentinel_users
+            ADD CONSTRAINT sentinel_users_granted_via_chk
+            CHECK (granted_via IS NULL OR granted_via IN ('enterprise','ngo-team'));
+        END IF;
+      END $$
+    `
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_sentinel_users_org_ngo
+      ON sentinel_users (organization_id, ngo_access_level)
+      WHERE ngo_access_level IS NOT NULL
+    `
+
     console.log("[db] Sentinel tables verified")
   } catch (err) {
     console.warn("[db] Sentinel tables not found — run migrations first:", err.message)
@@ -1437,6 +1531,200 @@ export async function revokeNgoGrant(userId) {
     RETURNING id, email, ngo_access_level AS "ngoAccessLevel"
   `
   return rows[0] || null
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Phase 1 (May 2026 production hardening): Enterprise Org / Team / NGO-Team
+// helpers. These promote what used to live in per-browser Spark KV into
+// authoritative Neon tables. Client libs read via the new admin routes;
+// KV stays as a read-through cache.
+// INVARIANT[enterprise-org-source-of-truth]
+// INVARIANT[ngo-team-source-of-truth]
+// ─────────────────────────────────────────────────────────────────────────
+
+export async function upsertEnterpriseOrg({ id, ownerUserId, name = null, tier = "ENTERPRISE" }) {
+  if (!id || !ownerUserId) throw new Error("upsertEnterpriseOrg: id and ownerUserId required")
+  const sql = getSql()
+  const rows = await sql`
+    INSERT INTO sentinel_enterprise_orgs (id, owner_user_id, name, tier)
+    VALUES (${id}, ${ownerUserId}, ${name}, ${tier})
+    ON CONFLICT (id) DO UPDATE
+      SET owner_user_id = EXCLUDED.owner_user_id,
+          name = COALESCE(EXCLUDED.name, sentinel_enterprise_orgs.name),
+          tier = EXCLUDED.tier,
+          updated_at = NOW()
+    RETURNING id, owner_user_id AS "ownerUserId", name, tier,
+              EXTRACT(EPOCH FROM created_at)::BIGINT * 1000 AS "createdAt",
+              EXTRACT(EPOCH FROM updated_at)::BIGINT * 1000 AS "updatedAt"
+  `
+  return rows[0] || null
+}
+
+export async function getEnterpriseOrg(orgId) {
+  if (!orgId) return null
+  const sql = getSql()
+  const rows = await sql`
+    SELECT id, owner_user_id AS "ownerUserId", name, tier,
+           EXTRACT(EPOCH FROM created_at)::BIGINT * 1000 AS "createdAt",
+           EXTRACT(EPOCH FROM updated_at)::BIGINT * 1000 AS "updatedAt"
+    FROM sentinel_enterprise_orgs
+    WHERE id = ${orgId}
+    LIMIT 1
+  `
+  return rows[0] || null
+}
+
+export async function listEnterpriseMembers(orgId) {
+  if (!orgId) return []
+  const sql = getSql()
+  const rows = await sql`
+    SELECT m.user_id AS "id",
+           u.email,
+           u.full_name AS "fullName",
+           m.role,
+           COALESCE(m.module_access, '[]'::jsonb) AS "moduleAccess",
+           m.individual_pro_license AS "individualProLicense",
+           u.ngo_access_level AS "ngoAccessLevel",
+           EXTRACT(EPOCH FROM m.added_at)::BIGINT * 1000 AS "addedAt",
+           EXTRACT(EPOCH FROM m.last_active_at)::BIGINT * 1000 AS "lastActiveAt"
+    FROM sentinel_enterprise_members m
+    JOIN sentinel_users u ON u.id = m.user_id AND u.is_active = TRUE
+    WHERE m.org_id = ${orgId}
+    ORDER BY m.added_at ASC
+  `
+  return rows
+}
+
+export async function upsertEnterpriseMember({
+  orgId,
+  userId,
+  role = "viewer",
+  moduleAccess = ["strategy", "ideas"],
+  individualProLicense = false,
+}) {
+  if (!orgId || !userId) throw new Error("upsertEnterpriseMember: orgId and userId required")
+  const sql = getSql()
+  const moduleAccessJson = JSON.stringify(Array.isArray(moduleAccess) ? moduleAccess : [])
+  const rows = await sql`
+    INSERT INTO sentinel_enterprise_members (org_id, user_id, role, module_access, individual_pro_license)
+    VALUES (${orgId}, ${userId}, ${role}, ${moduleAccessJson}::jsonb, ${individualProLicense})
+    ON CONFLICT (org_id, user_id) DO UPDATE
+      SET role = EXCLUDED.role,
+          module_access = EXCLUDED.module_access,
+          individual_pro_license = EXCLUDED.individual_pro_license,
+          last_active_at = NOW()
+    RETURNING org_id AS "orgId", user_id AS "userId", role,
+              module_access AS "moduleAccess",
+              individual_pro_license AS "individualProLicense",
+              EXTRACT(EPOCH FROM added_at)::BIGINT * 1000 AS "addedAt"
+  `
+  return rows[0] || null
+}
+
+export async function removeEnterpriseMember(orgId, userId) {
+  if (!orgId || !userId) return null
+  const sql = getSql()
+  const rows = await sql`
+    DELETE FROM sentinel_enterprise_members
+    WHERE org_id = ${orgId} AND user_id = ${userId}
+    RETURNING org_id AS "orgId", user_id AS "userId"
+  `
+  return rows[0] || null
+}
+
+export async function listNgoTeamMembers(adminUserId) {
+  if (!adminUserId) return []
+  const sql = getSql()
+  const rows = await sql`
+    SELECT t.member_user_id AS "id",
+           u.email,
+           u.full_name AS "fullName",
+           t.access_level AS "accessLevel",
+           t.admin_user_id AS "addedBy",
+           EXTRACT(EPOCH FROM t.added_at)::BIGINT * 1000 AS "addedAt"
+    FROM sentinel_ngo_team_members t
+    JOIN sentinel_users u ON u.id = t.member_user_id AND u.is_active = TRUE
+    WHERE t.admin_user_id = ${adminUserId}
+    ORDER BY t.added_at ASC
+  `
+  return rows
+}
+
+export async function upsertNgoTeamMember({ adminUserId, memberUserId, accessLevel = "user" }) {
+  if (!adminUserId || !memberUserId) {
+    throw new Error("upsertNgoTeamMember: adminUserId and memberUserId required")
+  }
+  if (!["owner", "contributor", "user"].includes(accessLevel)) {
+    throw new Error(`upsertNgoTeamMember: invalid accessLevel '${accessLevel}'`)
+  }
+  const sql = getSql()
+  const rows = await sql`
+    INSERT INTO sentinel_ngo_team_members (admin_user_id, member_user_id, access_level)
+    VALUES (${adminUserId}, ${memberUserId}, ${accessLevel})
+    ON CONFLICT (admin_user_id, member_user_id) DO UPDATE
+      SET access_level = EXCLUDED.access_level
+    RETURNING admin_user_id AS "adminUserId", member_user_id AS "memberUserId",
+              access_level AS "accessLevel",
+              EXTRACT(EPOCH FROM added_at)::BIGINT * 1000 AS "addedAt"
+  `
+  return rows[0] || null
+}
+
+export async function removeNgoTeamMember(adminUserId, memberUserId) {
+  if (!adminUserId || !memberUserId) return null
+  const sql = getSql()
+  const rows = await sql`
+    DELETE FROM sentinel_ngo_team_members
+    WHERE admin_user_id = ${adminUserId} AND member_user_id = ${memberUserId}
+    RETURNING admin_user_id AS "adminUserId", member_user_id AS "memberUserId"
+  `
+  return rows[0] || null
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Phase 4: append-only grant-audit log (separate from the older
+// sentinel_audit_logs which uses an ENUM action type and is reserved for
+// generic LOGIN/CREATE/etc events). INVARIANT[audit-log-table]
+// ─────────────────────────────────────────────────────────────────────────
+export async function writeGrantAudit({ actorUserId = null, targetUserId = null, action, payload = {} }) {
+  if (!action) throw new Error("writeGrantAudit: action required")
+  try {
+    const sql = getSql()
+    const payloadJson = JSON.stringify(payload || {})
+    await sql`
+      INSERT INTO sentinel_audit_log (actor_user_id, target_user_id, action, payload)
+      VALUES (${actorUserId}, ${targetUserId}, ${action}, ${payloadJson}::jsonb)
+    `
+  } catch (err) {
+    // Audit log failures must never break the operation that triggered them.
+    console.warn("[db] writeGrantAudit failed:", err?.message)
+  }
+}
+
+// Health: counts used by /api/health/grants. INVARIANT[grants-health-endpoint]
+export async function getGrantsHealth() {
+  const sql = getSql()
+  try {
+    const [counts] = await sql`
+      SELECT
+        (SELECT COUNT(*) FROM sentinel_users WHERE ngo_access_level IS NOT NULL AND is_active = TRUE) AS ngo_granted,
+        (SELECT COUNT(*) FROM sentinel_users WHERE enterprise_role IS NOT NULL AND is_active = TRUE) AS enterprise_granted,
+        (SELECT COUNT(*) FROM sentinel_enterprise_orgs) AS orgs,
+        (SELECT COUNT(*) FROM sentinel_enterprise_members) AS enterprise_memberships,
+        (SELECT COUNT(*) FROM sentinel_ngo_team_members) AS ngo_memberships,
+        (SELECT EXTRACT(EPOCH FROM MAX(updated_at))::BIGINT * 1000 FROM sentinel_users WHERE ngo_access_level IS NOT NULL) AS last_grant_ts
+    `
+    return {
+      ngoGranted: Number(counts?.ngo_granted || 0),
+      enterpriseGranted: Number(counts?.enterprise_granted || 0),
+      orgs: Number(counts?.orgs || 0),
+      enterpriseMemberships: Number(counts?.enterprise_memberships || 0),
+      ngoMemberships: Number(counts?.ngo_memberships || 0),
+      lastGrantTs: counts?.last_grant_ts ? Number(counts.last_grant_ts) : null,
+    }
+  } catch (err) {
+    return { error: err?.message || "health query failed" }
+  }
 }
 
 export async function assignUserToOrganization(userId, organizationId, role) {
