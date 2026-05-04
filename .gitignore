@@ -46,3 +46,6 @@ test-*.mjs
 test-*.html
 test-results/
 nul
+
+.heroku-db.txt
+check-grant.cjs
