@@ -50,6 +50,15 @@ export interface SentinelUser {
   createdAt: number
   lastLoginAt: number
   isActive: boolean
+  // ── Enterprise grant fields (INVARIANT[enterprise-grant-persistence]) ──
+  // Populated by /api/auth/verify when the user has been granted access via
+  // the Enterprise Admin or NGO-SAAS Team page. Absent for ordinary signups.
+  enterpriseRole?: string | null
+  enterpriseModuleAccess?: string[] | null
+  individualProLicense?: boolean | null
+  ngoAccessLevel?: "owner" | "contributor" | "user" | null
+  ngoTeamAdminId?: string | null
+  grantedVia?: "enterprise" | "ngo-team" | null
 }
 
 // ───────────────────────────── Subscription ──────────────────────

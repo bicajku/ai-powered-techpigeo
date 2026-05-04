@@ -63,6 +63,47 @@ const INVARIANTS = [
     marker: "INVARIANT[register-deleted-block]",
     mustContain: ["wasEmailDeleted"],
   },
+  {
+    id: "enterprise-grant-persistence",
+    file: "backend/db.mjs",
+    marker: "INVARIANT[enterprise-grant-persistence]",
+    mustContain: [
+      "setEnterpriseGrant",
+      "ngo_access_level",
+      "granted_via",
+      "ngoAccessLevel requires grantedVia",
+    ],
+  },
+  {
+    id: "enterprise-grant-route",
+    file: "backend/server.mjs",
+    marker: "INVARIANT[enterprise-grant-persistence]",
+    mustContain: [
+      "/api/sentinel/admin/enterprise-grant",
+      "hasMinimumRole(actor.role, \"TEAM_ADMIN\")",
+      "grantedVia",
+    ],
+  },
+  {
+    id: "enterprise-grant-client",
+    file: "src/lib/enterprise-subscription.ts",
+    marker: "INVARIANT[enterprise-grant-persistence]",
+    mustContain: [
+      "persistEnterpriseGrantToBackend",
+      "/api/sentinel/admin/enterprise-grant",
+      "grantedVia: \"enterprise\"",
+    ],
+  },
+  {
+    id: "enterprise-grant-auth-mapping",
+    file: "src/lib/auth.ts",
+    marker: "INVARIANT[enterprise-grant-persistence]",
+    mustContain: [
+      "hasEnterpriseGrant",
+      `plan: "enterprise"`,
+      "ngoAccessLevel",
+    ],
+  },
 ]
 
 let failed = 0

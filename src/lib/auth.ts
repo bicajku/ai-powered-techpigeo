@@ -1,4 +1,4 @@
-import { UserProfile } from "@/types"
+import { UserProfile, NGOAccessLevel, SubscriptionInfo } from "@/types"
 import { ensureUserSubscription, getDefaultSubscription, TRIAL_CREDITS, TRIAL_MAX_SUBMISSIONS } from "@/lib/subscription"
 import { getSafeKVClient } from "@/lib/spark-shim"
 import { sentinelAuth } from "@/sentinel/api/auth"
@@ -81,10 +81,48 @@ function mapSentinelUserToUserProfile(user: SentinelUser): UserProfile {
     fullName: user.fullName,
     role: isPlatformAdmin ? "admin" : isTesterRole ? "tester" : "client",
     avatarUrl: user.avatarUrl,
-    subscription: user.organizationId ? {
-      ...(testerSubscription || defaultSub),
-      enterpriseOrganizationId: user.organizationId,
-    } : (testerSubscription || defaultSub),
+    subscription: (() => {
+      const baseSub = user.organizationId
+        ? { ...(testerSubscription || defaultSub), enterpriseOrganizationId: user.organizationId }
+        : (testerSubscription || defaultSub)
+      // INVARIANT[enterprise-grant-persistence]: project DB-persisted enterprise
+      // grant fields into the client subscription so getFeatureEntitlements()
+      // can unlock NGO-SAAS / Enterprise modules from any browser. Only users
+      // granted via the Enterprise Admin or NGO-SAAS Team page (grantedVia is
+      // 'enterprise' or 'ngo-team') will have ngoAccessLevel populated; new
+      // signups never receive these columns and stay on BASIC defaults.
+      const hasEnterpriseGrant =
+        !!user.enterpriseRole ||
+        !!user.ngoAccessLevel ||
+        (Array.isArray(user.enterpriseModuleAccess) && user.enterpriseModuleAccess.length > 0) ||
+        user.individualProLicense === true
+      if (!hasEnterpriseGrant) return baseSub
+      const enterpriseRoleValue = (
+        ["owner", "admin", "contributor", "viewer"].includes(String(user.enterpriseRole))
+          ? (user.enterpriseRole as SubscriptionInfo["enterpriseRole"])
+          : undefined
+      )
+      const moduleAccessValue = (
+        Array.isArray(user.enterpriseModuleAccess)
+          ? user.enterpriseModuleAccess.filter((m): m is "strategy" | "ideas" | "review" | "humanizer" =>
+              m === "strategy" || m === "ideas" || m === "review" || m === "humanizer")
+          : baseSub.enterpriseModuleAccess
+      )
+      return {
+        ...baseSub,
+        // Promote to enterprise plan so isEnterprise gating in getFeatureEntitlements unlocks.
+        plan: "enterprise" as const,
+        status: "active" as const,
+        enterpriseOrganizationId: user.organizationId || baseSub.enterpriseOrganizationId,
+        enterpriseRole: enterpriseRoleValue,
+        enterpriseModuleAccess: moduleAccessValue,
+        individualProLicense: user.individualProLicense === true,
+        ngoAccessLevel: (user.ngoAccessLevel || undefined) as NGOAccessLevel | undefined,
+        ngoTeamAdminId: user.ngoTeamAdminId || undefined,
+        hasNgoModuleAccess: !!user.ngoAccessLevel,
+        updatedAt: Date.now(),
+      }
+    })(),
     createdAt: user.createdAt,
     lastLoginAt: user.lastLoginAt,
   }

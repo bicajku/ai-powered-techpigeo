@@ -22,6 +22,62 @@ async function simpleHash(text: string): Promise<string> {
   return hashArray.map(b => b.toString(16).padStart(2, "0")).join("")
 }
 
+function getBackendBaseUrl(): string {
+  if (typeof import.meta !== "undefined" && import.meta.env?.VITE_BACKEND_API_BASE_URL) {
+    return import.meta.env.VITE_BACKEND_API_BASE_URL as string
+  }
+  return ""
+}
+
+/**
+ * INVARIANT[enterprise-grant-persistence]
+ * Persist NGO-SAAS Team grants to Neon so the target user picks up access on
+ * any browser via /api/auth/verify. Falls back silently if backend is unreachable.
+ */
+async function persistNgoGrant(
+  userId: string,
+  ngoAccessLevel: NGOAccessLevel | null,
+  ngoTeamAdminId: string | null,
+  organizationId?: string,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const path = ngoAccessLevel
+      ? "/api/sentinel/admin/enterprise-grant"
+      : "/api/sentinel/admin/enterprise-revoke-ngo"
+    const body: Record<string, unknown> = ngoAccessLevel
+      ? {
+          userId,
+          ngoAccessLevel,
+          ngoTeamAdminId,
+          grantedVia: "ngo-team",
+          organizationId,
+        }
+      : { userId }
+    const headers: Record<string, string> = { "Content-Type": "application/json" }
+    try {
+      const token = typeof localStorage !== "undefined"
+        ? localStorage.getItem("sentinel-auth-token") || localStorage.getItem("sentinel_token")
+        : null
+      if (token) headers.Authorization = `Bearer ${token}`
+    } catch { /* ignore */ }
+    const res = await fetch(`${getBackendBaseUrl()}${path}`, {
+      method: "POST",
+      headers,
+      credentials: "include",
+      body: JSON.stringify(body),
+    })
+    if (res.status === 0) return { ok: true }
+    const data = await res.json().catch(() => null)
+    if (!res.ok || !data?.ok) {
+      return { ok: false, error: (data?.error as string) || "Backend rejected NGO grant" }
+    }
+    return { ok: true }
+  } catch {
+    // Network / dev — local KV mirror still works.
+    return { ok: true }
+  }
+}
+
 export async function getTeamMembers(adminId: string): Promise<NGOTeamMember[]> {
   const kv = getPlatformKV()
   try {
@@ -126,6 +182,14 @@ export async function addTeamMember(
       const existingCred = credentials[normalizedEmail]
       const existingUser = users[existingCred.userId]
       if (existingUser) {
+        // Backend-first persistence so any browser sees the grant after re-verify.
+        const persisted = await persistNgoGrant(
+          existingCred.userId,
+          accessLevel,
+          adminId,
+          safeAdmin.subscription?.enterpriseOrganizationId,
+        )
+        if (!persisted.ok) return { success: false, error: persisted.error || "Failed to persist NGO grant" }
         const existingSub = existingUser.subscription || getDefaultSubscription()
         users[existingCred.userId] = {
           ...existingUser,
@@ -201,6 +265,9 @@ export async function addTeamMember(
     await kv.set(USER_CREDENTIALS_KEY, credentials)
     await kv.set(USERS_STORAGE_KEY, users)
 
+    // Backend-first persistence of the NGO grant on the freshly-created user.
+    await persistNgoGrant(userId, accessLevel, adminId, orgId)
+
     const member: NGOTeamMember = {
       id: userId,
       email: normalizedEmail,
@@ -234,6 +301,9 @@ export async function updateMemberAccess(
     team[memberIndex] = { ...team[memberIndex], accessLevel: newLevel }
     await saveTeamMembers(adminId, team)
 
+    // Backend-first persistence so the level change is reflected on next verify.
+    await persistNgoGrant(memberId, newLevel, adminId)
+
     // Update the user's subscription as well
     const users = (await kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
     const memberUser = users[memberId]
@@ -264,6 +334,9 @@ export async function removeMember(
     if (updated.length === team.length) return { success: false, error: "Member not found" }
 
     await saveTeamMembers(adminId, updated)
+
+    // Backend-first revoke. INVARIANT[enterprise-grant-persistence].
+    await persistNgoGrant(memberId, null, null)
 
     // Revoke NGO access on the user's subscription
     const users = (await kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}

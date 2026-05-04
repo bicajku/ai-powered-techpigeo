@@ -91,6 +91,8 @@ import {
   getUsageSummary,
   getPolicyViolations,
   consumeUserCredits,
+  setEnterpriseGrant,
+  revokeNgoGrant,
 } from "./db.mjs"
 import {
   canPerformAction,
@@ -2783,6 +2785,113 @@ async function handleAdminDeleteUser(req, res, user) {
 }
 
 /**
+ * POST /api/sentinel/admin/enterprise-grant
+ * Body: {
+ *   userId,
+ *   organizationId?,
+ *   enterpriseRole?,            // 'owner' | 'admin' | 'contributor' | 'viewer'
+ *   moduleAccess?,              // string[]
+ *   individualProLicense?,      // boolean
+ *   ngoAccessLevel?,            // 'owner' | 'contributor' | 'user' (or null to revoke)
+ *   grantedVia                  // 'enterprise' | 'ngo-team' (REQUIRED when ngoAccessLevel is set)
+ * }
+ *
+ * INVARIANT[enterprise-grant-persistence]
+ * Caller must be SENTINEL_COMMANDER, ORG_ADMIN, or TEAM_ADMIN. Non-enterprise
+ * roles cannot reach this endpoint, which is what guarantees that ordinary
+ * signup users never receive ngo_access_level.
+ */
+async function handleAdminEnterpriseGrant(req, res, actor) {
+  if (!hasMinimumRole(actor.role, "TEAM_ADMIN")) {
+    return sendJson(res, 403, { ok: false, error: "Insufficient permissions to grant enterprise access" }, req)
+  }
+  if (!isDbConfigured()) {
+    return sendJson(res, 503, { ok: false, error: "Database not configured" }, req)
+  }
+
+  const parsed = await parseJsonBody(req)
+  if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+  const body = parsed.data || {}
+
+  const userId = typeof body.userId === "string" ? body.userId.trim() : ""
+  if (!userId) return sendJson(res, 400, { ok: false, error: "userId is required" }, req)
+
+  const ngoAccessLevel = body.ngoAccessLevel ?? null
+  const grantedVia = body.grantedVia ?? null
+  if (ngoAccessLevel && grantedVia !== "enterprise" && grantedVia !== "ngo-team") {
+    return sendJson(res, 400, {
+      ok: false,
+      error: "grantedVia must be 'enterprise' or 'ngo-team' when granting NGO access",
+    }, req)
+  }
+  if (ngoAccessLevel && !["owner", "contributor", "user"].includes(ngoAccessLevel)) {
+    return sendJson(res, 400, { ok: false, error: "Invalid ngoAccessLevel" }, req)
+  }
+
+  // Org-scoped admins (ORG_ADMIN / TEAM_ADMIN) can only grant within their own org.
+  if (actor.role !== "SENTINEL_COMMANDER") {
+    const orgId = typeof body.organizationId === "string" ? body.organizationId.trim() : ""
+    if (!actor.organizationId || (orgId && orgId !== actor.organizationId)) {
+      return sendJson(res, 403, { ok: false, error: "Cannot grant access outside your organization" }, req)
+    }
+  }
+
+  try {
+    const moduleAccess = Array.isArray(body.moduleAccess)
+      ? body.moduleAccess.filter((m) => typeof m === "string").slice(0, 16)
+      : null
+    const ngoTeamAdminId = ngoAccessLevel
+      ? (typeof body.ngoTeamAdminId === "string" && body.ngoTeamAdminId.trim()
+          ? body.ngoTeamAdminId.trim()
+          : actor.userId || actor.id || null)
+      : null
+
+    const updated = await setEnterpriseGrant(userId, {
+      organizationId: typeof body.organizationId === "string" ? body.organizationId : null,
+      enterpriseRole: typeof body.enterpriseRole === "string" ? body.enterpriseRole : null,
+      enterpriseModuleAccess: moduleAccess,
+      individualProLicense: typeof body.individualProLicense === "boolean" ? body.individualProLicense : null,
+      ngoAccessLevel,
+      ngoTeamAdminId,
+      grantedVia,
+    })
+
+    if (!updated) return sendJson(res, 404, { ok: false, error: "Target user not found or inactive" }, req)
+    console.log(`[ADMIN ENTERPRISE GRANT] ${actor.email} granted ${userId} via ${grantedVia || "(no-ngo)"}`)
+    return sendJson(res, 200, { ok: true, user: updated }, req)
+  } catch (err) {
+    console.error("[handleAdminEnterpriseGrant] error:", err)
+    return sendJson(res, 500, { ok: false, error: err?.message || "Failed to grant enterprise access" }, req)
+  }
+}
+
+/**
+ * POST /api/sentinel/admin/enterprise-revoke-ngo
+ * Body: { userId }
+ * Revokes ONLY the NGO grant (leaves enterprise role/module access intact).
+ */
+async function handleAdminEnterpriseRevokeNgo(req, res, actor) {
+  if (!hasMinimumRole(actor.role, "TEAM_ADMIN")) {
+    return sendJson(res, 403, { ok: false, error: "Insufficient permissions" }, req)
+  }
+  if (!isDbConfigured()) {
+    return sendJson(res, 503, { ok: false, error: "Database not configured" }, req)
+  }
+  const parsed = await parseJsonBody(req)
+  if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
+  const userId = typeof parsed.data?.userId === "string" ? parsed.data.userId.trim() : ""
+  if (!userId) return sendJson(res, 400, { ok: false, error: "userId is required" }, req)
+  try {
+    const updated = await revokeNgoGrant(userId)
+    if (!updated) return sendJson(res, 404, { ok: false, error: "Target user not found or inactive" }, req)
+    return sendJson(res, 200, { ok: true, user: updated }, req)
+  } catch (err) {
+    console.error("[handleAdminEnterpriseRevokeNgo] error:", err)
+    return sendJson(res, 500, { ok: false, error: err?.message || "Failed to revoke NGO access" }, req)
+  }
+}
+
+/**
  * POST /api/sentinel/admin/subscriptions/add-credits
  * Body: { userId, credits }
  * Requires SENTINEL_COMMANDER.
@@ -4913,6 +5022,16 @@ const server = http.createServer(async (req, res) => {
       // POST /api/sentinel/admin/users/delete
       if (method === "POST" && reqPathname === "/api/sentinel/admin/users/delete") {
         return handleAdminDeleteUser(req, res, user)
+      }
+
+      // POST /api/sentinel/admin/enterprise-grant
+      if (method === "POST" && reqPathname === "/api/sentinel/admin/enterprise-grant") {
+        return handleAdminEnterpriseGrant(req, res, user)
+      }
+
+      // POST /api/sentinel/admin/enterprise-revoke-ngo
+      if (method === "POST" && reqPathname === "/api/sentinel/admin/enterprise-revoke-ngo") {
+        return handleAdminEnterpriseRevokeNgo(req, res, user)
       }
 
       // POST /api/sentinel/admin/subscriptions/add-credits

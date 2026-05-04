@@ -88,6 +88,15 @@ async function postBackend(path: string, payload: unknown): Promise<{ ok: boolea
     } catch {
       // Cookie access unavailable
     }
+    try {
+      const token =
+        typeof localStorage !== "undefined"
+          ? localStorage.getItem("sentinel-auth-token") || localStorage.getItem("sentinel_token")
+          : null
+      if (token) headers.Authorization = `Bearer ${token}`
+    } catch {
+      // localStorage unavailable
+    }
 
     const res = await fetch(`${getBackendBaseUrl()}${path}`, {
       method: "POST",
@@ -100,6 +109,42 @@ async function postBackend(path: string, payload: unknown): Promise<{ ok: boolea
   } catch {
     return { ok: false, status: 0 }
   }
+}
+
+/**
+ * INVARIANT[enterprise-grant-persistence]
+ * Round-trips the grant through the Neon-backed admin endpoint so the target
+ * user picks it up from /api/auth/verify on any browser. Falls back silently
+ * if the backend is unreachable so the local KV mirror still works in dev.
+ */
+async function persistEnterpriseGrantToBackend(payload: {
+  userId: string
+  organizationId?: string
+  enterpriseRole?: string
+  moduleAccess?: string[]
+  individualProLicense?: boolean
+  ngoAccessLevel?: NGOAccessLevel | null
+  ngoTeamAdminId?: string | null
+  grantedVia?: "enterprise" | "ngo-team"
+}): Promise<{ ok: boolean; error?: string }> {
+  const res = await postBackend("/api/sentinel/admin/enterprise-grant", payload)
+  if (res.status === 0) {
+    // Backend unreachable — local mirror keeps things usable in dev.
+    return { ok: true }
+  }
+  if (!res.ok || !res.data?.ok) {
+    return { ok: false, error: (res.data?.error as string) || "Backend rejected enterprise grant" }
+  }
+  return { ok: true }
+}
+
+async function revokeNgoGrantOnBackend(userId: string): Promise<{ ok: boolean; error?: string }> {
+  const res = await postBackend("/api/sentinel/admin/enterprise-revoke-ngo", { userId })
+  if (res.status === 0) return { ok: true }
+  if (!res.ok || !res.data?.ok) {
+    return { ok: false, error: (res.data?.error as string) || "Backend rejected NGO revoke" }
+  }
+  return { ok: true }
 }
 
 async function simpleHash(text: string): Promise<string> {
@@ -537,6 +582,20 @@ export async function grantNGOAccess(
     const member = sub.teamMembers.find((m) => m.id === memberId)
     if (!member) return { success: false, error: "Team member not found" }
 
+    // Backend-first: persist to Neon so the target user's next /api/auth/verify
+    // unlocks NGO-SAAS from any browser. INVARIANT[enterprise-grant-persistence].
+    const persisted = await persistEnterpriseGrantToBackend({
+      userId: member.id,
+      organizationId,
+      enterpriseRole: member.role,
+      moduleAccess: member.moduleAccess,
+      individualProLicense: member.individualProLicense,
+      ngoAccessLevel: accessLevel,
+      ngoTeamAdminId: sub.ownerId,
+      grantedVia: "enterprise",
+    })
+    if (!persisted.ok) return { success: false, error: persisted.error || "Failed to persist NGO grant" }
+
     member.ngoAccessLevel = accessLevel
     sub.updatedAt = Date.now()
     await saveEnterpriseSubscription(sub)
@@ -577,6 +636,10 @@ export async function revokeNGOAccess(
 
     const member = sub.teamMembers.find((m) => m.id === memberId)
     if (!member) return { success: false, error: "Team member not found" }
+
+    // Backend-first revoke. INVARIANT[enterprise-grant-persistence].
+    const revoked = await revokeNgoGrantOnBackend(member.id)
+    if (!revoked.ok) return { success: false, error: revoked.error || "Failed to revoke NGO grant" }
 
     member.ngoAccessLevel = undefined
     sub.updatedAt = Date.now()

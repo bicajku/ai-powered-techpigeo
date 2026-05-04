@@ -66,6 +66,29 @@ export async function ensureSentinelTables() {
           IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'sentinel_users' AND column_name = 'microsoft_id') THEN
             ALTER TABLE sentinel_users ADD COLUMN microsoft_id TEXT UNIQUE;
           END IF;
+
+          -- ── Enterprise grant columns (May 2026) ──────────────────────
+          -- Persist enterprise role / module access / NGO grant in the DB so
+          -- that users created/granted from the Enterprise Admin or NGO-SAAS
+          -- Team page see the same access from any browser. INVARIANT[enterprise-grant-persistence].
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'sentinel_users' AND column_name = 'enterprise_role') THEN
+            ALTER TABLE sentinel_users ADD COLUMN enterprise_role TEXT;
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'sentinel_users' AND column_name = 'enterprise_module_access') THEN
+            ALTER TABLE sentinel_users ADD COLUMN enterprise_module_access JSONB NOT NULL DEFAULT '[]'::jsonb;
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'sentinel_users' AND column_name = 'individual_pro_license') THEN
+            ALTER TABLE sentinel_users ADD COLUMN individual_pro_license BOOLEAN NOT NULL DEFAULT FALSE;
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'sentinel_users' AND column_name = 'ngo_access_level') THEN
+            ALTER TABLE sentinel_users ADD COLUMN ngo_access_level TEXT;
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'sentinel_users' AND column_name = 'ngo_team_admin_id') THEN
+            ALTER TABLE sentinel_users ADD COLUMN ngo_team_admin_id TEXT;
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'sentinel_users' AND column_name = 'granted_via') THEN
+            ALTER TABLE sentinel_users ADD COLUMN granted_via TEXT;
+          END IF;
         END IF;
       END $$
     `
@@ -1098,7 +1121,9 @@ export async function getUserByEmail(email) {
 }
 
 /**
- * Get user by ID (no password_hash).
+ * Get user by ID (no password_hash). Includes enterprise grant fields
+ * (INVARIANT[enterprise-grant-persistence]) so /api/auth/verify can
+ * round-trip Enterprise / NGO-SAAS access from any browser.
  */
 export async function getUserById(userId) {
   const sql = getSql()
@@ -1106,6 +1131,12 @@ export async function getUserById(userId) {
     SELECT id, email, full_name AS "fullName",
            role, organization_id AS "organizationId", avatar_url AS "avatarUrl",
            is_active AS "isActive",
+           enterprise_role AS "enterpriseRole",
+           COALESCE(enterprise_module_access, '[]'::jsonb) AS "enterpriseModuleAccess",
+           COALESCE(individual_pro_license, FALSE) AS "individualProLicense",
+           ngo_access_level AS "ngoAccessLevel",
+           ngo_team_admin_id AS "ngoTeamAdminId",
+           granted_via AS "grantedVia",
            EXTRACT(EPOCH FROM created_at)::BIGINT * 1000 AS "createdAt",
            EXTRACT(EPOCH FROM last_login_at)::BIGINT * 1000 AS "lastLoginAt"
     FROM sentinel_users
@@ -1336,6 +1367,76 @@ export async function markEmailRejoined(email) {
   } catch (err) {
     console.warn("[db.markEmailRejoined] failed:", err?.message)
   }
+}
+
+/**
+ * INVARIANT[enterprise-grant-persistence]
+ * Persist an Enterprise / NGO-SAAS grant on a user row. Only callable from a
+ * route guarded by an enterprise admin (ORG_ADMIN/TEAM_ADMIN of the same
+ * organization, or SENTINEL_COMMANDER). `grantedVia` MUST be 'enterprise' or
+ * 'ngo-team' — this is the only path that may set ngo_access_level. Regular
+ * signup (createUser) leaves these columns at their defaults, so newly
+ * registered users CANNOT see the NGO-SAAS module until an admin grants them.
+ */
+export async function setEnterpriseGrant(userId, {
+  organizationId = null,
+  enterpriseRole = null,
+  enterpriseModuleAccess = null,
+  individualProLicense = null,
+  ngoAccessLevel = null,
+  ngoTeamAdminId = null,
+  grantedVia = null,
+} = {}) {
+  if (!userId) throw new Error("setEnterpriseGrant requires userId")
+  if (grantedVia && grantedVia !== "enterprise" && grantedVia !== "ngo-team") {
+    throw new Error(`setEnterpriseGrant: invalid grantedVia '${grantedVia}'`)
+  }
+  if (ngoAccessLevel && !grantedVia) {
+    throw new Error("setEnterpriseGrant: ngoAccessLevel requires grantedVia ('enterprise' or 'ngo-team')")
+  }
+  const sql = getSql()
+  const moduleAccessJson = Array.isArray(enterpriseModuleAccess)
+    ? JSON.stringify(enterpriseModuleAccess)
+    : null
+  const rows = await sql`
+    UPDATE sentinel_users
+    SET organization_id = COALESCE(${organizationId}, organization_id),
+        enterprise_role = COALESCE(${enterpriseRole}, enterprise_role),
+        enterprise_module_access = COALESCE(${moduleAccessJson}::jsonb, enterprise_module_access),
+        individual_pro_license = COALESCE(${individualProLicense}, individual_pro_license),
+        ngo_access_level = ${ngoAccessLevel},
+        ngo_team_admin_id = ${ngoTeamAdminId},
+        granted_via = COALESCE(${grantedVia}, granted_via),
+        updated_at = NOW()
+    WHERE id = ${userId} AND is_active = TRUE
+    RETURNING id, email, full_name AS "fullName",
+              enterprise_role AS "enterpriseRole",
+              enterprise_module_access AS "enterpriseModuleAccess",
+              individual_pro_license AS "individualProLicense",
+              ngo_access_level AS "ngoAccessLevel",
+              ngo_team_admin_id AS "ngoTeamAdminId",
+              granted_via AS "grantedVia"
+  `
+  return rows[0] || null
+}
+
+/**
+ * INVARIANT[enterprise-grant-persistence]
+ * Revoke ONLY the NGO grant for a user (leaves enterprise_role / module access
+ * intact so the user retains other enterprise capabilities).
+ */
+export async function revokeNgoGrant(userId) {
+  if (!userId) throw new Error("revokeNgoGrant requires userId")
+  const sql = getSql()
+  const rows = await sql`
+    UPDATE sentinel_users
+    SET ngo_access_level = NULL,
+        ngo_team_admin_id = NULL,
+        updated_at = NOW()
+    WHERE id = ${userId} AND is_active = TRUE
+    RETURNING id, email, ngo_access_level AS "ngoAccessLevel"
+  `
+  return rows[0] || null
 }
 
 export async function assignUserToOrganization(userId, organizationId, role) {
