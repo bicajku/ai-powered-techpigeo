@@ -39,6 +39,7 @@ async function persistNgoGrant(
   ngoAccessLevel: NGOAccessLevel | null,
   ngoTeamAdminId: string | null,
   organizationId?: string,
+  email?: string,
 ): Promise<{ ok: boolean; error?: string }> {
   try {
     const path = ngoAccessLevel
@@ -47,12 +48,13 @@ async function persistNgoGrant(
     const body: Record<string, unknown> = ngoAccessLevel
       ? {
           userId,
+          email,
           ngoAccessLevel,
           ngoTeamAdminId,
           grantedVia: "ngo-team",
           organizationId,
         }
-      : { userId }
+      : { userId, email }
     const headers: Record<string, string> = { "Content-Type": "application/json" }
     try {
       const token = typeof localStorage !== "undefined"
@@ -188,6 +190,7 @@ export async function addTeamMember(
           accessLevel,
           adminId,
           safeAdmin.subscription?.enterpriseOrganizationId,
+          normalizedEmail,
         )
         if (!persisted.ok) return { success: false, error: persisted.error || "Failed to persist NGO grant" }
         const existingSub = existingUser.subscription || getDefaultSubscription()
@@ -266,7 +269,7 @@ export async function addTeamMember(
     await kv.set(USERS_STORAGE_KEY, users)
 
     // Backend-first persistence of the NGO grant on the freshly-created user.
-    await persistNgoGrant(userId, accessLevel, adminId, orgId)
+    await persistNgoGrant(userId, accessLevel, adminId, orgId, normalizedEmail)
 
     const member: NGOTeamMember = {
       id: userId,
@@ -302,7 +305,7 @@ export async function updateMemberAccess(
     await saveTeamMembers(adminId, team)
 
     // Backend-first persistence so the level change is reflected on next verify.
-    await persistNgoGrant(memberId, newLevel, adminId)
+    await persistNgoGrant(memberId, newLevel, adminId, undefined, team[memberIndex].email)
 
     // Update the user's subscription as well
     const users = (await kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}
@@ -336,7 +339,8 @@ export async function removeMember(
     await saveTeamMembers(adminId, updated)
 
     // Backend-first revoke. INVARIANT[enterprise-grant-persistence].
-    await persistNgoGrant(memberId, null, null)
+    const removedMember = team.find(m => m.id === memberId)
+    await persistNgoGrant(memberId, null, null, undefined, removedMember?.email)
 
     // Revoke NGO access on the user's subscription
     const users = (await kv.get<Record<string, UserProfile>>(USERS_STORAGE_KEY)) || {}

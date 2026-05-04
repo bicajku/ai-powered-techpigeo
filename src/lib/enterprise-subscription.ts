@@ -119,6 +119,7 @@ async function postBackend(path: string, payload: unknown): Promise<{ ok: boolea
  */
 async function persistEnterpriseGrantToBackend(payload: {
   userId: string
+  email?: string
   organizationId?: string
   enterpriseRole?: string
   moduleAccess?: string[]
@@ -138,8 +139,8 @@ async function persistEnterpriseGrantToBackend(payload: {
   return { ok: true }
 }
 
-async function revokeNgoGrantOnBackend(userId: string): Promise<{ ok: boolean; error?: string }> {
-  const res = await postBackend("/api/sentinel/admin/enterprise-revoke-ngo", { userId })
+async function revokeNgoGrantOnBackend(userId: string, email?: string): Promise<{ ok: boolean; error?: string }> {
+  const res = await postBackend("/api/sentinel/admin/enterprise-revoke-ngo", { userId, email })
   if (res.status === 0) return { ok: true }
   if (!res.ok || !res.data?.ok) {
     return { ok: false, error: (res.data?.error as string) || "Backend rejected NGO revoke" }
@@ -586,6 +587,7 @@ export async function grantNGOAccess(
     // unlocks NGO-SAAS from any browser. INVARIANT[enterprise-grant-persistence].
     const persisted = await persistEnterpriseGrantToBackend({
       userId: member.id,
+      email: member.email,
       organizationId,
       enterpriseRole: member.role,
       moduleAccess: member.moduleAccess,
@@ -638,7 +640,7 @@ export async function revokeNGOAccess(
     if (!member) return { success: false, error: "Team member not found" }
 
     // Backend-first revoke. INVARIANT[enterprise-grant-persistence].
-    const revoked = await revokeNgoGrantOnBackend(member.id)
+    const revoked = await revokeNgoGrantOnBackend(member.id, member.email)
     if (!revoked.ok) return { success: false, error: revoked.error || "Failed to revoke NGO grant" }
 
     member.ngoAccessLevel = undefined

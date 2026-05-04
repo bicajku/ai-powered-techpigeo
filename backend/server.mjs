@@ -2813,8 +2813,27 @@ async function handleAdminEnterpriseGrant(req, res, actor) {
   if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
   const body = parsed.data || {}
 
-  const userId = typeof body.userId === "string" ? body.userId.trim() : ""
-  if (!userId) return sendJson(res, 400, { ok: false, error: "userId is required" }, req)
+  let userId = typeof body.userId === "string" ? body.userId.trim() : ""
+  const emailHint = typeof body.email === "string" ? body.email.trim().toLowerCase() : ""
+  if (!userId && !emailHint) {
+    return sendJson(res, 400, { ok: false, error: "userId or email is required" }, req)
+  }
+
+  // INVARIANT[enterprise-grant-persistence]: client-side team member lists
+  // sometimes carry synthetic ids (e.g. 'ent_<ts>_<rand>') generated when the
+  // admin added the member from a different browser and Spark KV had no
+  // credential record. Resolve the real DB user id by email when the supplied
+  // userId does not match an active row.
+  try {
+    const lookupById = userId ? await getUserById(userId) : null
+    if (!lookupById && emailHint) {
+      const byEmail = await getUserByEmail(emailHint)
+      if (byEmail?.id) userId = byEmail.id
+    }
+  } catch (err) {
+    console.warn("[handleAdminEnterpriseGrant] lookup failed:", err?.message)
+  }
+  if (!userId) return sendJson(res, 404, { ok: false, error: "Target user not found or inactive" }, req)
 
   const ngoAccessLevel = body.ngoAccessLevel ?? null
   const grantedVia = body.grantedVia ?? null
@@ -2879,8 +2898,19 @@ async function handleAdminEnterpriseRevokeNgo(req, res, actor) {
   }
   const parsed = await parseJsonBody(req)
   if (!parsed.ok) return sendJson(res, parsed.statusCode || 400, { ok: false, error: parsed.error }, req)
-  const userId = typeof parsed.data?.userId === "string" ? parsed.data.userId.trim() : ""
-  if (!userId) return sendJson(res, 400, { ok: false, error: "userId is required" }, req)
+  let userId = typeof parsed.data?.userId === "string" ? parsed.data.userId.trim() : ""
+  const emailHint = typeof parsed.data?.email === "string" ? parsed.data.email.trim().toLowerCase() : ""
+  if (!userId && !emailHint) return sendJson(res, 400, { ok: false, error: "userId or email is required" }, req)
+  try {
+    const lookupById = userId ? await getUserById(userId) : null
+    if (!lookupById && emailHint) {
+      const byEmail = await getUserByEmail(emailHint)
+      if (byEmail?.id) userId = byEmail.id
+    }
+  } catch (err) {
+    console.warn("[handleAdminEnterpriseRevokeNgo] lookup failed:", err?.message)
+  }
+  if (!userId) return sendJson(res, 404, { ok: false, error: "Target user not found or inactive" }, req)
   try {
     const updated = await revokeNgoGrant(userId)
     if (!updated) return sendJson(res, 404, { ok: false, error: "Target user not found or inactive" }, req)
